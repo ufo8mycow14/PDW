@@ -31,6 +31,7 @@ set( PDW_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/wasapi_capture.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/rtl_tcp_source.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/receiver_catalog.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/ini_preservation_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/message_router.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/mysql_odbc_output.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/output_health.cpp

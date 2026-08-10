@@ -321,6 +321,7 @@
 #include "utils\debug.h"
 #include "utils\ostype.h"
 #include "utils\smtp.h"
+#include "utils\ini_preservation_core.h"
 
 #include "headers\helper_funcs.h"	// Extra functies van Andreas
 
@@ -10374,12 +10375,11 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 void WriteSettings()
 {
-	if (GetFileAttributes(szIniPathName) & FILE_ATTRIBUTE_READONLY)
-	{
-		SetFileAttributes(szIniPathName, FILE_ATTRIBUTE_NORMAL);
-	}
-
-	FILE* pFile = fopen(szIniPathName, "w+");
+	char settingsSnapshotPath[MAX_PATH] = {};
+	FILE* pFile = NULL;
+	if (GetTempFileNameA(szPath, "PDS", 0, settingsSnapshotPath))
+		pFile = fopen(settingsSnapshotPath, "w+b");
+	if (!pFile && settingsSnapshotPath[0]) DeleteFileA(settingsSnapshotPath);
 
 	if (pFile)
 	{
@@ -10646,8 +10646,29 @@ void WriteSettings()
 		fwrite(szTEMP, strlen(szTEMP), 1, pFile);
 		fprintf(pFile, "FilterDefaultType=%i\n",		Profile.filter_default_type);
 
+		std::string generatedSettings;
+		if (fflush(pFile) == 0 && _fseeki64(pFile, 0, SEEK_END) == 0)
+		{
+			const __int64 length = _ftelli64(pFile);
+			if (length > 0 && length <= 16 * 1024 * 1024 && _fseeki64(pFile, 0, SEEK_SET) == 0)
+			{
+				generatedSettings.assign(static_cast<size_t>(length), '\0');
+				if (fread(&generatedSettings[0], 1, generatedSettings.size(), pFile) != generatedSettings.size())
+					generatedSettings.clear();
+			}
+		}
 		fclose(pFile);
-		pFile=NULL;
+		pFile = NULL;
+		DeleteFileA(settingsSnapshotPath);
+
+		std::string error;
+		if (generatedSettings.empty() ||
+			!pdw::ini::WriteMergedSettingsFile(szIniPathName, generatedSettings, error))
+		{
+			std::string debug = "PDW settings save was not applied: " +
+				(error.empty() ? "temporary settings generation failed." : error) + "\n";
+			OutputDebugStringA(debug.c_str());
+		}
 	}
 } // end of WritePrivateProfileSettings
 
