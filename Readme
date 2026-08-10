@@ -6,9 +6,9 @@
 
 A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
-![Version](https://img.shields.io/badge/version-4.5.0%20Beta-2E74B5)
+![Version](https://img.shields.io/badge/version-v5%202026%20Release-2E74B5)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
-![Architecture](https://img.shields.io/badge/architecture-Win32-555555)
+![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20Win32-555555)
 ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
 ![Build](https://img.shields.io/badge/build-CMake-064F8C)
 ![License](https://img.shields.io/badge/license-GPLv3-green)
@@ -50,6 +50,59 @@ PDW supports both established and modern receiver workflows:
 - SigMF recording and replay
 
 The original local audio and serial inputs remain available. Optional receiver packages are loaded only when selected.
+
+## Windows Architectures
+
+PDW is built from one source tree as two native applications:
+
+- **x64** is the primary build for modern 64-bit Windows, modern audio capture, RTL-TCP and matching 64-bit receiver libraries.
+- **Win32** remains supported for established 32-bit receiver libraries and legacy serial or slicer installations.
+
+Configuration and decoder behaviour are shared between the builds. Native DLLs must match the selected PDW architecture; a 32-bit DLL cannot be loaded by x64 PDW, and a 64-bit DLL cannot be loaded by Win32 PDW.
+
+## Install on Windows
+
+For most users, download and run **PDW-v5-2026-Release-Setup.exe**. One guided
+Setup contains both architectures, keeps the executable, `PDW.INI`, filters,
+receivers, WAV files and logs together in one PDW folder, creates normal
+Windows shortcuts, preserves operator settings during upgrades, and leaves
+user data intact during uninstall. Use **Settings > General > Backup / Restore**
+to move configuration from another PDW copy.
+
+The portable Win32 and x64 packages remain supported for existing deployments,
+recovery, and computers where software installation is restricted. They use
+the same application and preserve the established beside-the-EXE configuration
+behavior. See [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
+
+## Build on Windows
+
+Install Visual Studio 2022 Desktop development with C++, CMake, Perl and `tar`, then build the pinned dependencies and application for the required architecture:
+
+`CMakeLists.txt` is the only maintained project definition. Open the repository
+as a CMake project in Visual Studio; obsolete VC6 and hand-maintained VS2017
+solution files are deliberately not retained. See
+[`docs/REPOSITORY_AUDIT.md`](docs/REPOSITORY_AUDIT.md) for the file-by-file
+x64/Win32 boundary.
+
+Before any release build, run the repository gate. It checks current-version
+identity, both CI architectures, dependency-notice alignment, SQL safeguards,
+and the audited file boundary:
+
+```powershell
+.\scripts\audit-release.ps1
+```
+
+Binding compatibility and security requirements are in
+[`docs/PROJECT_RULES.md`](docs/PROJECT_RULES.md) and [`SECURITY.md`](SECURITY.md).
+
+```powershell
+.\scripts\build-dependencies.ps1 -Architecture x64
+cmake -S . -B out\build-x64 -A x64
+cmake --build out\build-x64 --config Release --parallel
+ctest --test-dir out\build-x64 -C Release --output-on-failure
+```
+
+For the legacy-compatible build, replace `x64` with `x86` in the dependency command and use `-A Win32` with `out\build-win32`.
 
 ## Key Features
 
@@ -179,7 +232,7 @@ PDW is being modernised conservatively.
 - Keep optional network features disabled by default
 - Store secrets outside configuration files
 - Protect privacy-sensitive decoded content
-- Maintain a portable native Windows application
+- Maintain one installable and portable native Windows application
 - Use reproducible, checksum-verified dependencies
 - Test compatibility before changing decoder behaviour
 
@@ -189,6 +242,9 @@ PDW is being modernised conservatively.
 
 | Version | Release Date | Highlights |
 | --- | --- | --- |
+| **PDW v5 2026 Release** | **10 August 2026** | First non-beta 2026 release with one guided Windows Setup for Win32 and x64, one co-located application/settings folder, retained portable and legacy operation, signed-release gates, and the complete v4.6.1 capability set. |
+| **4.6.1 Beta** | **10 August 2026** | Repository hygiene and enforceable dual-architecture release, legacy-compatibility, version-identity, dependency-review, SQL, and security gates. |
+| **4.6.0 Beta** | **10 August 2026** | Native x64 and Win32 builds, architecture-matched receiver validation, dual CI artifacts and architecture-specific portable packages while retaining legacy Win32 hardware support. |
 | **4.5.0 Beta** | **10 August 2026** | Unified decoded-message routing, MQTT, SQLite, MySQL/ODBC, Telnet JSON, Windows notifications, Delivery Health, INI preservation, optional FLEX reassembly and expanded compatibility tests. |
 | **4.1.0 Beta** | **10 August 2026** | Modern interface, Settings hub, themes, DPI improvements, RTL-TCP, direct RTL-SDR, WAV/SigMF recording and replay, diagnostics, calibration, Apprise, FTPS/SFTP and privacy-controlled publishing. |
 | **3.2b01** | **20 August 2016** | SSL support and related fixes for the SMTP email client. |

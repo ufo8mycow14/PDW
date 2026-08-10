@@ -1,6 +1,6 @@
 # Third-party components
 
-PDW's Win32 build links the following open-source components statically. The
+PDW's Win32 and x64 builds link the following open-source components statically. The
 build script downloads the official source archives, checks their SHA-256
 hashes before extraction, and installs a copy of each component's license with
 the generated dependency set.
@@ -25,7 +25,7 @@ Windows CNG for SFTP. The dependency build is defined in
 ## Optional receiver components
 
 Receiver components are separate optional programs/libraries kept below
-`Receivers`; they are not statically linked into `PDW v4.5.0 Beta.exe` and their absence
+`Receivers`; they are not statically linked into `PDW v5 2026 Release.exe` and their absence
 cannot prevent legacy PDW inputs from starting.
 
 | Component | Version | SHA-256 distributed binary/archive | License |
@@ -45,7 +45,7 @@ Users must verify the selected USB device before installing WinUSB.
 ## Optional external notification service
 
 The Apprise feature is an HTTPS client integration and does not link or package
-Apprise code in `PDW v4.5.0 Beta.exe`. The validated external deployment is Apprise API
+Apprise code in `PDW v5 2026 Release.exe`. The validated external deployment is Apprise API
 1.5.1 (MIT License) with Apprise 1.12.0 (BSD 2-Clause License). Operators host,
 secure, license, and update that service independently:
 

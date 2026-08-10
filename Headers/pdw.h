@@ -483,7 +483,7 @@ int  filter_addr(char addr_str[], char filter_str[]);
 
 // macros for easier readability...
 
-#define GETHINST( x )  ((HINSTANCE) GetWindowLong( x, GWL_HINSTANCE ))
+#define GETHINST( x )  (reinterpret_cast<HINSTANCE>(GetWindowLongPtr((x), GWLP_HINSTANCE)))
 
 // Windows function prototypes...
 
@@ -503,7 +503,7 @@ void BuildFilterString(char *temp_str, FILTER filter);
 void ChangeDataMode(HWND hWnd, int mode);
 
 VOID NEAR GoModalDialogBoxParam(HINSTANCE hInstance, LPCSTR lpszTemplate, HWND hWnd, DLGPROC lpDlgProc, LPARAM lParam);
-UINT CALLBACK CenterOpenDlgBox(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+UINT_PTR CALLBACK CenterOpenDlgBox(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 BOOL CenterWindow(HWND hWnd);
 
 BOOL FAR PASCAL AboutDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);

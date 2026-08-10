@@ -1,5 +1,107 @@
 # Changelog
 
+## PDW v5 2026 Release
+
+The first non-beta release of the modernized PDW line. It retains the complete
+legacy decoder, receiver, slicer, filter, audio, serial, display and output
+surface while introducing a guided Windows installation and upgrade path.
+
+### Added
+
+- One Windows Setup program containing architecture-matched Win32 and x64 PDW
+  application choices, with Win32 retained for legacy receiver libraries.
+- Guided installation, existing portable-folder detection, configuration and
+  filter migration, Start Menu and optional Desktop shortcuts, and safe
+  upgrade/uninstall behavior.
+- Release automation for dual-architecture installer inputs, installer audit,
+  Microsoft Defender scanning, Authenticode verification, and signing gates.
+
+### Compatibility and security
+
+- Portable use remains supported and uses the same executable and beside-the-
+  application configuration behavior as previous PDW versions.
+- Setup is per-user and does not require administrator rights. It does not move
+  credentials out of Windows Credential Manager or enable any network output.
+- Public release remains blocked until the application and Setup signatures
+  validate against a trusted publisher and the extracted installation passes
+  the current Microsoft Defender scan.
+
+## 4.6.1 Beta
+
+Maintenance release establishing enforceable repository and release rules for
+the dual-architecture PDW product. Decoder, protocol, slicer, serial, audio,
+receiver, driver, filter, and established output behavior are unchanged.
+
+### Added
+
+- Binding engineering and security policies requiring every release to retain
+  Win32/x86 beside x64 and preserve legacy scanner, slicer, driver, receiver,
+  and protocol paths.
+- A repository release audit that aligns canonical version, executable,
+  manifest, workflow artifacts, Readme, changelog, dependency notices, both CI
+  targets, prepared-statement SQL safeguards, and the audited file boundary.
+- A point-in-time dependency and advisory review for pinned OpenSSL 3.5.7,
+  curl 8.21.0, libssh2 1.11.1, Windows SQLite, and operator-managed MySQL ODBC.
+
+### Changed
+
+- Removed obsolete VC6/VS2017 project state, generated resource caches, a
+  duplicate v3.1 runtime archive, unused source variants, and unreferenced
+  bitmaps. CMake is now the only maintained project definition for x64 and
+  Win32.
+- Advanced all current product, About, resource, manifest, workflow, package,
+  branch, fork, and documentation identity to PDW v4.6.1 Beta.
+- Packaging and CI now run the release audit before producing an artifact.
+- Stabilized the main command bar's icon-and-label layout using the supported
+  Windows mixed-button toolbar styles so labels no longer clip into the message
+  column header during startup, resize, restore, or maximize.
+- Added a dedicated visible signal-quality percentage beside the Live Input
+  waveform, including compact-width presentation, instead of leaving the
+  quality value hidden behind the meter.
+
+### Compatibility and security
+
+- No Visual Basic source is present. Any future Visual Basic or runtime
+  introduction requires explicit supported-version, licensing, security, and
+  dual-architecture review.
+- SQLite and MySQL decoded-event fields remain bound parameters; table names
+  remain restricted identifiers. Optional outputs remain disabled by default.
+- No legacy decoder, protocol, slicer, driver, receiver, WinMM, serial, filter,
+  configuration, or delivery path was removed.
+
+## 4.6.0 Beta
+
+Dual-architecture follow-up to the merged 4.5 Beta release. The same decoder,
+settings, and output behavior is now built and tested for both x64 and Win32,
+while Win32 remains available for older receiver drivers and serial hardware.
+
+### Added
+
+- Native x64 Release builds, tests, CI artifacts, and portable packages beside
+  the existing Win32 equivalents.
+- Architecture checks for optional receiver DLLs, with clear diagnostics when
+  a 32-bit DLL is selected in x64 PDW or a 64-bit DLL is selected in Win32 PDW.
+- A maintained Windows architecture guide covering package choice, receiver
+  compatibility, and the architecture-neutral `rtl_tcp` path.
+
+### Changed
+
+- Removed pointer-width assumptions in shared UI, message, and signal-source
+  paths so the same source compiles cleanly for x64 and Win32.
+- Made CI and release packaging architecture-aware without removing any legacy
+  decoder, WinMM, serial, slicer, filter, or output path.
+- Centralized current executable naming and aligned product, resource,
+  manifest, workflow artifact, branch, and package identity to PDW v4.6.0 Beta.
+### Compatibility
+
+- Win32 remains the recommended build for legacy x86-only receiver DLLs and
+  hardware drivers. The x64 package intentionally excludes x86-only receiver
+  binaries and DOS-era VxD support assets.
+- `rtl_tcp` remains architecture-neutral because PDW communicates with it over
+  TCP rather than loading its receiver driver into the PDW process.
+- No decoder algorithm, protocol default, filter boundary, or optional-output
+  default changed for this release.
+
 ## 4.5.0 Beta
 
 Compatibility-first integration release. The v4.1 layout and legacy decoder,

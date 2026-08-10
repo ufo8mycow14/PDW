@@ -3,6 +3,21 @@
 build/
 out/
 CMakePresets.json.user
+
+# Visual Studio-generated user state and resource-editor caches. The
+# repository uses CMake as its only maintained project definition.
+*.aps
+*.clw
+*.ncb
+*.opt
+*.plg
+*.sdf
+*.suo
+*.user
+*.VC.db
+*.VC.VC.opendb
+ipch/
+
 /FileTransfer.log
 /Apprise.log
 /Published/

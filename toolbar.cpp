@@ -50,7 +50,9 @@ namespace
 
 	HIMAGELIST g_images = NULL;
 	HWND g_signalMeter = NULL;
-	bool g_compact = false;
+	// -1 forces the first layout pass to apply a valid text/icon style to every
+	// button. A false default skipped that pass on normal-width startup.
+	int g_compact = -1;
 
 	const ToolbarAction* FindAction(UINT command)
 	{
@@ -192,8 +194,8 @@ namespace
 
 	void SetCompactMode(HWND toolbar, bool compact)
 	{
-		if (g_compact == compact) return;
-		g_compact = compact;
+		if (g_compact == static_cast<int>(compact)) return;
+		g_compact = compact ? 1 : 0;
 		for (int index = 0; index < static_cast<int>(_countof(kActions)); ++index)
 		{
 			TBBUTTONINFOA info;
@@ -236,6 +238,7 @@ HWND ShowMakeToolBar(HWND parent_hwnd, HINSTANCE)
 
 	HWND toolbar = CreateWindowExA(0, TOOLBARCLASSNAMEA, NULL,
 		WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS |
+		TBSTYLE_LIST |
 		CCS_TOP | CCS_NODIVIDER | CCS_NORESIZE | CCS_NOPARENTALIGN,
 		0, 0, 0, 0, parent_hwnd,
 		reinterpret_cast<HMENU>(IDW_TOOL_BAR), GetModuleHandle(NULL), NULL);

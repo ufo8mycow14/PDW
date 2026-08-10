@@ -38,7 +38,7 @@ struct RtlSdrDeviceInfo
 	RtlSdrDeviceInfo();
 };
 
-// Receiver packages live below Receivers beside PDW v4.5.0 Beta.exe. Keeping the optional
+// Receiver packages live below Receivers beside the PDW executable. Keeping the optional
 // native files there prevents them from changing legacy application startup.
 std::string GetReceiverRootDirectory();
 
@@ -58,8 +58,8 @@ std::vector<RtlSdrDeviceInfo> EnumerateRtlSdrDevices(
 	std::string& error);
 
 // Imports the selected primary DLL and neighbouring DLL dependencies into a
-// portable custom package. Only a 32-bit library implementing the librtlsdr
-// receive API is accepted.
+// portable custom package. The library must match the running PDW architecture
+// and implement the librtlsdr receive API.
 bool ImportRtlReceiverPackage(const std::string& primaryLibraryPath,
 	const std::string& requestedDisplayName,
 	ReceiverPackage& importedPackage,

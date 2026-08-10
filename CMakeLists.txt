@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.20)
 # and build system.
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/Headers/version.h" PDW_VERSION_DEFINES
   REGEX "^#define PDW_VERSION_(MAJOR|MINOR|PATCH) [0-9]+$")
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/Headers/version.h" PDW_DISPLAY_DEFINE
+  REGEX "^#define PDW_DISPLAY_VERSION \"[^\"]+\"$")
 
 foreach(PART MAJOR MINOR PATCH)
   foreach(VERSION_DEFINE IN LISTS PDW_VERSION_DEFINES)
@@ -17,9 +19,11 @@ endforeach()
 
 if(NOT DEFINED PDW_VERSION_MAJOR OR
    NOT DEFINED PDW_VERSION_MINOR OR
-   NOT DEFINED PDW_VERSION_PATCH)
+   NOT DEFINED PDW_VERSION_PATCH OR
+   NOT PDW_DISPLAY_DEFINE MATCHES "^#define PDW_DISPLAY_VERSION \"([^\"]+)\"$")
   message(FATAL_ERROR "Unable to read the PDW version from Headers/version.h")
 endif()
+set(PDW_DISPLAY_VERSION "${CMAKE_MATCH_1}")
 
 project(PDW
   VERSION "${PDW_VERSION_MAJOR}.${PDW_VERSION_MINOR}.${PDW_VERSION_PATCH}"
@@ -33,10 +37,12 @@ if(NOT MSVC)
   message(FATAL_ERROR "PDW currently requires the Microsoft Visual C++ toolchain.")
 endif()
 
-# The legacy slicer/serial integration currently requires an x86 build.
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-  message(FATAL_ERROR "PDW must be built as 32-bit (Win32). Use -A Win32 with CMake.")
+  set(PDW_TARGET_ARCH "x64")
+else()
+  set(PDW_TARGET_ARCH "x86")
 endif()
+message(STATUS "Configuring PDW ${PROJECT_VERSION} for ${PDW_TARGET_ARCH}")
 
 set(PDW_GFXS)
 set(PDW_INCLUDES)
@@ -46,14 +52,14 @@ add_subdirectory(GFX)
 add_subdirectory(Headers)
 add_subdirectory(utils)
 
-set(PDW_DEPENDENCY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/out/dependencies/x86"
+set(PDW_DEPENDENCY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/out/dependencies/${PDW_TARGET_ARCH}"
   CACHE PATH "Path to the dependency set built by scripts/build-dependencies.ps1")
 
 if(NOT EXISTS "${PDW_DEPENDENCY_ROOT}/include/openssl/ssl.h" OR
    NOT EXISTS "${PDW_DEPENDENCY_ROOT}/include/curl/curl.h")
   message(FATAL_ERROR
     "PDW dependencies were not found under ${PDW_DEPENDENCY_ROOT}. "
-    "Run scripts/build-dependencies.ps1 before configuring PDW.")
+    "Run scripts/build-dependencies.ps1 -Architecture ${PDW_TARGET_ARCH} before configuring PDW.")
 endif()
 
 file(STRINGS "${PDW_DEPENDENCY_ROOT}/include/openssl/opensslv.h" PDW_OPENSSL_VERSION_LINE
@@ -87,8 +93,6 @@ find_library(PDW_OPENSSL_SSL_LIBRARY NAMES libssl ssl
   PATHS "${PDW_DEPENDENCY_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
 find_library(PDW_OPENSSL_CRYPTO_LIBRARY NAMES libcrypto crypto
   PATHS "${PDW_DEPENDENCY_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
-
-list(APPEND PDW_INCLUDES resrc1.h)
 
 list(APPEND PDW_SRCS
   Flex.cpp
@@ -136,7 +140,7 @@ set_source_files_properties(
   PROPERTIES COMPILE_OPTIONS "/W4;/WX"
 )
 
-set_target_properties(PDW PROPERTIES OUTPUT_NAME "PDW v4.5.0 Beta")
+set_target_properties(PDW PROPERTIES OUTPUT_NAME "${PDW_DISPLAY_VERSION}")
 
 target_include_directories(PDW PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"

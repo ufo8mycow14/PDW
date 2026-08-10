@@ -16,7 +16,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 
 | Area | Current state | Next gate |
 | --- | --- | --- |
-| Win32 build | Local Release build passes all 24 tests; previously published fresh-clone build passed its 18-test checkpoint | Keep CI green and verify the expanded suite after push |
+| Win32 build | PDW v5 2026 Release builds locally and passes all 24 tests | Keep the 24-test suite green in dual-architecture CI |
 | Windows interface | Approved 2026 command bar, live meter, modeless 10-page Settings Center, encrypted configuration backup/restore, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
 | Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
 | Windows audio | WinMM and WASAPI captured from the real default device on the development machine | Live device-loss, hot-plug, and broader device-matrix acceptance |
@@ -29,15 +29,16 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Delivery health | Content-free observer, dialog, history, and alerts complete at `682dfd2` | Runtime visual acceptance across themes and DPI |
 | Settings compatibility | Unknown INI keys, sections, comments, BOM, and line endings preserved at `98ff7ad` | Extend round-trip fixtures with future settings |
 | FLEX fragments | Additive non-group K/F/C alpha reassembly complete at `77e23bd`; original fragments remain authoritative | Recording-backed live acceptance; Group Mode remains legacy |
-| Release packaging | Prior v4.5 folder/ZIP audited; current UI executable smoke-tested in the preserved Desktop test installation; v4.1 package retained | Commit/rebuild clean portable package, then complete manual acceptance |
-| x64 | Not started | Isolate legacy serial and slicer dependencies first |
+| Repository hygiene | File-by-file x64/Win32 audit complete; obsolete VC6/VS2017 state, caches, duplicate archive, and unused code/assets removed; CMake is authoritative | Enforce `scripts/audit-release.ps1` and repeat the review when adding native dependencies or release-only assets |
+| Release packaging | One guided `PDW-v5-2026-Release-Setup.exe` selects x64 or Win32, keeps application and mutable settings together, preserves user files during upgrades/uninstall, and passes isolated dual-architecture install/upgrade/uninstall smoke | Apply trusted Authenticode signing before public release; retain portable packages as the no-install alternative |
+| x64 | PDW v5 2026 Release builds locally, passes all 24 tests, and passes metadata, installer, UI, and audio smoke; receiver DLL architecture is validated before load | Complete PR CI and physical receiver acceptance while keeping Win32 available |
 
 ## Safe integration sequence
 
-The active release branch is `pdw-v4.5.0-beta`. The v4.1 interface, defaults,
-and legacy behavior remain authoritative. The `spiral` remote is fetch-only;
-work is selectively adopted and independently tested rather than wholesale
-merged.
+The active release branch is `pdw-v5-2026-release`. The approved interface,
+defaults, and legacy behavior remain authoritative. The `spiral` remote is
+fetch-only; work is selectively adopted and independently tested rather than
+wholesale merged.
 
 | Order | Stage | State |
 | --- | --- | --- |
@@ -47,8 +48,11 @@ merged.
 | 4 | Content-free Delivery Health observer and UI | Complete at `682dfd2` |
 | 5 | INI preservation and compatibility verification | Complete at `98ff7ad` |
 | 6 | Optional FLEX fragment assembly with guaranteed legacy fallback | Complete at `77e23bd`; disabled by default |
-| 7 | PDW v4.5.0 Beta metadata, package, fork, CI, and artifact alignment | Complete; draft PR #5 |
-| 8 | Image-approved 2026 Windows navigation, live input, and Settings Center | Implemented locally; 100% Light/Dark and compact-size smoke passed |
+| 7 | PDW v4.5.0 Beta metadata, package, fork, CI, and artifact alignment | Complete; PR #5 merged into fork `master` |
+| 8 | Image-approved 2026 Windows navigation, live input, and Settings Center | Complete in fork `master`; 100% Light/Dark and compact-size smoke passed |
+| 9 | PDW v4.6.0 Beta native x64 plus retained Win32 release alignment | Clean local dual gates and package audit complete; draft PR #6 opened for CI/review |
+| 10 | PDW v4.6.1 Beta repository, security, legacy-retention, and release-identity enforcement | Local audit, clean dual builds/tests/smoke, metadata, About, UI and package gates pass; draft PR #7 dual CI and CodeQL checks pass |
+| 11 | PDW v5 2026 Release identity and guided dual-architecture Windows installer | Implemented locally; dual install/upgrade/uninstall smoke and Defender scan pass; trusted Authenticode signing remains the public-release gate |
 
 Delivery Health stores no pager addresses or decoded text and cannot alter a
 delivery result. FLEX shadow assembly cannot suppress a legacy fragment on
@@ -57,22 +61,25 @@ not changed without representative replay evidence.
 
 ## Milestone 1 - Release-state alignment
 
-Status: complete for local packaging and draft-fork publication
+Status: PDW v5 2026 Release identity and guided installer implemented locally;
+dual build, test, audio, UI, and isolated installer gates pass while trusted
+Authenticode signing and public publication remain separate states
 
 - Align `Headers/version.h`, executable output name, About/resource metadata,
   changelog, documentation, workflow artifact, branch, and package filename to
-  **PDW v4.5.0 Beta**.
+  **PDW v5 2026 Release**.
 - Keep Git, local build output, portable package, test installation, pushed
   branch, pull request, CI result, and release artifact as separate states.
-- Generate a portable package containing only required runtime files and
-  reviewed documentation, with no secrets, traffic, queues, logs, or
-  operator-specific settings.
+- Generate one guided Windows installer containing the architecture-matched
+  x64 and Win32 applications, plus portable packages for users who prefer the
+  established folder-based operation. Exclude secrets, traffic, queues, logs,
+  and operator-specific settings from every artifact.
 - Retain the prior v4.1 package as a rollback reference rather than overwriting
   it.
 
 Completion gate: a fresh clone builds the intended version, all tests pass,
-and source, executable metadata, package contents, GitHub branch, and artifact
-name agree.
+source and executable metadata agree, installation and portable operation both
+pass, and the public installer is Authenticode-signed by the approved publisher.
 
 ## Milestone 2 - Live-radio acceptance
 
@@ -168,7 +175,7 @@ display change, and repeated maximize/restore cycles. Keyboard-only, High
 Contrast, 125-200% DPI, and physical-radio acceptance remain open in
 `docs/WINDOWS_UI_ACCEPTANCE.md`.
 
-## Milestone 6 - Maintainability and x64 evaluation
+## Milestone 6 - Maintainability and dual-architecture support
 
 Priority: after regression coverage
 
@@ -176,14 +183,40 @@ Priority: after regression coverage
 - Continue separating capture, decoder, formatting, output, and presentation
   code behind tested interfaces.
 - Add content-safe diagnostics that exclude decoded text by default.
-- Isolate legacy serial/slicer requirements, then evaluate an x64 build while
-  keeping Win32 available for required hardware.
+- Keep native x64 and Win32 builds warning-clean at shared pointer and handle
+  boundaries, while retaining Win32 for required legacy hardware.
+- Validate in-process receiver DLL architecture before load and keep `rtl_tcp`
+  available as an architecture-neutral receiver path.
+- Keep `docs/REPOSITORY_AUDIT.md` aligned with the CMake targets and portable
+  package rules; do not restore generated IDE project/user files.
+
+## Milestone 7 - Guided Windows installation
+
+Priority: current release
+
+- Build one Setup executable containing the x64 and Win32 PDW applications.
+- Default to x64 on 64-bit Windows while retaining a clear Win32 compatibility
+  choice for legacy x86 receiver DLLs and older hardware.
+- Keep `PDW.INI`, filters, receivers, WAV files, logs, and the executable in
+  the selected PDW folder; use in-application Backup / Restore to move settings
+  from another copy.
+- Preserve `PDW.INI`, filters, receiver additions, WAV files, logs, and the
+  same-user Windows Credential Manager records during upgrade and uninstall.
+- Keep the folder-based portable packages supported and behaviorally identical.
+- Require Authenticode signing and a clean Microsoft Defender scan before the
+  installer is promoted as the public stable release.
+
+Current evidence: Inno Setup builds the single v5 installer; isolated x64 and
+Win32 install, settings co-location, upgrade-preservation, and uninstall-preservation
+smoke passes. The application and installer scan clean with Microsoft Defender.
+The candidate is not yet a public release because no trusted publisher
+certificate has been configured.
 
 ## Release gates
 
 Every beta or stable release requires:
 
-1. Clean Win32 Release build and all automated tests passing.
+1. Clean x64 and Win32 Release builds and all automated tests passing.
 2. Startup, shutdown, configuration round-trip, and Windows auto-start checks.
 3. Live input smoke testing appropriate to the release scope.
 4. Decoder regression evidence for every changed decoder boundary.
@@ -192,4 +225,7 @@ Every beta or stable release requires:
 7. Artifact review excluding credentials, private traffic, logs, queues, and
    operator-specific configuration.
 8. Matching source version, executable metadata, documentation, branch/tag,
-   package, and workflow artifact filename.
+   package, installer, and workflow artifact filename.
+9. Trusted Authenticode signatures on the public installer and installed
+   executables, followed by Microsoft Defender scanning and clean-install
+   validation on supported Windows architectures.
