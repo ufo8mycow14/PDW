@@ -1,213 +1,268 @@
-# PDW Paging Decoder
+<div align="center">
 
-PDW is a native Windows decoder for POCSAG, FLEX, ACARS, MOBITEX, and
-ERMES signals. It accepts input from a supported serial interface or a Windows
-audio capture device and provides monitoring, filtering, logging, alerts, and
-statistics.
+# PDW
 
-PDW was originally developed with Microsoft Visual C++ 6.0. The active build
-uses CMake and the Microsoft Visual C++ toolchain. The decoder remains a
-32-bit application while its legacy slicer and serial integration are being
-preserved.
+### Paging Decoder for Windows
 
-## Development status
+A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
-Version 4.5.0 Beta is the compatibility-first integration release. It keeps
-the v4.1 layout and every legacy decoder/input/output path while adding
-disabled-by-default modern inputs, diagnostics, publishing, data outputs,
-delivery health, settings preservation, and additive FLEX reassembly. See
-[CHANGELOG.md](CHANGELOG.md) and
-[docs/MODERNIZATION.md](docs/MODERNIZATION.md). Developers and future work
-sessions should begin with [HANDOVER.md](HANDOVER.md); the concise milestone
-plan is maintained in [docs/ROADMAP.md](docs/ROADMAP.md).
+![Version](https://img.shields.io/badge/version-4.5.0%20Beta-2E74B5)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
+![Architecture](https://img.shields.io/badge/architecture-Win32-555555)
+![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
+![Build](https://img.shields.io/badge/build-CMake-064F8C)
+![License](https://img.shields.io/badge/license-GPLv3-green)
 
-## Build on Windows
+</div>
 
-Prerequisites:
+---
 
-- Windows 10 or Windows 11
-- Visual Studio 2022 with **Desktop development with C++**
-- A current Windows SDK
-- CMake 3.20 or newer
-- Perl 5 (Strawberry Perl or ActivePerl)
-- PowerShell 7 or Windows PowerShell 5.1
+## About PDW
 
-From a Developer PowerShell for Visual Studio:
+PDW—Paging Decoder for Windows—is a native Windows application for receiving, decoding, displaying, filtering, logging and securely routing supported digital radio messages.
 
-```powershell
-.\scripts\build-dependencies.ps1
-cmake -S . -B build -G "Visual Studio 17 2022" -A Win32
-cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure
-```
+Originally developed by Jason Petty and Peter Hunt, PDW became open source in 2013. Current development modernises the application while preserving its established decoding behaviour, familiar workflows and compatibility with legacy receiving equipment.
 
-The dependency script downloads official source archives, verifies their
-SHA-256 checksums, and builds the pinned Win32 static dependencies under
-`out\dependencies\x86`. It currently pins OpenSSL 3.5.7, curl 8.21.0, and
-libssh2 1.11.1. The executable is written to
-`build\Release\PDW v4.5.0 Beta.exe`. GitHub
-Actions performs the same dependency and Win32 Release build for every push
-and pull request to `master`.
+> [!IMPORTANT]
+> PDW should only be used to receive or process transmissions where monitoring is lawful and authorised.
 
-## Name separate PDW instances
+## Supported Protocols
 
-PDW supports an optional instance name in `pdw.ini`. This is useful when
-separate PDW folders monitor different receivers or paging systems.
+| Protocol | Supported Rates |
+| --- | --- |
+| **POCSAG** | 512, 1200 and 2400 baud |
+| **FLEX** | 1600, 3200 and 6400 baud |
+| **ERMES** | 6250 baud |
+| **ACARS** | Aircraft messages |
+| **MOBITEX** | 8000 baud |
 
-```ini
-[PDW]
-WindowTitle=North Dispatch
-```
+## Signal Sources
 
-After PDW restarts, the main window and system-tray tooltip display
-`North Dispatch - PDW v4.5.0 Beta`. The value is retained when PDW saves its
-settings. PDW still permits only one running instance per application folder;
-use a separate folder and configuration for each concurrent instance.
+PDW supports both established and modern receiver workflows:
 
-## Start PDW with Windows
+- Windows audio capture
+- Legacy serial and slicer interfaces
+- RS232 input
+- Reconnecting RTL-TCP receivers
+- Direct RTL-SDR USB receivers
+- Existing `.rec` recordings
+- WAV signal recording and replay
+- SigMF recording and replay
 
-Open **Settings > Appearance and startup** and select **Start PDW with
-Windows** to launch the current PDW installation automatically when you sign
-in. Clear the same checkbox to disable it. Automatic launches wait five
-seconds to allow Windows and connected devices to settle; opening PDW
-manually is not delayed.
+The original local audio and serial inputs remain available. Optional receiver packages are loaded only when selected.
 
-## Publish files by FTP, FTPS, or SFTP
+## Key Features
 
-Open **Settings > Connections and automation > File transfer** to select one or more files for continuous
-upload to a hosting account. PDW supports FTP, explicit FTPS, implicit FTPS,
-and password-authenticated SFTP. Server details, the remote folder, selected
-files, and an interval in seconds can be saved. Transfers run in the
-background, and `FileTransfer.log` records their results.
+### Decoding and Monitoring
 
-The hosting password is stored in Windows Credential Manager rather than
-`pdw.ini`. FTPS verifies the server certificate against the Windows trust
-store. SFTP requires the hosting provider's SHA-256 SSH host-key fingerprint,
-which protects against connecting to an impersonating server. Classic FTP is
-not encrypted and should be used only when the hosting provider offers no
-secure option. See [docs/FTP_UPLOAD.md](docs/FTP_UPLOAD.md) for setup and
-security details.
+- Native POCSAG, FLEX, ERMES, ACARS and MOBITEX decoding
+- Separate monitored and filtered message panes
+- Address, protocol and message-text filtering
+- Exact-text and multi-part text conditions
+- Duplicate-message detection
+- Monitor-only and rejected-message handling
+- Configurable message columns and colours
+- Statistics and reception-quality reporting
 
-## Send filtered messages through Apprise
+### Signal Diagnostics
 
-Open **Settings > Connections and automation > Push notifications** to configure an authenticated HTTPS Apprise API and
-select **Enable Apprise**. Every message that reaches PDW's filtered-message
-output is queued in the background; rejected, duplicate, monitor-only, and
-unfiltered messages are not sent. SMTP/email remains independently enabled
-under its existing menu option.
+- Live waveform display
+- Signal-level and noise measurements
+- Clipping detection
+- FLEX eye and phase-error information
+- Reception-quality history
+- Adjustable NFM bandwidth
+- WAV and SigMF diagnostic recordings
+- Repeatable signal replay
+- Recording-based calibration
+- Automatic restoration of the previous live source after replay
 
-The endpoint, destination URLs, and API credentials are stored in Windows
-Credential Manager and masked in the dialog. PDW does not bundle Python or
-silently select a hosted notification service. See
-[docs/APPRISE_NOTIFICATIONS.md](docs/APPRISE_NOTIFICATIONS.md) for architecture,
-server hardening, privacy behaviour, and ntfy/Pushover phone-test steps.
+### Filters and Alerts
 
-## Radio input, signal recording, and replay
+- Address and wildcard filters
+- Text and exact-text matching
+- Multiple required text fragments
+- Filter labels and colours
+- Filter hit counters
+- Separate per-filter output files
+- WAV alerts
+- Configured external commands
+- SMTP email
+- Filtered-only Apprise notifications
 
-Open **Settings > Decoder and input > Radio and replay**. The original local
-audio/serial choice remains available and still tries WinMM first; WASAPI is an
-automatic fallback when that legacy audio format cannot be opened. The same
-dialog can select a reconnecting `rtl_tcp` receiver or direct RTL-SDR USB.
-The distribution keeps its standard RTL2832U/V3/V4/V4L support files together
-under `Receivers`, lists connected devices, and can import another compatible
-32-bit receiver DLL package without removing the side-by-side legacy fallback.
+### Secure File Transfer
 
-Use **Record** to save the normalized signal as 16-bit mono WAV or SigMF
-`rf32_le`. Use **Replay** to send a WAV or SigMF recording through PDW's normal
-protocol routines. Replay temporarily suspends the current live source and
-restores that exact audio, radio, or serial source when replay finishes or is
-stopped. Existing `.rec` recording/playback remains unchanged.
+PDW can continuously transfer selected output files using:
 
-The dialog also provides adjustable NFM bandwidth, live waveform and quality
-history, signal/noise/clipping/eye metrics, FLEX phase error totals, and a
-recording calibration action. Calibration compares all custom threshold,
-centering and resync combinations and applies a suggestion only after user
-confirmation; the original receiver presets are retained.
+- FTP
+- Explicit FTPS
+- Implicit FTPS
+- Password-authenticated SFTP
 
-## Optionally assemble FLEX alpha fragments
+Security features include:
 
-Open **Settings > Display and behavior > Screen and columns** and select
-**Also show assembled FLEX alpha copy (original fragments remain)**. The option
-is off by default. PDW continues to display, filter, log, and route every
-legacy fragment first; after a complete, strictly ordered non-group alpha or
-secure chain is received, it adds one clearly marked assembled copy. Missing,
-late, out-of-order, or excess chains produce no extra copy and cannot remove a
-legacy fragment. FLEX Group Mode remains on its established legacy path. See
-[docs/FLEX_FRAGMENTS.md](docs/FLEX_FRAGMENTS.md) for the exact sequence and
-fallback guarantees.
+- Windows-trusted TLS certificate validation
+- Required SHA-256 SFTP host-key verification
+- Windows Credential Manager password storage
+- Background file snapshots
+- Sanitised transfer logs
+- Configurable upload intervals
 
-## Publish decoded messages to a website or webhook
+### Web Publishing
 
-Open **Settings > Connections and automation > Publish to web**. Publishing is
-off by default and cannot be enabled until the operator acknowledges that they
-must check permissions, privacy obligations, radio laws, and publication laws
-in their own country or jurisdiction.
+PDW can generate:
 
-PDW can maintain `messages.json`, `messages.jsonl`, `messages.rss`,
-`messages.atom`, and a responsive `index.html` in a chosen folder. Those files
-can be uploaded with PDW's existing FTP/FTPS/SFTP feature. PDW can also deliver
-each event to a generic HTTPS JSON webhook with optional bearer-token and HMAC
-authentication stored in Windows Credential Manager. Address masking, source
-aliasing, and message omission modify only the published copy; the decoded
-message shown and logged by PDW is not changed. Delivery is asynchronous, can
-be paused or rate-limited, retries with backoff, and retains repeated failures
-under `PublishQueue\DeadLetter`.
+- JSON
+- JSONL
+- RSS
+- Atom
+- Responsive HTML
 
-See [docs/PUBLISHING.md](docs/PUBLISHING.md) and
-[docs/SIGNAL_SOURCES.md](docs/SIGNAL_SOURCES.md) for setup and safety details.
+It can also deliver HTTPS webhooks with:
 
-## Optional data outputs
+- Bearer-token authentication
+- HMAC signatures
+- Address masking
+- Message omission
+- Source aliases
+- Filtered-only routing
+- Rate limiting
+- Retry with backoff
+- Persistent queues
+- Dead-letter retention
 
-Open **Settings > Connections and automation > Data outputs** to route the same
-immutable decoded-event copy to MQTT, a local SQLite database, MySQL through a
-Windows ODBC DSN, a loopback-first read-only Telnet JSON stream, or native
-Windows notifications. These adapters are disabled by default and do not
-replace email, Apprise, FTP, website files, webhooks, or any legacy decoder
-path. Filtered-only routing, address masking, and message omission are the
-safe defaults, and enabling the group requires the same country/jurisdiction
-responsibility acknowledgement.
+Publishing is disabled by default and requires an operator acknowledgement.
 
-MQTT uses the pinned libcurl transport (QoS 0, no retain), SQLite uses the
-Windows system component with prepared statements, MySQL relies on the
-operator's current ODBC driver and DSN TLS policy, and remote Telnet requires
-an explicit unencrypted-access opt-in. Passwords stay in Windows Credential
-Manager. See [docs/DATA_OUTPUTS.md](docs/DATA_OUTPUTS.md) for setup, limitations,
-and test behaviour.
+### Optional Data Outputs
 
-Open **Output > Delivery Health** for content-free success/failure/drop counts,
-recent sanitized operational history, and optional consecutive-failure alerts.
-This observer stores no pager address or message text and cannot change whether
-an output succeeds, retries, or fails.
+PDW 4.5 Beta adds disabled-by-default outputs for:
 
-## Build the portable release folder
+- MQTT
+- SQLite
+- MySQL through Windows ODBC
+- Loopback-first Telnet JSON
+- Native Windows notifications
 
-After a clean Release build and successful CTest run, execute
-`.\scripts\package-release.ps1`. It validates the canonical version and binary
-metadata, requires a clean Git tree, rejects generated/private runtime files,
-and creates `PDW-4.5.0-Beta` plus `PDW-4.5.0-Beta-Win32.zip` beside the source
-checkout. The prior v4.1 package is not overwritten.
+These destinations receive an immutable copy after PDW’s established filtering and deduplication boundary. They do not replace existing display, logging, SMTP, Apprise, transfer or publishing features.
 
-## Repository layout
+### Delivery Health
 
-- `PDW.cpp` and protocol-specific `.cpp` files contain the application and
-  decoders.
-- `Headers/` contains application headers and the canonical version metadata.
-- `utils/` contains serial, notification, SMTP, and supporting code.
-- `GFX/` and `Rsrc.rc` contain the native Windows resources.
-- `scripts/` contains the reproducible third-party dependency build.
-- `packaging/` contains sanitized disabled-by-default release configuration.
-- `docs/` contains operator and modernization guidance.
+Delivery Health provides:
 
-Third-party component versions, source locations, checksums, and licenses are
-listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- Success counters
+- Failure counters
+- Dropped-message counters
+- Sanitised operational history
+- Consecutive-failure alerts
+- Optional taskbar and sound notifications
 
-## License
+Delivery Health never stores pager addresses or decoded message text.
 
-Copyright (c) 2001-2004 Jason Petty
+### FLEX Fragment Reassembly
 
-Copyright (c) 2004-2010 Peter Hunt
+PDW can optionally add one clearly marked assembled copy after receiving a complete FLEX alpha-fragment chain.
 
-Open sourced in 2013 under the GNU General Public License, version 3 or later.
-See [License](License).
+- Original fragments are always processed first
+- The feature is disabled by default
+- Missing or out-of-order fragments produce no assembled copy
+- Timeouts cannot suppress original messages
+- Capacity limits cannot suppress original messages
+- FLEX Group Mode remains on its established legacy path
 
-Project site and discussion forum: <https://www.discriminator.nl/pdw/>
+## Modernisation Principles
+
+PDW is being modernised conservatively.
+
+- Preserve proven decoder behaviour
+- Keep legacy inputs and outputs available
+- Add new features without replacing established paths
+- Keep optional network features disabled by default
+- Store secrets outside configuration files
+- Protect privacy-sensitive decoded content
+- Maintain a portable native Windows application
+- Use reproducible, checksum-verified dependencies
+- Test compatibility before changing decoder behaviour
+
+## Release History
+
+### Current Generation
+
+| Version | Release Date | Highlights |
+| --- | --- | --- |
+| **4.5.0 Beta** | **10 August 2026** | Unified decoded-message routing, MQTT, SQLite, MySQL/ODBC, Telnet JSON, Windows notifications, Delivery Health, INI preservation, optional FLEX reassembly and expanded compatibility tests. |
+| **4.1.0 Beta** | **10 August 2026** | Modern interface, Settings hub, themes, DPI improvements, RTL-TCP, direct RTL-SDR, WAV/SigMF recording and replay, diagnostics, calibration, Apprise, FTPS/SFTP and privacy-controlled publishing. |
+| **3.2b01** | **20 August 2016** | SSL support and related fixes for the SMTP email client. |
+| **3.12** | **28 July 2013** | Stable open-source release with updated build support and filter, POCSAG and MOBITEX safety fixes. |
+| **3.1** | **26 September 2010** | Final Peter Hunt release, including MOBITEX soundcard and duplicate-message improvements. |
+
+<details>
+<summary><strong>Earlier release history</strong></summary>
+
+<br>
+
+| Version | Release Date | Main Changes |
+| --- | --- | --- |
+| **3.0** | **10 August 2010** | RS232 input, automatic polarity detection, visible RX Quality and ERMES corrections. |
+| **2.60** | **24 March 2010** | Filter improvements, custom SMTP ports, logfile controls and command-file memory fix. |
+| **2.53** | **11 January 2009** | Improved filter searching and keyboard operation; ERMES, statistics and text-selection fixes. |
+| **2.52** | **12 October 2008** | Additional date format, filtered-pane duplicate checking and FLEX group-call fixes. |
+| **2.51** | **16 August 2008** | MOBITEX Base-ID correction, copying improvements and message-only duplicate checking. |
+| **2.5** | **19 July 2008** | Major MOBITEX update covering MANs, data types, packets, sweep frames and Base IDs. |
+| **2.4** | **16 March 2008** | Configurable columns, improved soundcard handling, command support and FLEX fragment indicators. |
+| **2.3** | **19 December 2007** | POCSAG, FLEX and filter fixes; improved navigation, scrolling and serial-driver recovery. |
+| **2.2** | **23 August 2007** | Duplicate-filter detection, filter colours and multiple text conditions using `&`. |
+| **2.16** | **1 February 2007** | Minimise-to-system-tray and automatic restoration for selected messages. |
+| **2.15** | **11 January 2007** | SMTP reliability, character sets, WAV priorities, filtered-only display and pane switching. |
+| **2.14** | **22 June 2006** | Soundcard selection, title-bar information, grouped-message spacing and multiple-filter editing. |
+| **2.13** | **27 August 2005** | Updated slicer driver, filter searching and resolution-aware filter management. |
+| **2.12** | **7 March 2005** | Exact-text filtering, multiple email recipients and email subject/body controls. |
+| **2.11** | **20 January 2005** | POCSAG and MOBITEX fixes plus address-and-text-specific WAV alerts. |
+| **2.1** | **30 December 2004** | Duplicate blocking, wildcard WAV alerts, text rejection, FlexTIME and filter improvements. |
+| **2.0** | **10 November 2004** | Windows 2000/XP slicer support, integrated filter management and ACARS improvements. |
+
+</details>
+
+## Security and Privacy
+
+PDW messages may contain personal, operational or otherwise sensitive information.
+
+Operators are responsible for:
+
+- Confirming that reception is lawful
+- Protecting stored logfiles
+- Limiting message retention
+- Securing notification destinations
+- Controlling access to published files
+- Verifying webhook recipients
+- Avoiding unnecessary message content on phone lock screens
+- Confirming local privacy and radio-law requirements
+
+Never commit captured traffic, credentials, private logs, recordings, databases, queues or operator-specific configuration to a public repository.
+
+## Credits
+
+- **Jason Petty** — original PDW development, 2001–2004
+- **Peter Hunt** — PDW development, 2004–2010
+- **Open-source contributors** — maintenance and enhancements from 2013 onward
+- **Kieran O'Rourke** — 2026
+- **spiralshapeturtl** - 2026 
+
+## Licence
+
+PDW is distributed under the GNU General Public License, version 3 or later.
+
+See the repository’s `License` file for the complete terms.
+
+## Project Links
+
+- [Official PDW website](https://www.discriminator.nl/pdw/index-en.html)
+- [Original PDW repository](https://github.com/Discriminator/PDW)
+- [PDW 3.12 release](https://github.com/Discriminator/PDW/releases/tag/3.12)
+
+---
+
+<div align="center">
+
+**Preserving PDW’s proven decoding while preparing it for modern Windows and modern receivers.**
+
+</div>
