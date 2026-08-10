@@ -29,8 +29,8 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Delivery health | Content-free observer, dialog, history, and alerts complete at `682dfd2` | Runtime visual acceptance across themes and DPI |
 | Settings compatibility | Unknown INI keys, sections, comments, BOM, and line endings preserved at `98ff7ad` | Extend round-trip fixtures with future settings |
 | FLEX fragments | Additive non-group K/F/C alpha reassembly complete at `77e23bd`; original fragments remain authoritative | Recording-backed live acceptance; Group Mode remains legacy |
-| Release packaging | Architecture-aware Win32 and x64 packaging implemented; prior v4.5 and v4.1 packages remain rollback evidence | Generate and audit both clean v4.6 portable packages |
-| x64 | Native Release build and all 24 tests pass locally; receiver DLL architecture is validated before load | Complete CI, package, and physical receiver acceptance while keeping Win32 available |
+| Release packaging | Clean v4.6 Win32 and x64 folders/ZIPs generated; 660 manifest entries independently audited with no mismatch, unlisted file, private runtime file, or INI secret | Retain prior packages as rollback evidence and repeat the audit for any release-candidate commit |
+| x64 | Native Release build, 24 tests, metadata, manifest extraction, package audit, and UI smoke pass locally; receiver DLL architecture is validated before load | Complete PR CI and physical receiver acceptance while keeping Win32 available |
 
 ## Safe integration sequence
 
@@ -49,7 +49,7 @@ wholesale merged.
 | 6 | Optional FLEX fragment assembly with guaranteed legacy fallback | Complete at `77e23bd`; disabled by default |
 | 7 | PDW v4.5.0 Beta metadata, package, fork, CI, and artifact alignment | Complete; PR #5 merged into fork `master` |
 | 8 | Image-approved 2026 Windows navigation, live input, and Settings Center | Complete in fork `master`; 100% Light/Dark and compact-size smoke passed |
-| 9 | PDW v4.6.0 Beta native x64 plus retained Win32 release alignment | Implemented locally; clean dual builds, packages, CI, and fork publication are the release gate |
+| 9 | PDW v4.6.0 Beta native x64 plus retained Win32 release alignment | Clean local dual gates and package audit complete; draft PR #6 opened for CI/review |
 
 Delivery Health stores no pager addresses or decoded text and cannot alter a
 delivery result. FLEX shadow assembly cannot suppress a legacy fragment on
@@ -58,7 +58,8 @@ not changed without representative replay evidence.
 
 ## Milestone 1 - Release-state alignment
 
-Status: in progress for v4.6 dual-architecture publication
+Status: clean local v4.6 packages and draft-fork publication complete; PR CI
+and manual hardware acceptance remain separate gates
 
 - Align `Headers/version.h`, executable output name, About/resource metadata,
   changelog, documentation, workflow artifact, branch, and package filename to

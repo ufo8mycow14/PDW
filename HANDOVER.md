@@ -31,8 +31,10 @@ Important integration checkpoints:
 Fork publication state:
 
 - v4.5 PR #5 was merged into fork `master` on 10 August 2026;
-- `pdw-v4.6.0-beta` is the current local release branch and is not considered
-  published until its clean dual-architecture gates pass and it is pushed;
+- pushed branch: `fork/pdw-v4.6.0-beta`;
+- draft PR: `https://github.com/ufo8mycow14/PDW/pull/6`;
+- the first v4.6 release commit is `14e9591`; GitHub checks run on every PR
+  update and the PR is the authoritative current CI state;
 - superseded v4.1 draft PR #3 is closed, with its branch retained;
 - Win32 workflow run `31361744748` passed dependency build, application build,
   all 18 tests, and artifact upload;
@@ -216,14 +218,12 @@ content, and non-empty INI secret fields.
 The prior v4.1 and v4.5 release folders are retained as rollback evidence and
 are not overwritten by the architecture-specific v4.6 packages.
 
-The last clean-tree package audit verified all 287 recorded file hashes, found
-no private runtime artifacts or old-version filenames, confirmed every optional
-`Enable` default and FLEX assembly are off, and confirmed the standard RTL-SDR
-DLL is in `Receivers\RTL-SDR`. That portable folder/ZIP predates the uncommitted
-2026 interface work and must be regenerated after the interface changes are
-reviewed and committed. The Desktop test installation is a separate local
-state and receives the current executable without replacing operator INI,
-filters, recordings, queues, logs, or monitoring data.
+The clean v4.6 package audit verified 334 Win32 and 326 x64 manifest entries
+with zero missing, changed, or unlisted files. It found no private runtime
+artifacts and no non-empty INI secrets. The Win32 package retains the bundled
+x86 RTL-SDR DLL and legacy VxD assets; the x64 package contains neither. The
+Desktop test installation is a separate local state and is not automatically
+replaced by package generation or fork publication.
 
 ## Desktop live-radio test installation
 
