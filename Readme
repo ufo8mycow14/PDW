@@ -6,7 +6,7 @@
 
 A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
-![Version](https://img.shields.io/badge/version-v5.1%202026%20Release-2E74B5)
+![Version](https://img.shields.io/badge/version-v5.2%202026%20Release-2E74B5)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
 ![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20Win32-555555)
 ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
@@ -62,7 +62,7 @@ Configuration and decoder behaviour are shared between the builds. Native DLLs m
 
 ## Install on Windows
 
-For most users, download and run **PDW-v5.1-2026-Release-Setup.exe**. One guided
+For most users, download and run **PDW-v5.2-2026-Release-Setup.exe**. One guided
 Setup contains both architectures, keeps the executable, `PDW.INI`, filters,
 receivers, WAV files and logs together in one PDW folder, creates normal
 Windows shortcuts, preserves operator settings during upgrades, and leaves
@@ -253,6 +253,7 @@ PDW is being modernised conservatively.
 
 | Version | Release Date | Highlights |
 | --- | --- | --- |
+| **PDW v5.2 2026 Release** | **11 August 2026** | Complete UTF-8 CSV export from Message History, including all filtered rows, headings, current aliases, multiline data, spreadsheet-safe values, and atomic destination replacement. |
 | **PDW v5.1 2026 Release** | **11 August 2026** | Local Capcode Directory, optional searchable history and loopback dashboard, live spectrum/waterfall diagnostics, isolated multi-channel receivers, guarded alias privacy, and an optional RTL signal conditioner. |
 | **PDW v5 2026 Release** | **10 August 2026** | First non-beta 2026 release with one guided Windows Setup for Win32 and x64, one co-located application/settings folder, retained portable and legacy operation, signed-release gates, and the complete v4.6.1 capability set. |
 | **4.6.1 Beta** | **10 August 2026** | Repository hygiene and enforceable dual-architecture release, legacy-compatibility, version-identity, dependency-review, SQL, and security gates. |

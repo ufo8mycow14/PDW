@@ -18,6 +18,7 @@
 #include "decoded_event.h"
 
 extern PROFILE Profile;
+extern TCHAR szPath[MAX_PATH];
 
 namespace
 {
@@ -113,6 +114,17 @@ namespace
 		return text;
 	}
 
+	pdw::archive::HistoryQuery HistoryQueryFromDialog(HWND dialog, int limit, int offset)
+	{
+		pdw::archive::HistoryQuery query;
+		query.search = ControlText(dialog, IDC_HISTORY_SEARCH);
+		query.protocol = SelectedProtocol(GetDlgItem(dialog, IDC_HISTORY_PROTOCOL));
+		query.filteredOnly = IsDlgButtonChecked(dialog, IDC_HISTORY_FILTERED) != 0;
+		query.limit = limit;
+		query.offset = offset;
+		return query;
+	}
+
 	void SelectProtocol(HWND combo, const std::string& protocol)
 	{
 		if (protocol.empty()) { SendMessage(combo, CB_SETCURSEL, 0, 0); return; }
@@ -195,6 +207,292 @@ namespace
 		choice.Flags = OFN_EXPLORER | OFN_HIDEREADONLY |
 			(save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
 		return (save ? GetSaveFileNameA(&choice) : GetOpenFileNameA(&choice)) != FALSE;
+	}
+
+	enum HistoryCsvPathChoice
+	{
+		HISTORY_CSV_PATH_CANCELLED = 0,
+		HISTORY_CSV_PATH_SELECTED = 1,
+		HISTORY_CSV_PATH_FAILED = 2
+	};
+
+	void BuildDefaultHistoryCsvName(char* path, std::size_t pathSize)
+	{
+		SYSTEMTIME now = {};
+		GetLocalTime(&now);
+		_snprintf_s(path, pathSize, _TRUNCATE,
+			"PDW-message-history-%04u%02u%02u-%02u%02u%02u.csv",
+			static_cast<unsigned int>(now.wYear), static_cast<unsigned int>(now.wMonth),
+			static_cast<unsigned int>(now.wDay), static_cast<unsigned int>(now.wHour),
+			static_cast<unsigned int>(now.wMinute), static_cast<unsigned int>(now.wSecond));
+	}
+
+	HistoryCsvPathChoice ChooseHistoryCsvPath(HWND dialog, char* path,
+		std::size_t pathSize, std::string& error)
+	{
+		error.clear();
+		BuildDefaultHistoryCsvName(path, pathSize);
+		static const char filter[] = "CSV files (*.csv)\0*.csv\0All files (*.*)\0*.*\0\0";
+		OPENFILENAMEA choice = {};
+		choice.lStructSize = sizeof(choice);
+		choice.hwndOwner = dialog;
+		choice.lpstrFilter = filter;
+		choice.nFilterIndex = 1;
+		choice.lpstrFile = path;
+		choice.nMaxFile = static_cast<DWORD>(pathSize);
+		choice.lpstrInitialDir = szPath;
+		choice.lpstrTitle = "Export Message History";
+		choice.lpstrDefExt = "csv";
+		choice.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST |
+			OFN_NOCHANGEDIR | OFN_OVERWRITEPROMPT;
+		if (GetSaveFileNameA(&choice)) return HISTORY_CSV_PATH_SELECTED;
+		const DWORD dialogError = CommDlgExtendedError();
+		if (!dialogError) return HISTORY_CSV_PATH_CANCELLED;
+		char detail[160] = {};
+		snprintf(detail, sizeof(detail),
+			"Windows could not open the Save dialog (common-dialog error 0x%08lX).",
+			static_cast<unsigned long>(dialogError));
+		error = detail;
+		return HISTORY_CSV_PATH_FAILED;
+	}
+
+	bool NormalizeExportPath(const std::string& path, std::string& normalized)
+	{
+		char fullPath[MAX_PATH] = {};
+		char* filePart = NULL;
+		const DWORD fullLength = GetFullPathNameA(path.c_str(),
+			static_cast<DWORD>(_countof(fullPath)), fullPath, &filePart);
+		if (!fullLength || fullLength >= _countof(fullPath)) return false;
+
+		char longPath[MAX_PATH] = {};
+		const DWORD longLength = GetLongPathNameA(fullPath, longPath,
+			static_cast<DWORD>(_countof(longPath)));
+		if (longLength && longLength < _countof(longPath)) normalized = longPath;
+		else if (filePart)
+		{
+			// The destination normally does not exist yet, so resolve its existing
+			// directory separately. This still makes an 8.3 directory alias compare
+			// equal to the configured archive and SQLite sidecar paths.
+			const std::string directory(fullPath,
+				static_cast<std::size_t>(filePart - fullPath));
+			char longDirectory[MAX_PATH] = {};
+			const DWORD directoryLength = GetLongPathNameA(directory.c_str(),
+				longDirectory, static_cast<DWORD>(_countof(longDirectory)));
+			if (directoryLength && directoryLength < _countof(longDirectory))
+			{
+				normalized = longDirectory;
+				if (!normalized.empty() && normalized[normalized.size() - 1] != '\\')
+					normalized += '\\';
+				normalized += filePart;
+			}
+			else normalized = fullPath;
+		}
+		else normalized = fullPath;
+		std::replace(normalized.begin(), normalized.end(), '/', '\\');
+		return true;
+	}
+
+	bool IsAbsolutePdwPath(const std::string& path)
+	{
+		return (path.size() >= 2 && path[1] == ':') ||
+			(path.size() >= 2 && path[0] == '\\' && path[1] == '\\');
+	}
+
+	bool ValidateHistoryExportDestination(const std::string& chosenPath,
+		std::string& destination, std::string& error)
+	{
+		error.clear();
+		if (!NormalizeExportPath(chosenPath, destination))
+		{
+			error = "The selected CSV path is too long or could not be resolved.";
+			return false;
+		}
+
+		const std::string configuredArchive = Profile.messageArchivePath;
+		if (configuredArchive.empty()) return true;
+		std::string archivePath = configuredArchive;
+		if (!IsAbsolutePdwPath(archivePath))
+		{
+			archivePath = szPath;
+			if (!archivePath.empty() && archivePath[archivePath.size() - 1] != '\\')
+				archivePath += '\\';
+			archivePath += configuredArchive;
+		}
+		std::string normalizedArchive;
+		if (!NormalizeExportPath(archivePath, normalizedArchive))
+		{
+			error = "PDW could not verify that the CSV path is separate from the message archive.";
+			return false;
+		}
+
+		if (_stricmp(destination.c_str(), normalizedArchive.c_str()) == 0 ||
+			_stricmp(destination.c_str(), (normalizedArchive + "-wal").c_str()) == 0 ||
+			_stricmp(destination.c_str(), (normalizedArchive + "-shm").c_str()) == 0 ||
+			_stricmp(destination.c_str(), (normalizedArchive + "-journal").c_str()) == 0)
+		{
+			error = "Choose a different file. A CSV export cannot overwrite the message archive database or its SQLite sidecar files.";
+			return false;
+		}
+		return true;
+	}
+
+	void SetHistoryExportStatus(HWND dialog, const std::string& status)
+	{
+		SetUtf8Control(dialog, IDC_HISTORY_STATUS, status);
+		HWND statusControl = GetDlgItem(dialog, IDC_HISTORY_STATUS);
+		if (statusControl)
+			NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, statusControl, OBJID_CLIENT, CHILDID_SELF);
+	}
+
+	void ShowHistoryExportError(HWND dialog, const std::string& error)
+	{
+		SetHistoryExportStatus(dialog, "CSV export failed: " + error);
+		const std::string message = Utf8ToPdw(
+			"The message history could not be exported.\r\n\r\n" + error);
+		MessageBoxA(dialog, message.c_str(), "PDW Message History", MB_OK | MB_ICONERROR);
+	}
+
+	bool CreateSiblingTemporaryFile(const std::string& destination,
+		char* temporaryPath, std::size_t temporaryPathSize, std::string& error)
+	{
+		if (temporaryPathSize < MAX_PATH)
+		{
+			error = "PDW could not prepare a temporary CSV path.";
+			return false;
+		}
+		const std::string::size_type separator = destination.find_last_of("\\/");
+		if (separator == std::string::npos)
+		{
+			error = "The selected CSV folder could not be resolved.";
+			return false;
+		}
+		const std::string directory = destination.substr(0, separator + 1);
+		if (!GetTempFileNameA(directory.c_str(), "PDW", 0, temporaryPath))
+		{
+			char detail[224] = {};
+			snprintf(detail, sizeof(detail),
+				"PDW could not create a temporary export file in the selected folder (Windows error %lu). Check that the folder is writable.",
+				static_cast<unsigned long>(GetLastError()));
+			error = detail;
+			return false;
+		}
+		return true;
+	}
+
+	bool WriteHistoryCsvAtomically(HWND dialog, const std::string& destination,
+		int& exported, std::string& error)
+	{
+		exported = 0;
+		error.clear();
+		char temporaryPath[MAX_PATH] = {};
+		if (!CreateSiblingTemporaryFile(destination, temporaryPath,
+			_countof(temporaryPath), error)) return false;
+
+		std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
+		if (!output)
+		{
+			DeleteFileA(temporaryPath);
+			error = "PDW could not open the temporary CSV file. Check that the selected folder is writable.";
+			return false;
+		}
+
+		const pdw::archive::HistoryQuery query = HistoryQueryFromDialog(dialog, 500, 0);
+		if (!MessageArchiveExportHistoryCsv(query, output, exported, error))
+		{
+			output.close();
+			DeleteFileA(temporaryPath);
+			if (error.empty()) error = "PDW could not read the matching message history.";
+			return false;
+		}
+
+		output.flush();
+		const bool flushed = output.good();
+		output.close();
+		if (!flushed || output.fail())
+		{
+			DeleteFileA(temporaryPath);
+			error = "PDW could not finish writing the CSV file. Check available disk space and folder permissions.";
+			return false;
+		}
+
+		if (!MoveFileExA(temporaryPath, destination.c_str(),
+			MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+		{
+			const DWORD moveError = GetLastError();
+			DeleteFileA(temporaryPath);
+			char detail[256] = {};
+			snprintf(detail, sizeof(detail),
+				"PDW could not replace the selected CSV file (Windows error %lu). The existing file was left unchanged; close it in other programs and try again.",
+				static_cast<unsigned long>(moveError));
+			error = detail;
+			return false;
+		}
+		return true;
+	}
+
+	class HistoryExportUiGuard
+	{
+	public:
+		explicit HistoryExportUiGuard(HWND dialog) : dialog_(dialog),
+			button_(GetDlgItem(dialog, IDC_HISTORY_EXPORT)), previousCursor_(NULL)
+		{
+			EnableWindow(button_, FALSE);
+			previousCursor_ = SetCursor(LoadCursor(NULL, IDC_WAIT));
+			SetHistoryExportStatus(dialog_, "Exporting all matching messages...");
+			UpdateWindow(dialog_);
+		}
+
+		~HistoryExportUiGuard()
+		{
+			EnableWindow(button_, TRUE);
+			SetCursor(previousCursor_ ? previousCursor_ : LoadCursor(NULL, IDC_ARROW));
+			if (button_) SetFocus(button_);
+		}
+
+	private:
+		HistoryExportUiGuard(const HistoryExportUiGuard&);
+		HistoryExportUiGuard& operator=(const HistoryExportUiGuard&);
+		HWND dialog_;
+		HWND button_;
+		HCURSOR previousCursor_;
+	};
+
+	void ExportHistoryCsv(HWND dialog)
+	{
+		char chosenPath[MAX_PATH] = {};
+		std::string error;
+		const HistoryCsvPathChoice choice = ChooseHistoryCsvPath(dialog, chosenPath,
+			_countof(chosenPath), error);
+		if (choice == HISTORY_CSV_PATH_CANCELLED) return;
+		if (choice == HISTORY_CSV_PATH_FAILED)
+		{
+			ShowHistoryExportError(dialog, error);
+			return;
+		}
+
+		std::string destination;
+		if (!ValidateHistoryExportDestination(chosenPath, destination, error))
+		{
+			ShowHistoryExportError(dialog, error);
+			return;
+		}
+
+		int exported = 0;
+		bool succeeded = false;
+		{
+			HistoryExportUiGuard progress(dialog);
+			succeeded = WriteHistoryCsvAtomically(dialog, destination, exported, error);
+		}
+		if (!succeeded)
+		{
+			ShowHistoryExportError(dialog, error);
+			return;
+		}
+
+		char status[128] = {};
+		snprintf(status, sizeof(status),
+			"Exported %d matching messages as UTF-8 CSV.", exported);
+		SetHistoryExportStatus(dialog, status);
 	}
 
 	void ImportCapcodes(HWND dialog, CapcodeDialogState* state)
@@ -282,12 +580,8 @@ namespace
 	void RefreshHistory(HWND dialog, HistoryDialogState* state, bool resetPage)
 	{
 		if (resetPage) state->offset = 0;
-		pdw::archive::HistoryQuery query;
-		query.search = ControlText(dialog, IDC_HISTORY_SEARCH);
-		query.protocol = SelectedProtocol(GetDlgItem(dialog, IDC_HISTORY_PROTOCOL));
-		query.filteredOnly = IsDlgButtonChecked(dialog, IDC_HISTORY_FILTERED) != 0;
-		query.limit = 200;
-		query.offset = state->offset;
+		const pdw::archive::HistoryQuery query =
+			HistoryQueryFromDialog(dialog, 200, state->offset);
 		std::string error;
 		state->rows.clear();
 		if (!MessageArchiveQueryHistory(query, state->rows, state->total, error))
@@ -481,6 +775,7 @@ BOOL FAR PASCAL MessageHistoryDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARA
 				case IDC_HISTORY_BROWSE: BrowseHistoryPath(hDlg); return TRUE;
 				case IDC_HISTORY_SAVE_SETTINGS: SaveHistorySettings(hDlg); RefreshHistory(hDlg, state, true); return TRUE;
 				case IDC_HISTORY_REFRESH: RefreshHistory(hDlg, state, true); return TRUE;
+				case IDC_HISTORY_EXPORT: ExportHistoryCsv(hDlg); return TRUE;
 				case IDC_HISTORY_PREVIOUS:
 					state->offset = (std::max)(0, state->offset - 200); RefreshHistory(hDlg, state, false); return TRUE;
 				case IDC_HISTORY_NEXT:

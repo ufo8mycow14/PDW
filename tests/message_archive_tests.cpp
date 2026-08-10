@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
+#include <streambuf>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,13 @@ namespace
 			std::exit(1);
 		}
 	}
+
+	class FailingStreamBuffer : public std::streambuf
+	{
+	protected:
+		virtual std::streamsize xsputn(const char*, std::streamsize) { return 0; }
+		virtual int_type overflow(int_type = traits_type::eof()) { return traits_type::eof(); }
+	};
 }
 
 int main()
@@ -44,6 +52,12 @@ int main()
 	std::string ownershipError;
 	Expect(!ownershipCheck.Open(databasePath, ownershipError),
 		"unrelated SQLite database is rejected");
+	pdw::archive::HistoryQuery unrelatedQuery;
+	std::ostringstream unrelatedOutput;
+	int unrelatedExported = -1;
+	Expect(!pdw::archive::ExportHistoryCsv(databasePath, unrelatedQuery,
+		unrelatedOutput, unrelatedExported, ownershipError) && unrelatedExported == 0,
+		"CSV export rejects an unrelated SQLite database without claiming it");
 	Expect(sqlite3_open(databasePath, &unrelated) == SQLITE_OK,
 		"rejected SQLite fixture reopens");
 	sqlite3_stmt* preserved = NULL;
@@ -116,6 +130,170 @@ int main()
 		pdw::archive::ParseCsvLine(csvRecord, fields) && fields.size() == 7 &&
 		fields[5] == "first line\r\nsecond line",
 		"exported multiline notes import as one logical CSV record");
+
+	pdw::archive::CapcodeEntry exportAlias;
+	exportAlias.protocol = "FLEX";
+	exportAlias.address = "1705428";
+	exportAlias.displayName = " \t=Formula Name";
+	exportAlias.agency = std::string("Agency, \"West\" ") + "\xE2\x82\xAC";
+	Expect(archive.UpsertCapcode(exportAlias, error),
+		"CSV export alias upsert succeeds");
+
+	for (int index = 0; index < 501; ++index)
+	{
+		char id[64] = {};
+		char message[64] = {};
+		std::snprintf(id, sizeof(id), "export-bulk-%04d", index);
+		std::snprintf(message, sizeof(message), "bulk export row %04d", index);
+		pdw::publishing::PublishEvent bulk;
+		bulk.id = id;
+		bulk.timestamp = "2026-08-09T00:00:00.000Z";
+		bulk.source = "PDW archive export test";
+		bulk.address = "1705428";
+		bulk.time = "09:00:00";
+		bulk.date = "2026-08-09";
+		bulk.mode = "FLEX-A";
+		bulk.messageType = "ALPHA";
+		bulk.bitrate = "1600";
+		bulk.message = message;
+		bulk.filterLabel = "export filter";
+		bulk.filtered = true;
+		Expect(archive.StoreEvent(bulk, true, error),
+			"bulk CSV export event stores");
+	}
+
+	pdw::publishing::PublishEvent edge;
+	edge.id = "export-edge";
+	edge.timestamp = "2026-08-10T00:00:00.000Z";
+	edge.source = "PDW archive export test";
+	edge.address = "1705428";
+	edge.mode = "FLEX-A";
+	edge.messageType = " +ALPHA";
+	edge.message = " \t=\"bulk export, quoted\"\r\nsecond line";
+	edge.filterLabel = "\t@filter";
+	edge.filtered = true;
+	Expect(archive.StoreEvent(edge, true, error), "edge CSV export event stores");
+
+	pdw::publishing::PublishEvent orderA(edge);
+	orderA.id = "export-order-a";
+	orderA.timestamp = "2026-08-11T00:00:00.000Z";
+	orderA.messageType = "ALPHA";
+	orderA.message = "bulk export order A";
+	orderA.filterLabel = "\tplain filter";
+	Expect(archive.StoreEvent(orderA, true, error), "first tied CSV export event stores");
+	pdw::publishing::PublishEvent orderB(orderA);
+	orderB.id = "export-order-b";
+	orderB.message = "bulk export order B";
+	Expect(archive.StoreEvent(orderB, true, error), "second tied CSV export event stores");
+	pdw::archive::HistoryQuery tiedOrderQuery;
+	tiedOrderQuery.search = "bulk export order";
+	tiedOrderQuery.protocol = "FLEX";
+	tiedOrderQuery.filteredOnly = true;
+	std::vector<pdw::archive::HistoryRow> tiedOrderRows;
+	int tiedOrderTotal = 0;
+	Expect(archive.QueryHistory(tiedOrderQuery, tiedOrderRows, tiedOrderTotal, error) &&
+		tiedOrderTotal == 2 && tiedOrderRows.size() == 2 &&
+		tiedOrderRows[0].event.id == "export-order-b" &&
+		tiedOrderRows[1].event.id == "export-order-a",
+		"interactive history and CSV export use the same stable tie ordering");
+
+	pdw::publishing::PublishEvent excluded(edge);
+	excluded.id = "export-excluded-protocol";
+	excluded.mode = "POCSAG-1200";
+	excluded.message = "bulk export wrong protocol";
+	Expect(archive.StoreEvent(excluded, true, error), "protocol-excluded CSV event stores");
+	excluded.id = "export-excluded-filtered";
+	excluded.mode = "FLEX-A";
+	excluded.filtered = false;
+	excluded.message = "bulk export unfiltered";
+	Expect(archive.StoreEvent(excluded, true, error), "filtered-excluded CSV event stores");
+	excluded.id = "export-excluded-search";
+	excluded.filtered = true;
+	excluded.message = "unrelated message";
+	Expect(archive.StoreEvent(excluded, true, error), "search-excluded CSV event stores");
+
+	pdw::archive::HistoryQuery exportQuery;
+	exportQuery.search = "bulk export";
+	exportQuery.protocol = "FLEX";
+	exportQuery.filteredOnly = true;
+	// Paging belongs only to the interactive history list. Export must ignore it.
+	exportQuery.limit = 1;
+	exportQuery.offset = 500;
+	std::ostringstream exportOutput;
+	int exported = -1;
+	Expect(pdw::archive::ExportHistoryCsv(databasePath, exportQuery,
+		exportOutput, exported, error), "filtered CSV history export succeeds");
+	Expect(exported == 504, "CSV history export includes every matching row beyond one page");
+
+	std::istringstream exportedCsv(exportOutput.str());
+	Expect(pdw::archive::ReadCsvRecord(exportedCsv, csvRecord) ==
+		pdw::archive::CSV_RECORD_COMPLETE, "CSV history header reads");
+	Expect(csvRecord.size() >= 3 &&
+		static_cast<unsigned char>(csvRecord[0]) == 0xEF &&
+		static_cast<unsigned char>(csvRecord[1]) == 0xBB &&
+		static_cast<unsigned char>(csvRecord[2]) == 0xBF,
+		"CSV history export includes a UTF-8 BOM");
+	csvRecord.erase(0, 3);
+	Expect(pdw::archive::ParseCsvLine(csvRecord, fields) && fields.size() == 8 &&
+		fields[0] == "Received" && fields[1] == "Protocol" &&
+		fields[2] == "Capcode" && fields[3] == "Name" &&
+		fields[4] == "Agency" && fields[5] == "Type" &&
+		fields[6] == "Message" && fields[7] == "Filter",
+		"CSV history export has the eight visible headings in display order");
+
+	int parsedRows = 0;
+	bool foundEdge = false;
+	while (pdw::archive::ReadCsvRecord(exportedCsv, csvRecord) ==
+		pdw::archive::CSV_RECORD_COMPLETE)
+	{
+		Expect(pdw::archive::ParseCsvLine(csvRecord, fields) && fields.size() == 8,
+			"CSV history data row parses with eight complete values");
+		if (parsedRows == 0)
+			Expect(fields[6] == "bulk export order B" && fields[7] == "'\tplain filter",
+				"CSV history uses a stable tie-breaker and protects leading controls");
+		else if (parsedRows == 1)
+			Expect(fields[6] == "bulk export order A" && fields[7] == "'\tplain filter",
+				"CSV history stable tie order is deterministic");
+		Expect(fields[3] == "' \t=Formula Name",
+			"CSV history neutralizes formulas after leading whitespace in alias names");
+		Expect(fields[4] == exportAlias.agency,
+			"CSV history preserves quoted UTF-8 alias values");
+		if (fields[6].find("bulk export, quoted") != std::string::npos)
+		{
+			foundEdge = true;
+			Expect(fields[5] == "' +ALPHA" &&
+				fields[6] == "' \t=\"bulk export, quoted\"\r\nsecond line" &&
+				fields[7] == "'\t@filter",
+				"CSV history quotes multiline values and neutralizes untrusted formulas");
+		}
+		++parsedRows;
+	}
+	Expect(parsedRows == exported && foundEdge,
+		"CSV history row count and multiline edge row round trip completely");
+
+	pdw::publishing::PublishEvent embeddedNul(edge);
+	embeddedNul.id = "export-embedded-nul";
+	embeddedNul.message = "ordinary";
+	embeddedNul.message.push_back('\0');
+	embeddedNul.message += "hidden";
+	embeddedNul.filterLabel = "embedded NUL export sentinel";
+	Expect(archive.StoreEvent(embeddedNul, true, error),
+		"embedded-NUL CSV safety fixture stores");
+	pdw::archive::HistoryQuery embeddedNulQuery;
+	embeddedNulQuery.search = "embedded NUL export sentinel";
+	std::ostringstream embeddedNulOutput;
+	exported = -1;
+	Expect(!pdw::archive::ExportHistoryCsv(databasePath, embeddedNulQuery,
+		embeddedNulOutput, exported, error) && exported == 0 &&
+		error.find("embedded NUL") != std::string::npos,
+		"CSV history export rejects embedded NUL bytes instead of writing ambiguous data");
+
+	FailingStreamBuffer failingBuffer;
+	std::ostream failingOutput(&failingBuffer);
+	exported = -1;
+	Expect(!pdw::archive::ExportHistoryCsv(databasePath, exportQuery,
+		failingOutput, exported, error) && exported == 0 && !error.empty(),
+		"CSV history export fails as a whole when its output stream fails");
 
 	archive.Close();
 	DeleteFileA(databasePath);

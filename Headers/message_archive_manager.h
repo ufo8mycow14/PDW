@@ -1,6 +1,7 @@
 #ifndef PDW_MESSAGE_ARCHIVE_MANAGER_H
 #define PDW_MESSAGE_ARCHIVE_MANAGER_H
 
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,8 @@ bool MessageArchiveDeleteCapcode(const std::string& protocol,
 	const std::string& address, std::string& error);
 bool MessageArchiveQueryHistory(const pdw::archive::HistoryQuery& query,
 	std::vector<pdw::archive::HistoryRow>& rows, int& total, std::string& error);
+bool MessageArchiveExportHistoryCsv(const pdw::archive::HistoryQuery& query,
+	std::ostream& output, int& exported, std::string& error);
 bool MessageArchivePurgeHistory(unsigned int retentionDays, int& removed,
 	std::string& error);
 
