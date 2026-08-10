@@ -8,6 +8,7 @@
 #include <windows.h>
 
 #include <istream>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -65,6 +66,8 @@ enum CsvRecordReadResult
 	CSV_RECORD_MALFORMED = 2
 };
 CsvRecordReadResult ReadCsvRecord(std::istream& input, std::string& record);
+bool ExportHistoryCsv(const std::string& utf8Path, const HistoryQuery& query,
+	std::ostream& output, int& exported, std::string& error);
 
 class MessageArchive
 {

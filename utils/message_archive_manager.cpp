@@ -576,6 +576,17 @@ bool MessageArchiveQueryHistory(const pdw::archive::HistoryQuery& query,
 		g_archive.QueryHistory(query, rows, total, error);
 }
 
+bool MessageArchiveExportHistoryCsv(const pdw::archive::HistoryQuery& query,
+	std::ostream& output, int& exported, std::string& error)
+{
+	// Capture the configured path once. The exporter owns a separate hardened
+	// read-only SQLite connection, so path changes and background writes cannot
+	// retarget or serialize the streaming snapshot through g_archive.
+	const ArchiveConfig config = CurrentConfig();
+	const std::string resolvedPath = ResolveArchivePath(config.path);
+	return pdw::archive::ExportHistoryCsv(resolvedPath, query, output, exported, error);
+}
+
 bool MessageArchivePurgeHistory(unsigned int retentionDays, int& removed,
 	std::string& error)
 {

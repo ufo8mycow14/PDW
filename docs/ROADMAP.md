@@ -1,6 +1,6 @@
 # PDW product roadmap
 
-Updated: 10 August 2026
+Updated: 11 August 2026
 
 This is the concise delivery roadmap. `MODERNIZATION.md` contains the detailed
 technical strategy, while the root `HANDOVER.md` records exact repository,
@@ -16,7 +16,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 
 | Area | Current state | Next gate |
 | --- | --- | --- |
-| Win32 build | PDW v5.1 2026 Release builds locally and passes all 28 tests | Keep the 28-test suite green in dual-architecture CI |
+| Win32 build | PDW v5.2 2026 Release builds locally and passes all 28 tests | Keep the 28-test suite green in dual-architecture CI |
 | Windows interface | Approved 2026 command bar, live meter, modeless 10-page Settings Center, encrypted configuration backup/restore, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
 | Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
 | Windows audio | WinMM and WASAPI captured from the real default device on the development machine | Live device-loss, hot-plug, and broader device-matrix acceptance |
@@ -31,12 +31,12 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | FLEX fragments | Additive non-group K/F/C alpha reassembly complete at `77e23bd`; original fragments remain authoritative | Recording-backed live acceptance; Group Mode remains legacy |
 | Repository hygiene | File-by-file x64/Win32 audit complete; obsolete VC6/VS2017 state, caches, duplicate archive, and unused code/assets removed; CMake is authoritative | Enforce `scripts/audit-release.ps1` and repeat the review when adding native dependencies or release-only assets |
 | Local operations | Capcode Directory, optional bounded history, loopback-only dashboard, spectrum/waterfall, isolated multi-channel workers, and optional RTL conditioning are implemented | Complete signed-in operator UI and physical multi-receiver acceptance without changing decoder behavior |
-| Release packaging | The guided `PDW-v5.1-2026-Release-Setup.exe` pipeline selects x64 or Win32, preserves mutable files, and removes the exact renamed v5 predecessor during upgrade | Pass current PR installer CI; apply trusted Authenticode signing before public release; retain portable packages as the no-install alternative |
-| x64 | PDW v5.1 2026 Release builds locally and passes all 28 tests; receiver DLL architecture is validated before load | Complete PR CI, native UI, and physical receiver acceptance while keeping Win32 available |
+| Release packaging | The guided `PDW-v5.2-2026-Release-Setup.exe` pipeline selects x64 or Win32, preserves mutable files, and removes exact renamed v5/v5.1 predecessors during upgrade | Pass current PR installer CI; apply trusted Authenticode signing before public release; retain portable packages as the no-install alternative |
+| x64 | PDW v5.2 2026 Release builds locally and passes all 28 tests; receiver DLL architecture is validated before load | Complete PR CI, native UI, and physical receiver acceptance while keeping Win32 available |
 
 ## Safe integration sequence
 
-The active release branch is `pdw-v5.1-2026-release`. The approved interface,
+The active release branch is `pdw-v5.2-message-history-csv`. The approved interface,
 defaults, and legacy behavior remain authoritative. The `spiral` remote is
 fetch-only; work is selectively adopted and independently tested rather than
 wholesale merged.
@@ -55,6 +55,7 @@ wholesale merged.
 | 10 | PDW v4.6.1 Beta repository, security, legacy-retention, and release-identity enforcement | Local audit, clean dual builds/tests/smoke, metadata, About, UI and package gates pass; draft PR #7 dual CI and CodeQL checks pass |
 | 11 | PDW v5 2026 Release identity and guided dual-architecture Windows installer | Implemented locally; dual install/upgrade/uninstall smoke and Defender scan pass; trusted Authenticode signing remains the public-release gate |
 | 12 | PDW v5.1 local capcode, archive, dashboard, diagnostics, multi-channel, and RTL-conditioning tools | Implemented locally with legacy-compatible defaults; dual build/test gates pass and PR installer CI remains the source-merge gate |
+| 13 | PDW v5.2 complete Message History CSV export | Implemented with all-filtered-row snapshot export, spreadsheet hardening, atomic destination replacement, and dual-architecture regression coverage; PR CI and manual native UI acceptance remain gates |
 
 Delivery Health stores no pager addresses or decoded text and cannot alter a
 delivery result. FLEX shadow assembly cannot suppress a legacy fragment on

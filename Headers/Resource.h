@@ -665,6 +665,7 @@
 #define IDC_HISTORY_PAGE           1553
 #define IDC_HISTORY_PURGE          1554
 #define IDC_HISTORY_STATUS         1555
+#define IDC_HISTORY_EXPORT         1556
 
 #define IDC_DASHBOARD_ENABLE       1560
 #define IDC_DASHBOARD_PORT         1561

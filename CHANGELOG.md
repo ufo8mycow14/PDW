@@ -1,5 +1,31 @@
 # Changelog
 
+## PDW v5.2 2026 Release
+
+An additive Message History export release. Existing decoders, protocols,
+filters, signal sources, archive retention, and output behaviour remain
+unchanged.
+
+### Added
+
+- **Export CSV...** in Message History writes every row matching the current
+  Search, Protocol, and Filtered controls, rather than only the visible page.
+- UTF-8 spreadsheet-compatible output with the Received, Protocol, Capcode,
+  Name, Agency, Type, Message, and Filter headings, including current capcode
+  aliases and complete multiline values.
+
+### Compatibility and security
+
+- Export uses an independently hardened read-only SQLite snapshot so active
+  history capture can continue while all matching rows are streamed.
+- Spreadsheet formulas and leading control characters are emitted as protected
+  text; embedded NUL data is rejected instead of producing an ambiguous file.
+- Files are written through a same-folder temporary file and atomically
+  replaced only after success. The archive database and its SQLite sidecars
+  cannot be selected as export destinations.
+- Exported CSV files are unencrypted copies outside PDW retention and purge
+  controls and must be handled according to operator privacy requirements.
+
 ## PDW v5.1 2026 Release
 
 An additive local-operations release for capcode identification, searchable

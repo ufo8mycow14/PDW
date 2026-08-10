@@ -20,8 +20,21 @@ Open **View > Message history** to enable the local archive, choose whether
 message text may be retained, set a 1-3650 day retention period, and search or
 page through stored events. History is disabled by default and message text is
 also excluded by default. The database is `pdw-history.sqlite3` beside PDW
-unless another path is selected. Purging history does not delete the capcode
-directory. Every opened archive requires current Windows SQLite security
+unless another path is selected. **Export CSV...** writes every message that
+matches the current Search, Protocol, and Filtered controls, not only the
+currently displayed 200-row page. The UTF-8 CSV has these headings:
+
+```text
+Received,Protocol,Capcode,Name,Agency,Type,Message,Filter
+```
+
+The exported values are the complete stored values rather than the clipped
+ListView display. Name and Agency use the current enabled Capcode Directory
+mapping at export time; they are not historical alias snapshots. Message is
+blank for events recorded while **Store message text** was disabled. Values
+that could be interpreted as spreadsheet formulas are exported as protected
+text. Purging history does not delete the capcode directory. Every opened
+archive requires current Windows SQLite security
 controls, disables trusted schema execution, extension loading, triggers,
 views, and memory-mapped I/O, enables defensive and cell-size checks, and must
 pass a bounded quick integrity check as its first SQL before PDW creates tables
@@ -44,4 +57,7 @@ the queued tail so a locked archive cannot hold the application open.
 Capcodes, names, agencies, notes, and message text may identify people or
 services. Only collect and retain data that you are authorised to monitor. The
 existing publishing and data-output address masking also removes names and
-agencies so an alias cannot defeat the privacy setting.
+agencies so an alias cannot defeat the privacy setting. A message-history CSV
+is an unencrypted copy outside the SQLite retention and purge controls. Store,
+share, and delete each exported file according to the applicable privacy and
+records-handling requirements.

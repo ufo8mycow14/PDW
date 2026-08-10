@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
@@ -16,6 +17,7 @@ namespace
 {
 	const ULONGLONG INTEGRITY_CHECK_LIMIT_MS = 5000;
 	const ULONGLONG QUERY_LIMIT_MS = 3000;
+	const ULONGLONG EXPORT_LIMIT_MS = 5ULL * 60ULL * 1000ULL;
 	const int PDW_ARCHIVE_APPLICATION_ID = 0x50445731; // ASCII "PDW1"
 	const int PDW_ARCHIVE_SCHEMA_VERSION = 1;
 
@@ -188,12 +190,54 @@ namespace
 				PDW_ARCHIVE_SCHEMA_VERSION, error);
 	}
 
+	bool VerifyExactArchiveOwnership(sqlite3* database, std::string& error)
+	{
+		int applicationId = 0;
+		int schemaVersion = 0;
+		if (!ReadSingleInteger(database, "PRAGMA application_id;", applicationId, error) ||
+			!ReadSingleInteger(database, "PRAGMA user_version;", schemaVersion, error)) return false;
+		if (applicationId != PDW_ARCHIVE_APPLICATION_ID)
+		{
+			error = "The selected SQLite file is not a PDW message archive.";
+			return false;
+		}
+		if (schemaVersion != PDW_ARCHIVE_SCHEMA_VERSION)
+		{
+			error = "The PDW message archive schema version is not supported.";
+			return false;
+		}
+		return true;
+	}
+
 	std::string Lowercase(const std::string& value)
 	{
 		std::string result(value);
 		for (std::size_t index = 0; index < result.size(); ++index)
 			result[index] = static_cast<char>(std::tolower(static_cast<unsigned char>(result[index])));
 		return result;
+	}
+
+	const char* HistoryFilterWhereSql()
+	{
+		return
+			" WHERE (?='' OR lower(h.address) LIKE ? OR lower(h.mode) LIKE ? "
+			"OR lower(h.message_type) LIKE ? OR lower(h.message) LIKE ? OR lower(h.filter_label) LIKE ? "
+			"OR EXISTS(SELECT 1 FROM capcode_directory searched WHERE searched.address=h.address "
+			"AND searched.enabled=1 AND (searched.protocol='' OR h.mode LIKE searched.protocol || '%') AND "
+			"(lower(searched.display_name) LIKE ? OR lower(searched.agency) LIKE ?))) "
+			"AND (?='' OR h.mode LIKE ? || '%') AND (?=0 OR h.filtered=1)";
+	}
+
+	bool BindHistoryFilter(sqlite3_stmt* statement, const HistoryQuery& query)
+	{
+		const std::string pattern = "%" + Lowercase(query.search) + "%";
+		bool bound = BindText(statement, 1, query.search);
+		for (int index = 2; index <= 8; ++index)
+			bound = BindText(statement, index, pattern) && bound;
+		bound = BindText(statement, 9, query.protocol) && bound;
+		bound = BindText(statement, 10, query.protocol) && bound;
+		bound = sqlite3_bind_int(statement, 11, query.filteredOnly ? 1 : 0) == SQLITE_OK && bound;
+		return bound;
 	}
 
 	bool ReadCapcodeRow(sqlite3_stmt* statement, CapcodeEntry& entry)
@@ -288,6 +332,235 @@ CsvRecordReadResult ReadCsvRecord(std::istream& input, std::string& record)
 		if (ParseCsvLine(record, fields)) return CSV_RECORD_COMPLETE;
 	}
 	return record.empty() ? CSV_RECORD_END : CSV_RECORD_MALFORMED;
+}
+
+namespace
+{
+	bool ExecuteDatabaseSql(sqlite3* database, const char* sql, std::string& error)
+	{
+		char* sqliteError = NULL;
+		const int result = sqlite3_exec(database, sql, NULL, NULL, &sqliteError);
+		if (result == SQLITE_OK) return true;
+		error = sqliteError ? sqliteError : sqlite3_errmsg(database);
+		if (sqliteError) sqlite3_free(sqliteError);
+		return false;
+	}
+
+	bool OpenReadOnlyArchive(const std::string& utf8Path, sqlite3*& database,
+		std::string& error)
+	{
+		database = NULL;
+		if (utf8Path.empty())
+		{
+			error = "Choose a message archive database file.";
+			return false;
+		}
+		if (sqlite3_libversion_number() < 3031000)
+		{
+			error = "Message archive requires current Windows SQLite security support.";
+			return false;
+		}
+		if (sqlite3_open_v2(utf8Path.c_str(), &database,
+			SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX |
+			SQLITE_OPEN_PRIVATECACHE | SQLITE_OPEN_NOFOLLOW, NULL) != SQLITE_OK)
+		{
+			error = database ? sqlite3_errmsg(database) :
+				"SQLite could not open the message archive for export.";
+			if (database) sqlite3_close(database);
+			database = NULL;
+			return false;
+		}
+		sqlite3_busy_timeout(database, 5000);
+		if (!SetDatabaseConfig(database, SQLITE_DBCONFIG_TRUSTED_SCHEMA, 0,
+			"untrusted-schema mode", error) ||
+			!SetDatabaseConfig(database, SQLITE_DBCONFIG_DEFENSIVE, 1,
+				"defensive mode", error) ||
+			!SetDatabaseConfig(database, SQLITE_DBCONFIG_ENABLE_LOAD_EXTENSION, 0,
+				"disabled extension loading", error) ||
+			!SetDatabaseConfig(database, SQLITE_DBCONFIG_ENABLE_TRIGGER, 0,
+				"disabled triggers", error) ||
+			!SetDatabaseConfig(database, SQLITE_DBCONFIG_ENABLE_VIEW, 0,
+				"disabled views", error))
+		{
+			sqlite3_close(database);
+			database = NULL;
+			return false;
+		}
+		// Keep quick_check as the first SQL prepared against this separately
+		// opened, operator-selected archive. Export must never create, repair,
+		// claim, or otherwise mutate the selected database.
+		if (!QuickCheckDatabase(database, error) ||
+			!ExecuteDatabaseSql(database, "PRAGMA query_only=ON;", error) ||
+			!QueryPragmaInteger(database, "PRAGMA query_only;", 1, error) ||
+			!ExecuteDatabaseSql(database, "PRAGMA cell_size_check=ON;", error) ||
+			!QueryPragmaInteger(database, "PRAGMA cell_size_check;", 1, error) ||
+			!ExecuteDatabaseSql(database, "PRAGMA mmap_size=0;", error) ||
+			!QueryPragmaInteger(database, "PRAGMA mmap_size;", 0, error) ||
+			!VerifyExactArchiveOwnership(database, error))
+		{
+			sqlite3_close(database);
+			database = NULL;
+			return false;
+		}
+		return true;
+	}
+
+	bool ReadCsvColumn(sqlite3_stmt* statement, int column,
+		std::string& value, std::string& error)
+	{
+		const unsigned char* raw = sqlite3_column_text(statement, column);
+		if (!raw)
+		{
+			value.clear();
+			return true;
+		}
+		const int byteCount = (std::max)(0, sqlite3_column_bytes(statement, column));
+		const char* first = reinterpret_cast<const char*>(raw);
+		const char* last = first + byteCount;
+		if (std::find(first, last, '\0') != last)
+		{
+			error = "A message-history value contains an embedded NUL byte and cannot be represented safely in CSV.";
+			return false;
+		}
+		value.assign(first, last);
+		return true;
+	}
+
+	std::string SpreadsheetCsvEscape(const std::string& value)
+	{
+		std::size_t firstMeaningful = 0;
+		bool hasLeadingControl = false;
+		while (firstMeaningful < value.size() &&
+			static_cast<unsigned char>(value[firstMeaningful]) <= 0x20)
+		{
+			if (static_cast<unsigned char>(value[firstMeaningful]) < 0x20)
+				hasLeadingControl = true;
+			++firstMeaningful;
+		}
+		std::string safe(value);
+		bool requiresTextPrefix = hasLeadingControl;
+		if (firstMeaningful < value.size())
+		{
+			const char first = value[firstMeaningful];
+			if (first == '=' || first == '+' || first == '-' || first == '@')
+				requiresTextPrefix = true;
+		}
+		if (requiresTextPrefix) safe.insert(safe.begin(), '\'');
+		return CsvEscape(safe);
+	}
+
+	bool ExportHistoryCsvFromDatabase(sqlite3* database, const HistoryQuery& query,
+		std::ostream& output, int& exported, std::string& error)
+	{
+		const std::string selectSql = std::string(
+			"SELECT h.received_utc,h.mode,h.address,COALESCE(current_alias.display_name,''),"
+			"COALESCE(current_alias.agency,''),h.message_type,h.message,h.filter_label "
+			"FROM message_history h LEFT JOIN capcode_directory current_alias "
+			"ON current_alias.address=h.address AND current_alias.enabled=1 AND "
+			"current_alias.protocol=(SELECT candidate.protocol FROM capcode_directory candidate "
+			"WHERE candidate.address=h.address AND candidate.enabled=1 AND "
+			"(candidate.protocol='' OR h.mode LIKE candidate.protocol || '%') "
+			"ORDER BY CASE WHEN candidate.protocol='' THEN 1 ELSE 0 END LIMIT 1)") +
+			HistoryFilterWhereSql() + " ORDER BY h.received_utc DESC,h.id DESC;";
+		ProgressDeadline deadline(EXPORT_LIMIT_MS);
+		ProgressGuard progress(database, &deadline);
+		sqlite3_stmt* statement = NULL;
+		if (sqlite3_prepare_v2(database, selectSql.c_str(), -1, &statement, NULL) != SQLITE_OK ||
+			!BindHistoryFilter(statement, query))
+		{
+			error = deadline.expired ? "Message archive CSV export exceeded five minutes." :
+				sqlite3_errmsg(database);
+			if (statement) sqlite3_finalize(statement);
+			return false;
+		}
+
+		try
+		{
+			output << "\xEF\xBB\xBFReceived,Protocol,Capcode,Name,Agency,Type,Message,Filter\r\n";
+		}
+		catch (...)
+		{
+			sqlite3_finalize(statement);
+			error = "The message-history CSV file could not be written completely.";
+			return false;
+		}
+		if (!output.good())
+		{
+			sqlite3_finalize(statement);
+			error = "The message-history CSV file could not be written completely.";
+			return false;
+		}
+
+		int result = sqlite3_step(statement);
+		int completed = 0;
+		while (result == SQLITE_ROW)
+		{
+			if (completed == INT_MAX)
+			{
+				sqlite3_finalize(statement);
+				error = "The message-history CSV export contains too many rows.";
+				return false;
+			}
+			try
+			{
+				for (int column = 0; column < 8; ++column)
+				{
+					if (column) output << ',';
+					std::string value;
+					if (!ReadCsvColumn(statement, column, value, error))
+					{
+						sqlite3_finalize(statement);
+						return false;
+					}
+					output << SpreadsheetCsvEscape(value);
+				}
+				output << "\r\n";
+			}
+			catch (...)
+			{
+				sqlite3_finalize(statement);
+				error = "The message-history CSV file could not be written completely.";
+				return false;
+			}
+			if (!output.good())
+			{
+				sqlite3_finalize(statement);
+				error = "The message-history CSV file could not be written completely.";
+				return false;
+			}
+			++completed;
+			result = sqlite3_step(statement);
+		}
+		if (result != SQLITE_DONE)
+			error = deadline.expired ? "Message archive CSV export exceeded five minutes." :
+				sqlite3_errmsg(database);
+		const int finalization = sqlite3_finalize(statement);
+		if (result == SQLITE_DONE && finalization != SQLITE_OK)
+			error = sqlite3_errmsg(database);
+		if (result != SQLITE_DONE || finalization != SQLITE_OK) return false;
+		exported = completed;
+		return true;
+	}
+}
+
+bool ExportHistoryCsv(const std::string& utf8Path, const HistoryQuery& query,
+	std::ostream& output, int& exported, std::string& error)
+{
+	exported = 0;
+	error.clear();
+	sqlite3* database = NULL;
+	if (!OpenReadOnlyArchive(utf8Path, database, error)) return false;
+	const bool success = ExportHistoryCsvFromDatabase(database, query, output,
+		exported, error);
+	const int closeResult = sqlite3_close(database);
+	if (success && closeResult != SQLITE_OK)
+	{
+		exported = 0;
+		error = "The message archive CSV export could not close its database snapshot.";
+		return false;
+	}
+	if (!success) exported = 0;
+	return success;
 }
 
 MessageArchive::MessageArchive() : database_(NULL)
@@ -582,32 +855,17 @@ bool MessageArchive::QueryHistory(const HistoryQuery& query,
 	ProgressGuard progress(database_, &deadline);
 	const int limit = (std::max)(1, (std::min)(500, query.limit));
 	const int offset = (std::max)(0, query.offset);
-	const std::string pattern = "%" + Lowercase(query.search) + "%";
-	const std::string where =
-		" FROM message_history h WHERE (?='' OR lower(h.address) LIKE ? OR lower(h.mode) LIKE ? "
-		"OR lower(h.message_type) LIKE ? OR lower(h.message) LIKE ? OR lower(h.filter_label) LIKE ? "
-		"OR EXISTS(SELECT 1 FROM capcode_directory d WHERE d.address=h.address AND d.enabled=1 "
-		"AND (d.protocol='' OR h.mode LIKE d.protocol || '%') AND "
-		"(lower(d.display_name) LIKE ? OR lower(d.agency) LIKE ?))) "
-		"AND (?='' OR h.mode LIKE ? || '%') AND (?=0 OR h.filtered=1)";
+	const std::string where = " FROM message_history h" +
+		std::string(HistoryFilterWhereSql());
 	const std::string countSql = "SELECT COUNT(*)" + where + ";";
 	const std::string selectSql =
 		"SELECT h.id,h.received_utc,h.source,h.address,h.local_time,h.local_date,h.mode,h.message_type,"
 		"h.bitrate,h.message,h.filter_label,h.filtered,h.rejected,h.blocked_duplicate,h.fragmented,h.assembled" +
-		where + " ORDER BY h.received_utc DESC LIMIT ? OFFSET ?;";
-
-	auto bindFilter = [&](sqlite3_stmt* statement) -> bool
-	{
-		bool bound = BindText(statement, 1, query.search);
-		for (int index = 2; index <= 8; ++index) bound = bound && BindText(statement, index, pattern);
-		bound = bound && BindText(statement, 9, query.protocol) && BindText(statement, 10, query.protocol);
-		bound = bound && sqlite3_bind_int(statement, 11, query.filteredOnly ? 1 : 0) == SQLITE_OK;
-		return bound;
-	};
+		where + " ORDER BY h.received_utc DESC,h.id DESC LIMIT ? OFFSET ?;";
 
 	sqlite3_stmt* countStatement = NULL;
 	if (sqlite3_prepare_v2(database_, countSql.c_str(), -1, &countStatement, NULL) != SQLITE_OK ||
-		!bindFilter(countStatement) || sqlite3_step(countStatement) != SQLITE_ROW)
+		!BindHistoryFilter(countStatement, query) || sqlite3_step(countStatement) != SQLITE_ROW)
 	{
 		error = deadline.expired ? "Message archive query exceeded three seconds." :
 			sqlite3_errmsg(database_);
@@ -618,7 +876,8 @@ bool MessageArchive::QueryHistory(const HistoryQuery& query,
 	sqlite3_finalize(countStatement);
 
 	sqlite3_stmt* statement = NULL;
-	if (sqlite3_prepare_v2(database_, selectSql.c_str(), -1, &statement, NULL) != SQLITE_OK || !bindFilter(statement) ||
+	if (sqlite3_prepare_v2(database_, selectSql.c_str(), -1, &statement, NULL) != SQLITE_OK ||
+		!BindHistoryFilter(statement, query) ||
 		sqlite3_bind_int(statement, 12, limit) != SQLITE_OK || sqlite3_bind_int(statement, 13, offset) != SQLITE_OK)
 	{
 		error = deadline.expired ? "Message archive query exceeded three seconds." :

@@ -1,6 +1,6 @@
 # Dependency and security review
 
-Reviewed: 10 August 2026
+Reviewed: 11 August 2026
 
 This record must be refreshed from official upstream release and security
 pages before each PDW release. A newer version is not adopted until it passes
@@ -61,6 +61,16 @@ Archive can open an operator-selected database, required connection defenses
 and its first-on-open bounded quick integrity check must succeed before schema
 or message SQL runs. Files that fail are preserved unchanged for external
 recovery.
+
+The 11 August 2026 v5.2 refresh rechecked the official upstream release and
+security pages. OpenSSL 3.5.7 remains the current 3.5 LTS maintenance release,
+curl 8.21.0 remains the current published curl release with no published
+security problems, libssh2 1.11.1 remains the latest official archive with no
+published security advisories, and Inno Setup 6.7.3 remains the current 6.x
+compiler revision. The Message History CSV export introduces no third-party
+native or runtime dependency; it uses the existing Windows SQLite binding and
+C++/Windows file APIs. The repository pins and decisions therefore remain
+unchanged for v5.2.
 
 ## Required review procedure
 

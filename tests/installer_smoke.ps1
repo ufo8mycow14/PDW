@@ -101,8 +101,13 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
     $customReceiver = Join-Path $installDirectory "Receivers\custom-receiver.ini"
     Set-Content -LiteralPath $customReceiver -Value "[Receiver]`r`nName=Installer smoke custom receiver" -Encoding Ascii
     $customReceiverHash = (Get-FileHash -LiteralPath $customReceiver -Algorithm SHA256).Hash
-    $predecessorExecutable = Join-Path $installDirectory "PDW v5 2026 Release.exe"
-    Set-Content -LiteralPath $predecessorExecutable -Value "synthetic predecessor executable" -Encoding Ascii
+    $predecessorExecutables = @(
+        (Join-Path $installDirectory "PDW v5 2026 Release.exe"),
+        (Join-Path $installDirectory "PDW v5.1 2026 Release.exe")
+    )
+    foreach ($predecessorExecutable in $predecessorExecutables) {
+        Set-Content -LiteralPath $predecessorExecutable -Value "synthetic predecessor executable" -Encoding Ascii
+    }
     Invoke-Setup $Architecture $installDirectory
     if ((Get-FileHash -LiteralPath (Join-Path $installDirectory "PDW.INI") -Algorithm SHA256).Hash -ne
         $preserveHash) {
@@ -112,8 +117,10 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
         $customReceiverHash) {
         throw "Upgrade overwrote the operator receiver for $Architecture."
     }
-    if (Test-Path -LiteralPath $predecessorExecutable -PathType Leaf) {
-        throw "Upgrade left the renamed v5 predecessor executable for $Architecture."
+    foreach ($predecessorExecutable in $predecessorExecutables) {
+        if (Test-Path -LiteralPath $predecessorExecutable -PathType Leaf) {
+            throw "Upgrade left predecessor executable $predecessorExecutable for $Architecture."
+        }
     }
 
     Invoke-Uninstall $installDirectory

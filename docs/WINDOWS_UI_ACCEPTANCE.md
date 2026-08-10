@@ -1,7 +1,7 @@
 # Windows UI acceptance
 
 This checklist records the manual evidence required to maintain the stable
-PDW v5.1 2026 Release. A successful resource compile, startup
+PDW v5.2 2026 Release. A successful resource compile, startup
 smoke, or unit suite does not prove that every legacy dialog remains readable
 and operable at every Windows scale.
 
@@ -56,6 +56,7 @@ different scale factors.
 | Delivery Health | [ ] | [ ] | [ ] | [ ] | Columns, history, acknowledgement and close controls remain readable and reachable. |
 | Publishing, FTP, Apprise and SMTP | [ ] | [ ] | [ ] | [ ] | Privacy text wraps; masked fields, status and all actions remain visible. |
 | Filters and filter options | [ ] | [ ] | [ ] | [ ] | List, search, edit, labels, output and duplicate controls remain recognizable. |
+| Capcode Directory and Message History | [ ] | [ ] | [ ] | [ ] | Search, paging, full-width rows, Export CSV, status, and close controls remain visible and reachable. |
 | Legacy input/custom audio and colour dialogs | [ ] | [ ] | [ ] | [ ] | Every legacy receiver, slicer and presentation option remains available. |
 
 ## Theme and contrast matrix
@@ -84,9 +85,27 @@ arrow keys, Space, Enter, Escape, menu accelerators and F1 only:
 - [ ] Toggle and restore SMTP and SMTP authentication.
 - [ ] Traverse every Data Outputs tab without entering or transmitting data.
 - [ ] Reach Publishing, FTP, Apprise and Delivery Health status/actions.
+- [ ] In Message History, reach **Export CSV...** by Tab and Alt+X; cancel the
+  native Save dialog and confirm focus returns to Export without creating a file.
 - [ ] Open F1 help and Settings > Volume; confirm current Windows routing.
 - [ ] Cancel each dialog and confirm settings remain unchanged.
 - [ ] Save one reversible non-secret appearance setting and confirm it survives restart.
+
+For Message History export, use synthetic non-sensitive rows. Confirm the
+default `PDW-message-history-YYYYMMDD-HHMMSS.csv` name, `.csv` extension and
+overwrite prompt; verify that Search, Protocol, and Filtered are honoured across
+all matching pages without changing the displayed page. The resulting UTF-8
+file must contain exactly these headings:
+
+```text
+Received,Protocol,Capcode,Name,Agency,Type,Message,Filter
+```
+
+Also verify commas, quotes, multiline text and non-ASCII text, a blank Message
+when text was not retained, current Capcode Directory aliases, protected
+formula-leading values, and an actionable failure with the previous destination
+file preserved when replacement is blocked. Do not retain the exported test
+file after acceptance.
 
 ## Acceptance record
 
