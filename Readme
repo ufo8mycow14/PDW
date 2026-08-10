@@ -1,23 +1,268 @@
-PDW - POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder
+<div align="center">
 
-Copyright (c) 2001 - 2004 Jason Petty
-Copyright (c) 2004 - 2010 Peter Hunt
-Open sourced 2013 - GNU GENERAL PUBLIC LICENSE
+# PDW
 
-Originally, PDW has been developed with Visual C++ 6.0. The current version can be compiled 
-using CMake and Visual Studio 2012. 
+### Paging Decoder for Windows
 
-PDW discussion forum: http://www.discriminator.nl/forum/
+A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+![Version](https://img.shields.io/badge/version-4.5.0%20Beta-2E74B5)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
+![Architecture](https://img.shields.io/badge/architecture-Win32-555555)
+![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
+![Build](https://img.shields.io/badge/build-CMake-064F8C)
+![License](https://img.shields.io/badge/license-GPLv3-green)
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+</div>
 
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+---
+
+## About PDW
+
+PDW—Paging Decoder for Windows—is a native Windows application for receiving, decoding, displaying, filtering, logging and securely routing supported digital radio messages.
+
+Originally developed by Jason Petty and Peter Hunt, PDW became open source in 2013. Current development modernises the application while preserving its established decoding behaviour, familiar workflows and compatibility with legacy receiving equipment.
+
+> [!IMPORTANT]
+> PDW should only be used to receive or process transmissions where monitoring is lawful and authorised.
+
+## Supported Protocols
+
+| Protocol | Supported Rates |
+| --- | --- |
+| **POCSAG** | 512, 1200 and 2400 baud |
+| **FLEX** | 1600, 3200 and 6400 baud |
+| **ERMES** | 6250 baud |
+| **ACARS** | Aircraft messages |
+| **MOBITEX** | 8000 baud |
+
+## Signal Sources
+
+PDW supports both established and modern receiver workflows:
+
+- Windows audio capture
+- Legacy serial and slicer interfaces
+- RS232 input
+- Reconnecting RTL-TCP receivers
+- Direct RTL-SDR USB receivers
+- Existing `.rec` recordings
+- WAV signal recording and replay
+- SigMF recording and replay
+
+The original local audio and serial inputs remain available. Optional receiver packages are loaded only when selected.
+
+## Key Features
+
+### Decoding and Monitoring
+
+- Native POCSAG, FLEX, ERMES, ACARS and MOBITEX decoding
+- Separate monitored and filtered message panes
+- Address, protocol and message-text filtering
+- Exact-text and multi-part text conditions
+- Duplicate-message detection
+- Monitor-only and rejected-message handling
+- Configurable message columns and colours
+- Statistics and reception-quality reporting
+
+### Signal Diagnostics
+
+- Live waveform display
+- Signal-level and noise measurements
+- Clipping detection
+- FLEX eye and phase-error information
+- Reception-quality history
+- Adjustable NFM bandwidth
+- WAV and SigMF diagnostic recordings
+- Repeatable signal replay
+- Recording-based calibration
+- Automatic restoration of the previous live source after replay
+
+### Filters and Alerts
+
+- Address and wildcard filters
+- Text and exact-text matching
+- Multiple required text fragments
+- Filter labels and colours
+- Filter hit counters
+- Separate per-filter output files
+- WAV alerts
+- Configured external commands
+- SMTP email
+- Filtered-only Apprise notifications
+
+### Secure File Transfer
+
+PDW can continuously transfer selected output files using:
+
+- FTP
+- Explicit FTPS
+- Implicit FTPS
+- Password-authenticated SFTP
+
+Security features include:
+
+- Windows-trusted TLS certificate validation
+- Required SHA-256 SFTP host-key verification
+- Windows Credential Manager password storage
+- Background file snapshots
+- Sanitised transfer logs
+- Configurable upload intervals
+
+### Web Publishing
+
+PDW can generate:
+
+- JSON
+- JSONL
+- RSS
+- Atom
+- Responsive HTML
+
+It can also deliver HTTPS webhooks with:
+
+- Bearer-token authentication
+- HMAC signatures
+- Address masking
+- Message omission
+- Source aliases
+- Filtered-only routing
+- Rate limiting
+- Retry with backoff
+- Persistent queues
+- Dead-letter retention
+
+Publishing is disabled by default and requires an operator acknowledgement.
+
+### Optional Data Outputs
+
+PDW 4.5 Beta adds disabled-by-default outputs for:
+
+- MQTT
+- SQLite
+- MySQL through Windows ODBC
+- Loopback-first Telnet JSON
+- Native Windows notifications
+
+These destinations receive an immutable copy after PDW’s established filtering and deduplication boundary. They do not replace existing display, logging, SMTP, Apprise, transfer or publishing features.
+
+### Delivery Health
+
+Delivery Health provides:
+
+- Success counters
+- Failure counters
+- Dropped-message counters
+- Sanitised operational history
+- Consecutive-failure alerts
+- Optional taskbar and sound notifications
+
+Delivery Health never stores pager addresses or decoded message text.
+
+### FLEX Fragment Reassembly
+
+PDW can optionally add one clearly marked assembled copy after receiving a complete FLEX alpha-fragment chain.
+
+- Original fragments are always processed first
+- The feature is disabled by default
+- Missing or out-of-order fragments produce no assembled copy
+- Timeouts cannot suppress original messages
+- Capacity limits cannot suppress original messages
+- FLEX Group Mode remains on its established legacy path
+
+## Modernisation Principles
+
+PDW is being modernised conservatively.
+
+- Preserve proven decoder behaviour
+- Keep legacy inputs and outputs available
+- Add new features without replacing established paths
+- Keep optional network features disabled by default
+- Store secrets outside configuration files
+- Protect privacy-sensitive decoded content
+- Maintain a portable native Windows application
+- Use reproducible, checksum-verified dependencies
+- Test compatibility before changing decoder behaviour
+
+## Release History
+
+### Current Generation
+
+| Version | Release Date | Highlights |
+| --- | --- | --- |
+| **4.5.0 Beta** | **10 August 2026** | Unified decoded-message routing, MQTT, SQLite, MySQL/ODBC, Telnet JSON, Windows notifications, Delivery Health, INI preservation, optional FLEX reassembly and expanded compatibility tests. |
+| **4.1.0 Beta** | **10 August 2026** | Modern interface, Settings hub, themes, DPI improvements, RTL-TCP, direct RTL-SDR, WAV/SigMF recording and replay, diagnostics, calibration, Apprise, FTPS/SFTP and privacy-controlled publishing. |
+| **3.2b01** | **20 August 2016** | SSL support and related fixes for the SMTP email client. |
+| **3.12** | **28 July 2013** | Stable open-source release with updated build support and filter, POCSAG and MOBITEX safety fixes. |
+| **3.1** | **26 September 2010** | Final Peter Hunt release, including MOBITEX soundcard and duplicate-message improvements. |
+
+<details>
+<summary><strong>Earlier release history</strong></summary>
+
+<br>
+
+| Version | Release Date | Main Changes |
+| --- | --- | --- |
+| **3.0** | **10 August 2010** | RS232 input, automatic polarity detection, visible RX Quality and ERMES corrections. |
+| **2.60** | **24 March 2010** | Filter improvements, custom SMTP ports, logfile controls and command-file memory fix. |
+| **2.53** | **11 January 2009** | Improved filter searching and keyboard operation; ERMES, statistics and text-selection fixes. |
+| **2.52** | **12 October 2008** | Additional date format, filtered-pane duplicate checking and FLEX group-call fixes. |
+| **2.51** | **16 August 2008** | MOBITEX Base-ID correction, copying improvements and message-only duplicate checking. |
+| **2.5** | **19 July 2008** | Major MOBITEX update covering MANs, data types, packets, sweep frames and Base IDs. |
+| **2.4** | **16 March 2008** | Configurable columns, improved soundcard handling, command support and FLEX fragment indicators. |
+| **2.3** | **19 December 2007** | POCSAG, FLEX and filter fixes; improved navigation, scrolling and serial-driver recovery. |
+| **2.2** | **23 August 2007** | Duplicate-filter detection, filter colours and multiple text conditions using `&`. |
+| **2.16** | **1 February 2007** | Minimise-to-system-tray and automatic restoration for selected messages. |
+| **2.15** | **11 January 2007** | SMTP reliability, character sets, WAV priorities, filtered-only display and pane switching. |
+| **2.14** | **22 June 2006** | Soundcard selection, title-bar information, grouped-message spacing and multiple-filter editing. |
+| **2.13** | **27 August 2005** | Updated slicer driver, filter searching and resolution-aware filter management. |
+| **2.12** | **7 March 2005** | Exact-text filtering, multiple email recipients and email subject/body controls. |
+| **2.11** | **20 January 2005** | POCSAG and MOBITEX fixes plus address-and-text-specific WAV alerts. |
+| **2.1** | **30 December 2004** | Duplicate blocking, wildcard WAV alerts, text rejection, FlexTIME and filter improvements. |
+| **2.0** | **10 November 2004** | Windows 2000/XP slicer support, integrated filter management and ACARS improvements. |
+
+</details>
+
+## Security and Privacy
+
+PDW messages may contain personal, operational or otherwise sensitive information.
+
+Operators are responsible for:
+
+- Confirming that reception is lawful
+- Protecting stored logfiles
+- Limiting message retention
+- Securing notification destinations
+- Controlling access to published files
+- Verifying webhook recipients
+- Avoiding unnecessary message content on phone lock screens
+- Confirming local privacy and radio-law requirements
+
+Never commit captured traffic, credentials, private logs, recordings, databases, queues or operator-specific configuration to a public repository.
+
+## Credits
+
+- **Jason Petty** — original PDW development, 2001–2004
+- **Peter Hunt** — PDW development, 2004–2010
+- **Open-source contributors** — maintenance and enhancements from 2013 onward
+- **Kieran O'Rourke** — 2026
+- spiralshapeturtle - 2026
+
+## Licence
+
+PDW is distributed under the GNU General Public License, version 3 or later.
+
+See the repository’s `License` file for the complete terms.
+
+## Project Links
+
+- [Official PDW website](https://www.discriminator.nl/pdw/index-en.html)
+- [Original PDW repository](https://github.com/Discriminator/PDW)
+- [PDW 3.12 release](https://github.com/Discriminator/PDW/releases/tag/3.12)
+
+---
+
+<div align="center">
+
+**Preserving PDW’s proven decoding while preparing it for modern Windows and modern receivers.**
+
+</div>
