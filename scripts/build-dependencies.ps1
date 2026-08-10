@@ -141,6 +141,42 @@ function Invoke-CMake {
     }
 }
 
+function Invoke-VerifiedDownload {
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string]$ExpectedSha256,
+        [Parameter(Mandatory = $true)][string]$DisplayName,
+        [ValidateRange(1, 6)][int]$MaximumAttempts = 4
+    )
+
+    $partial = "$Destination.partial"
+    for ($attempt = 1; $attempt -le $MaximumAttempts; $attempt++) {
+        if (Test-Path -LiteralPath $partial) {
+            Remove-Item -LiteralPath $partial -Force
+        }
+        try {
+            Write-Host "Downloading $DisplayName (attempt $attempt of $MaximumAttempts)..."
+            Invoke-WebRequest -Uri $Uri -OutFile $partial
+            $actualHash = (Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash
+            if ($actualHash -ne $ExpectedSha256) {
+                throw "Checksum mismatch. Expected $ExpectedSha256, received $actualHash."
+            }
+            Move-Item -LiteralPath $partial -Destination $Destination
+            return
+        }
+        catch {
+            if (Test-Path -LiteralPath $partial) {
+                Remove-Item -LiteralPath $partial -Force
+            }
+            if ($attempt -eq $MaximumAttempts) {
+                throw "Unable to download and verify '$DisplayName' after $MaximumAttempts attempts: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds ([Math]::Min(8, 2 * $attempt))
+        }
+    }
+}
+
 $cacheRoot = Join-Path $outRoot "dependency-cache"
 $sourceRoot = Join-Path $outRoot "dependency-sources\$Architecture"
 $buildRoot = Join-Path $outRoot "dependency-build\$Architecture"
@@ -166,8 +202,8 @@ foreach ($archive in $archives) {
         if (Test-Path -LiteralPath $archivePath) {
             Remove-Item -LiteralPath $archivePath -Force
         }
-        Write-Host "Downloading $($archive.Name)..."
-        Invoke-WebRequest -Uri $archive.Uri -OutFile $archivePath
+        Invoke-VerifiedDownload -Uri $archive.Uri -Destination $archivePath `
+            -ExpectedSha256 $archive.Sha256 -DisplayName $archive.Name
     }
 
     $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
