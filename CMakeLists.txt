@@ -33,10 +33,12 @@ if(NOT MSVC)
   message(FATAL_ERROR "PDW currently requires the Microsoft Visual C++ toolchain.")
 endif()
 
-# The legacy slicer/serial integration currently requires an x86 build.
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-  message(FATAL_ERROR "PDW must be built as 32-bit (Win32). Use -A Win32 with CMake.")
+  set(PDW_TARGET_ARCH "x64")
+else()
+  set(PDW_TARGET_ARCH "x86")
 endif()
+message(STATUS "Configuring PDW ${PROJECT_VERSION} for ${PDW_TARGET_ARCH}")
 
 set(PDW_GFXS)
 set(PDW_INCLUDES)
@@ -46,14 +48,14 @@ add_subdirectory(GFX)
 add_subdirectory(Headers)
 add_subdirectory(utils)
 
-set(PDW_DEPENDENCY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/out/dependencies/x86"
+set(PDW_DEPENDENCY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/out/dependencies/${PDW_TARGET_ARCH}"
   CACHE PATH "Path to the dependency set built by scripts/build-dependencies.ps1")
 
 if(NOT EXISTS "${PDW_DEPENDENCY_ROOT}/include/openssl/ssl.h" OR
    NOT EXISTS "${PDW_DEPENDENCY_ROOT}/include/curl/curl.h")
   message(FATAL_ERROR
     "PDW dependencies were not found under ${PDW_DEPENDENCY_ROOT}. "
-    "Run scripts/build-dependencies.ps1 before configuring PDW.")
+    "Run scripts/build-dependencies.ps1 -Architecture ${PDW_TARGET_ARCH} before configuring PDW.")
 endif()
 
 file(STRINGS "${PDW_DEPENDENCY_ROOT}/include/openssl/opensslv.h" PDW_OPENSSL_VERSION_LINE

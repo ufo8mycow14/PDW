@@ -8,7 +8,7 @@ A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
 ![Version](https://img.shields.io/badge/version-4.5.0%20Beta-2E74B5)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
-![Architecture](https://img.shields.io/badge/architecture-Win32-555555)
+![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20Win32-555555)
 ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
 ![Build](https://img.shields.io/badge/build-CMake-064F8C)
 ![License](https://img.shields.io/badge/license-GPLv3-green)
@@ -50,6 +50,28 @@ PDW supports both established and modern receiver workflows:
 - SigMF recording and replay
 
 The original local audio and serial inputs remain available. Optional receiver packages are loaded only when selected.
+
+## Windows Architectures
+
+PDW is built from one source tree as two native applications:
+
+- **x64** is the primary build for modern 64-bit Windows, modern audio capture, RTL-TCP and matching 64-bit receiver libraries.
+- **Win32** remains supported for established 32-bit receiver libraries and legacy serial or slicer installations.
+
+Configuration and decoder behaviour are shared between the builds. Native DLLs must match the selected PDW architecture; a 32-bit DLL cannot be loaded by x64 PDW, and a 64-bit DLL cannot be loaded by Win32 PDW.
+
+## Build on Windows
+
+Install Visual Studio 2022 Desktop development with C++, CMake, Perl and `tar`, then build the pinned dependencies and application for the required architecture:
+
+```powershell
+.\scripts\build-dependencies.ps1 -Architecture x64
+cmake -S . -B out\build-x64 -A x64
+cmake --build out\build-x64 --config Release --parallel
+ctest --test-dir out\build-x64 -C Release --output-on-failure
+```
+
+For the legacy-compatible build, replace `x64` with `x86` in the dependency command and use `-A Win32` with `out\build-win32`.
 
 ## Key Features
 
