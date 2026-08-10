@@ -17,7 +17,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Area | Current state | Next gate |
 | --- | --- | --- |
 | Win32 build | Local Release build passes all 24 tests; previously published fresh-clone build passed its 18-test checkpoint | Keep CI green and verify the expanded suite after push |
-| Windows interface | Approved 2026 command bar, live meter, modeless 10-page Settings Center, encrypted configuration backup/restore, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
+| Windows interface | Approved 2026 command bar, live meter, modeless 11-page Settings Center, encrypted configuration backup/restore, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
 | Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
 | Windows audio | WinMM and WASAPI captured from the real default device on the development machine | Live device-loss, hot-plug, and broader device-matrix acceptance |
 | Direct radio | `rtl_tcp` and optional RTL-SDR USB implemented | Multi-device live-radio matrix and recovery tests |

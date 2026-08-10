@@ -82,13 +82,14 @@ tree. It includes:
 - a clickable two-line **LIVE INPUT** meter driven by real signal diagnostics,
   with 12 history bars and a peak column;
 - one persistent modeless Settings window with search, draft retention,
-  Apply/Revert controls, 10 navigation destinations, and an **About me** entry
+  Apply/Revert controls, 11 navigation destinations, and an **About me** entry
   beneath **Health & diagnostics**;
 - **Backup / Restore** under General, producing a portable password-encrypted
   `.pdwbackup` containing PDW.INI, filters.ini, and supported PDW Credential
   Manager records;
-- FTP/FTPS/SFTP and web publishing consolidated with MQTT, databases, Telnet,
-  and related integrations under **Data outputs**;
+- the approved **Transfers & publishing** destination for FTP/FTPS/SFTP and web
+  publishing, kept separate from MQTT, databases, Telnet, and related
+  **Data outputs** integrations;
 - a live signal preview on **Signal & radio**, with retained legacy dialogs
   opened from clear cards without closing Settings; and
 - compact-width relayout and full child repainting so moved headings, buttons,
@@ -143,7 +144,7 @@ Native-window UI smoke automation verified single-instance Settings behavior,
 General/Appearance/Signal navigation, live-meter routing to Signal & radio,
 legacy modal handoff and recovery, explicit Light and Windows-following Dark
 rendering, 1000x720 layout, 820x600 compact relayout, and the 720x560 minimum.
-The merged backup dialog smoke also verified all 10 navigation destinations,
+The merged backup dialog smoke also verified all 11 navigation destinations,
 an unclipped 769x440 dark dialog, and correct disable/re-enable modality.
 The approved captures are under `out\ui-*.png`. Physical receiver behavior,
 keyboard-only completion, High Contrast, and 125-200% DPI acceptance remain
@@ -217,7 +218,7 @@ test installation on 10 August 2026. The root and
 Static documentation, receiver support, help, notices, and WAV assets were
 refreshed. Existing `PDW.INI`, `filters.ini`, receiver additions, recordings,
 logs, queues, and monitoring data were deliberately preserved.
-The installation's existing 287-path static-file manifest was recalculated
+The installation's 289-path static-file manifest was recalculated
 after the merge and verified with zero hash mismatches; private runtime extras
 were not added to that manifest.
 

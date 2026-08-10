@@ -36,8 +36,8 @@ hardware paths remain available in one executable.
   draft Apply/Revert behavior, persistent navigation, and an **About me** page.
 - Password-encrypted portable backup and restore for every saved INI setting,
   filter, receiver frequency, username, and supported Credential Manager
-  secret. Backup / Restore stays under General; file transfer and web
-  publishing now share **Data outputs**, removing the duplicate navigation page.
+  secret. Backup / Restore stays under General; the approved separate
+  **Transfers & publishing** and **Data outputs** workflows remain intact.
 
 ### Changed
 

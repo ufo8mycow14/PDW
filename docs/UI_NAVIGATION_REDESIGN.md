@@ -164,13 +164,15 @@ The left navigation remains visible and contains:
 5. Signal & radio
 6. Filters
 7. Notifications
-8. Data outputs
-9. Health & diagnostics
-10. About me
+8. Transfers & publishing
+9. Data outputs
+10. Health & diagnostics
+11. About me
 
-General contains **Backup / Restore**. Data outputs contains file transfer,
-web publishing, MQTT, databases, Telnet, and other integrations. This removes
-a duplicate destination category while preserving every underlying editor.
+General contains **Backup / Restore**. Transfers & publishing contains file
+transfer and web publishing. Data outputs contains MQTT, databases, Telnet,
+and other integrations. Keeping these destinations separate preserves the
+image-approved task grouping and makes continuous file delivery easier to find.
 
 At wide sizes the navigation displays icons and labels. At narrower sizes it
 retains readable icon-and-label rows in a narrower rail. The content header
@@ -272,8 +274,8 @@ message text appears in the status bar or Delivery Health.
    child control.
 4. Create the single-instance modeless Settings Center and navigation shell.
 5. Move General, Appearance, Display, Decoder, and Signal pages first.
-6. Move Filters and Notifications, then consolidate FTP, web publishing, and
-   other integrations under Data outputs.
+6. Move Filters and Notifications, then group FTP/web publishing under
+   Transfers & publishing and integrations under Data outputs.
 7. Route old menu and context-menu entry points to the matching Settings page.
 8. Remove superseded modal routes only after configuration round-trip and
    visual tests pass.
