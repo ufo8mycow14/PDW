@@ -7,7 +7,7 @@ boundary at a time.
 
 ## Non-negotiable compatibility boundaries
 
-- Ship one product as `PDW v5 2026 Release.exe`, with architecture-matched x64
+- Ship one product as `PDW v5.1 2026 Release.exe`, with architecture-matched x64
   and Win32 applications inside one guided installer, one settings experience,
   and one consolidated message stream. Retain portable packages; do not create
   separate legacy/enhanced editions or helper services.
@@ -150,9 +150,9 @@ legacy non-group alpha fragments are always shown first and a complete strict
 chain can add one marked assembled copy. FLEX Group Mode stays on its legacy
 path; fragment assembly is not required to publish a website or webhook.
 
-## Release gate for PDW v5 2026 Release
+## Release gate for PDW v5.1 2026 Release
 
-A public PDW v5 2026 Release build requires:
+A public PDW v5.1 2026 Release build requires:
 
 1. Successful clean Visual Studio 2022 x64 and Win32 Release builds.
 2. Startup and shutdown tests on current Windows.

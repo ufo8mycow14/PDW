@@ -87,6 +87,10 @@ int main(int argc, char** argv)
 	RequireZero("TelnetOutput", "AllowRemote");
 	RequireZero("WindowsToast", "Enable");
 	RequireZero("PDW", "FlexFragmentReassembly");
+	RequireZero("PDW", "RtlSignalConditioner");
+	RequireZero("MessageArchive", "EnableHistory");
+	RequireZero("MessageArchive", "IncludeMessage");
+	RequireZero("LiveDashboard", "Enable");
 
 	Require(Value("Publishing", "FilteredOnly") == "1", "publishing must default to filtered messages");
 	Require(Value("DataOutputs", "FilteredOnly") == "1", "data outputs must default to filtered messages");

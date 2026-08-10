@@ -309,6 +309,9 @@
 #include "headers\menu.h"
 #include "headers\acars.h"
 #include "headers\language.h"
+#include "headers\message_archive_manager.h"
+#include "headers\message_centre.h"
+#include "headers\multi_channel.h"
 #include "headers\mobitex.h"
 #include "headers\ermes.h"
 #include "headers\ftp.h"
@@ -316,6 +319,7 @@
 #include "headers\notification.h"
 #include "headers\output_health.h"
 #include "headers\publishing.h"
+#include "utils\multi_channel_manager.h"
 #include "headers\settings_center.h"
 #include "headers\status_bar.h"
 #include "headers\ui_theme.h"
@@ -501,6 +505,46 @@ DWORD GetColorRGB(BYTE color);
 
 void AutoRecording();	// PH: temp/test
 
+bool WorkerCommandRestricted(UINT command)
+{
+	switch (command)
+	{
+		case IDT_TOOLBAR_BTN0:
+		case IDT_TOOLBAR_BTN6:
+		case IDT_TOOLBAR_BTN7:
+		case IDM_LOGFILE:
+		case IDM_INTERFACE:
+		case IDM_OPTIONS:
+		case IDM_GENERAL:
+		case IDM_MAIL:
+		case IDM_FTP:
+		case IDM_APPRISE:
+		case IDM_SETTINGS:
+		case IDM_SIGNAL_SOURCES:
+		case IDM_PUBLISHING:
+		case IDM_DATA_OUTPUTS:
+		case IDM_OUTPUT_HEALTH:
+		case IDM_CONFIG_BACKUP:
+		case IDM_FILTERS:
+		case IDM_FILTEROPTIONS:
+		case IDM_RELOAD:
+		case IDM_RESET_HITCOUNTERS:
+		case IDM_FILTERFILE_EN:
+		case IDM_FILTERCOMMANDFILE:
+		case IDM_SETTINGS_SIGNAL_PAGE:
+		case IDM_PLAYBACK:
+		case IDM_RECORD:
+		case IDM_AUTORECORD:
+		case IDM_CAPCODE_DIRECTORY:
+		case IDM_MESSAGE_HISTORY:
+		case IDM_LIVE_DASHBOARD:
+		case IDM_MULTI_CHANNEL:
+			return true;
+		default:
+			return false;
+	}
+}
+
 
 int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLine, int nCmdShow)
 {
@@ -585,6 +629,12 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.telnetPort = 8024;
 	Profile.windowsToastEnabled = 0;
 	Profile.windowsToastIncludeMessage = 0;
+	Profile.messageHistoryEnabled = 0;
+	Profile.messageHistoryIncludeMessage = 0;
+	Profile.messageHistoryRetentionDays = 30;
+	strcpy(Profile.messageArchivePath, "pdw-history.sqlite3");
+	Profile.liveDashboardEnabled = 0;
+	Profile.liveDashboardPort = 8090;
 	Profile.outputHealthAlertsEnabled = 1;
 	Profile.outputHealthFailureThreshold = 3;
 
@@ -724,6 +774,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.rtlFrequencyCorrectionPpm = 0;
 	Profile.rtlBandwidthHz		= 12000;
 	Profile.rtlAutomaticGain	= 1;
+	Profile.rtlSignalConditionerEnabled = 0;
 	Profile.rtlDeviceIndex		= 0;
 	strcpy(Profile.rtlReceiverId, "rtl-sdr-standard");
 	memset(Profile.audioThreshold, 0, sizeof(Profile.audioThreshold));
@@ -749,10 +800,25 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 		return (FALSE);
 	}
 
-	CreateMutex(NULL, FALSE, szPath);	// Check if PDW is already running
+	const bool channelWorker = pdw::multichannel::ConfigureWorkerFromCommandLine(lpszCmdLine);
+	if (pdw::multichannel::WorkerCommandRequested() && !channelWorker)
+	{
+		MessageBoxA(NULL, "This isolated channel slot is disabled or invalid. Open multi-channel receivers from the main PDW window.",
+			"PDW Channel Worker", MB_ICONERROR);
+		return FALSE;
+	}
+	const std::string mutexName = pdw::multichannel::WorkerMutexName(szPath);
+	HANDLE instanceMutex = CreateMutexA(NULL, FALSE, mutexName.c_str());
+	if (!instanceMutex)
+	{
+		MessageBoxA(NULL, "Windows could not create PDW's single-instance guard.",
+			"PDW startup", MB_ICONERROR);
+		return FALSE;
+	}
 
 	if (GetLastError() == ERROR_ALREADY_EXISTS)	// Shut down, as an instance of PDW is
 	{											// already running in this folder
+		CloseHandle(instanceMutex);
 		MessageBox(ghWnd, "PDW is already running", "Warning", MB_ICONINFORMATION);
 		return (FALSE);
 	}
@@ -773,6 +839,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	NotificationManagerInitialize();
 	PublishingManagerInitialize();
 	DataOutputManagerInitialize();
+	MessageArchiveManagerInitialize();
 
 	if (hToolbar) TB_AutoSize(hToolbar);	// keep toolbar correct size!
 
@@ -826,6 +893,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 			DispatchMessage(&msg);
 		}
 	}
+	CloseHandle(instanceMutex);
 	return ((int) msg.wParam);
 } // end of WinMain()
 
@@ -1183,6 +1251,13 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		case WM_COMMAND:
 		{
+			if (pdw::multichannel::WorkerActive() && WorkerCommandRestricted(LOWORD(wParam)))
+			{
+				MessageBoxA(hWnd,
+					"Receiver, filter, storage and output settings are locked in an isolated channel worker. Use the main PDW window.",
+					"PDW Channel Worker", MB_ICONINFORMATION);
+				break;
+			}
 			switch (LOWORD(wParam))
 			{
 				case IDM_ENGLISH:     // select English character mapping
@@ -1577,6 +1652,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 									  hWnd, (DLGPROC) FilterOptionsDlgProc, 0L);
 				break;
 
+				case IDM_CAPCODE_DIRECTORY:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(CAPCODE_DIRECTORY_DLGBOX),
+						hWnd, (DLGPROC) CapcodeDirectoryDlgProc, 0L);
+				break;
+
 				case IDT_TOOLBAR_BTN9:  // Pause program.
 
 				if (bPauseFlag)
@@ -1655,6 +1735,27 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				case IDM_OUTPUT_HEALTH:
 					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(OUTPUT_HEALTH_DLGBOX),
 									 hWnd, (DLGPROC) OutputHealthDlgProc, 0L);
+				break;
+
+				case IDM_MESSAGE_HISTORY:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(MESSAGE_HISTORY_DLGBOX),
+						hWnd, (DLGPROC) MessageHistoryDlgProc, 0L);
+				break;
+
+				case IDM_LIVE_DASHBOARD:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(LIVE_DASHBOARD_DLGBOX),
+						hWnd, (DLGPROC) LiveDashboardDlgProc, 0L);
+				break;
+
+				case IDM_MULTI_CHANNEL:
+					if (pdw::multichannel::WorkerActive())
+					{
+						MessageBoxA(hWnd, "Additional channels can only be managed from the main PDW window.",
+							"PDW Multi-Channel Receivers", MB_ICONINFORMATION);
+						break;
+					}
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(MULTI_CHANNEL_DLGBOX),
+						hWnd, (DLGPROC) MultiChannelDlgProc, 0L);
 				break;
 
 				case IDM_RELOAD:
@@ -2046,6 +2147,12 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			if (bRecording) Stop_Recording();
 
 			// Stop background destinations while their configuration and shared state still exist.
+			if (!pdw::multichannel::WorkerActive())
+			{
+				std::string channelStopStatus;
+				pdw::multichannel::StopAllChannels(channelStopStatus);
+			}
+			MessageArchiveManagerShutdown();
 			DataOutputManagerShutdown();
 			PublishingManagerShutdown();
 			NotificationManagerShutdown();
@@ -2068,10 +2175,10 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					Profile.ySize = 442;
 				}
 			}
-			if (!ConfigurationRestoreCompleted()) WriteSettings();
+			if (!ConfigurationRestoreCompleted() && !pdw::multichannel::WorkerActive()) WriteSettings();
 
 			if (Profile.SystemTray) SystemTrayIcon(true);	// Remove PDW-icon from systemtray
-			if (!ConfigurationRestoreCompleted() && bUpdateFilters)
+			if (!ConfigurationRestoreCompleted() && !pdw::multichannel::WorkerActive() && bUpdateFilters)
 				WriteFilters(&Profile, 0);	// Save FILTERS.INI
 
 			// A misbehaving third-party serial driver may ignore cancellation. In that rare
@@ -9964,6 +10071,7 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->rtlFrequencyCorrectionPpm = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlFrequencyCorrectionPpm"), pProfile->rtlFrequencyCorrectionPpm, lpszIniPathName);
 	pProfile->rtlBandwidthHz			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlBandwidthHz"), pProfile->rtlBandwidthHz, lpszIniPathName);
 	pProfile->rtlAutomaticGain			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlAutomaticGain"), pProfile->rtlAutomaticGain, lpszIniPathName);
+	pProfile->rtlSignalConditionerEnabled = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlSignalConditioner"), pProfile->rtlSignalConditionerEnabled, lpszIniPathName);
 	pProfile->rtlDeviceIndex			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlDeviceIndex"), pProfile->rtlDeviceIndex, lpszIniPathName);
 	GetPrivateProfileString(lpszAppTitle, TEXT("RtlReceiverId"), "rtl-sdr-standard", pProfile->rtlReceiverId, sizeof(pProfile->rtlReceiverId), lpszIniPathName);
 	pProfile->audioThreshold[INDEX512]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Threshold512"), pProfile->audioThreshold[INDEX512], lpszIniPathName);
@@ -9989,6 +10097,7 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 		pProfile->rtlAudioSampleRate > pProfile->rtlSampleRate) pProfile->rtlAudioSampleRate = 48000;
 	if (pProfile->rtlDeviceIndex < 0) pProfile->rtlDeviceIndex = 0;
 	if (pProfile->rtlBandwidthHz < 5000 || pProfile->rtlBandwidthHz > 25000) pProfile->rtlBandwidthHz = 12000;
+	pProfile->rtlSignalConditionerEnabled = pProfile->rtlSignalConditionerEnabled ? 1 : 0;
 	if (!pProfile->rtlReceiverId[0]) strcpy(pProfile->rtlReceiverId, "rtl-sdr-standard");
 	for (int audioIndex = 0; audioIndex < AUDIO_CUSTOM_RATE_COUNT; audioIndex++)
 	{
@@ -10146,6 +10255,16 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 
 	pProfile->windowsToastEnabled = (INT) GetPrivateProfileInt("WindowsToast", TEXT("Enable"), 0, lpszIniPathName);
 	pProfile->windowsToastIncludeMessage = (INT) GetPrivateProfileInt("WindowsToast", TEXT("IncludeMessage"), 0, lpszIniPathName);
+	pProfile->messageHistoryEnabled = (INT) GetPrivateProfileInt("MessageArchive", TEXT("EnableHistory"), 0, lpszIniPathName);
+	pProfile->messageHistoryIncludeMessage = (INT) GetPrivateProfileInt("MessageArchive", TEXT("IncludeMessage"), 0, lpszIniPathName);
+	pProfile->messageHistoryRetentionDays = (unsigned int) GetPrivateProfileInt("MessageArchive", TEXT("RetentionDays"), 30, lpszIniPathName);
+	GetPrivateProfileString("MessageArchive", TEXT("Path"), "pdw-history.sqlite3", pProfile->messageArchivePath, sizeof(pProfile->messageArchivePath), lpszIniPathName);
+	if (pProfile->messageHistoryRetentionDays < 1 || pProfile->messageHistoryRetentionDays > 3650)
+		pProfile->messageHistoryRetentionDays = 30;
+	pProfile->liveDashboardEnabled = (INT) GetPrivateProfileInt("LiveDashboard", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->liveDashboardPort = (INT) GetPrivateProfileInt("LiveDashboard", TEXT("Port"), 8090, lpszIniPathName);
+	if (pProfile->liveDashboardPort < 1 || pProfile->liveDashboardPort > 65535)
+		pProfile->liveDashboardPort = 8090;
 	pProfile->outputHealthAlertsEnabled = (INT) GetPrivateProfileInt("OutputHealth", TEXT("AlertsEnabled"), 1, lpszIniPathName);
 	pProfile->outputHealthFailureThreshold = (unsigned int) GetPrivateProfileInt("OutputHealth", TEXT("FailureThreshold"), 3, lpszIniPathName);
 	if (pProfile->outputHealthFailureThreshold < 1 || pProfile->outputHealthFailureThreshold > 20)
@@ -10481,6 +10600,9 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 void WriteSettings()
 {
+	// Isolated receiver workers inherit the main configuration but must never
+	// overwrite it from their minimized compatibility windows.
+	if (pdw::multichannel::WorkerActive()) return;
 	char settingsSnapshotPath[MAX_PATH] = {};
 	FILE* pFile = NULL;
 	if (GetTempFileNameA(szPath, "PDS", 0, settingsSnapshotPath))
@@ -10611,6 +10733,7 @@ void WriteSettings()
 		fprintf(pFile, "RtlFrequencyCorrectionPpm=%i\n", Profile.rtlFrequencyCorrectionPpm);
 		fprintf(pFile, "RtlBandwidthHz=%i\n",			Profile.rtlBandwidthHz);
 		fprintf(pFile, "RtlAutomaticGain=%i\n",		Profile.rtlAutomaticGain);
+		fprintf(pFile, "RtlSignalConditioner=%i\n",	Profile.rtlSignalConditionerEnabled);
 		fprintf(pFile, "RtlDeviceIndex=%i\n",			Profile.rtlDeviceIndex);
 		fprintf(pFile, "RtlReceiverId=%s\n",			Profile.rtlReceiverId);
 		fprintf(pFile, "Threshold512=%i\n",				Profile.audioThreshold[INDEX512]);
@@ -10739,6 +10862,16 @@ void WriteSettings()
 		fprintf(pFile, "Enable=%i\n", Profile.windowsToastEnabled);
 		fprintf(pFile, "IncludeMessage=%i\n", Profile.windowsToastIncludeMessage);
 
+		fprintf(pFile, "\n[MessageArchive]\n");
+		fprintf(pFile, "EnableHistory=%i\n", Profile.messageHistoryEnabled);
+		fprintf(pFile, "IncludeMessage=%i\n", Profile.messageHistoryIncludeMessage);
+		fprintf(pFile, "RetentionDays=%u\n", Profile.messageHistoryRetentionDays);
+		fprintf(pFile, "Path=%s\n", Profile.messageArchivePath);
+
+		fprintf(pFile, "\n[LiveDashboard]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.liveDashboardEnabled);
+		fprintf(pFile, "Port=%i\n", Profile.liveDashboardPort);
+
 		fprintf(pFile, "\n[OutputHealth]\n");
 		fprintf(pFile, "AlertsEnabled=%i\n", Profile.outputHealthAlertsEnabled);
 		fprintf(pFile, "FailureThreshold=%u\n", Profile.outputHealthFailureThreshold);
@@ -10782,6 +10915,9 @@ void WriteSettings()
 
 void WriteFilters(PPROFILE pProfile, int backup)
 {
+	// Isolated receiver workers share the main installation directory. Never
+	// let timer, dialog, or shutdown paths race the main process on filters.ini.
+	if (pdw::multichannel::WorkerActive()) return;
 	char szLine[256];
 	char szFilename[MAX_PATH];
 	char szPathname[MAX_PATH];

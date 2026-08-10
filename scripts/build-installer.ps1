@@ -39,7 +39,13 @@ if ([string]::IsNullOrWhiteSpace($InnoCompiler) -or
     throw "Inno Setup Compiler 6 was not found. Install official Inno Setup or pass -InnoCompiler."
 }
 
-$setup = Join-Path $outputRoot "PDW-v5-2026-Release-Setup.exe"
+$versionHeader = Get-Content -LiteralPath (Join-Path $sourceRoot "Headers\version.h") -Raw
+$packageMatch = [regex]::Match($versionHeader,
+    '(?m)^#define PDW_PACKAGE_BASENAME "([^"]+)"\r?$')
+if (-not $packageMatch.Success) {
+    throw "Unable to read PDW_PACKAGE_BASENAME from Headers\version.h."
+}
+$setup = Join-Path $outputRoot "$($packageMatch.Groups[1].Value)-Setup.exe"
 if (Test-Path -LiteralPath $setup -PathType Leaf) {
     throw "Installer output already exists; refusing to overwrite: $setup"
 }

@@ -1,6 +1,6 @@
-# PDW v5 2026 Release installation
+# PDW v5.1 2026 Release installation
 
-`PDW-v5-2026-Release-Setup.exe` is the recommended distribution for ordinary
+`PDW-v5.1-2026-Release-Setup.exe` is the recommended distribution for ordinary
 Windows users. It contains both maintained PDW architectures and installs per
 user without requiring administrator rights. The portable packages remain
 available for existing deployments and recovery; they run the same PDW code.
@@ -43,7 +43,7 @@ filters, receiver additions, WAV files, logs, recordings, and other operator
 data remain by default so an accidental uninstall does not destroy them. They
 can be reviewed and removed manually after a backup when no longer required.
 
-Portable use is unchanged: start `PDW v5 2026 Release.exe` in a writable folder
+Portable use is unchanged: start `PDW v5.1 2026 Release.exe` in a writable folder
 containing `PDW.INI`. No installed service, background updater, or driver is
 required.
 
@@ -68,7 +68,7 @@ and tests both architecture paths:
   -ScanWithDefender
 
 .\tests\installer_smoke.ps1 `
-  -Setup out\installer\PDW-v5-2026-Release-Setup.exe `
+  -Setup out\installer\PDW-v5.1-2026-Release-Setup.exe `
   -TestRoot out\installer-smoke
 ```
 
@@ -85,7 +85,7 @@ Then run:
 
 ```powershell
 .\scripts\audit-installer.ps1 `
-  -Setup out\installer\PDW-v5-2026-Release-Setup.exe `
+  -Setup out\installer\PDW-v5.1-2026-Release-Setup.exe `
   -RequireSignature -ScanWithDefender
 ```
 

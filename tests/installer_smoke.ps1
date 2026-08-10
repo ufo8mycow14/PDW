@@ -59,7 +59,17 @@ function Invoke-Uninstall([string]$InstallDirectory) {
 function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
     $installDirectory = Join-Path $root $Architecture
     Invoke-Setup $Architecture $installDirectory
-    $executable = Join-Path $installDirectory "PDW v5 2026 Release.exe"
+    $versionHeader = Get-Content -LiteralPath (Join-Path $sourceRoot "Headers\version.h") -Raw
+    function Read-StringMacro([string]$Name) {
+        $match = [regex]::Match($versionHeader,
+            '(?m)^#define ' + [regex]::Escape($Name) + ' "([^"]+)"\r?$')
+        if (-not $match.Success) { throw "Unable to read $Name from Headers\version.h." }
+        return $match.Groups[1].Value
+    }
+    $displayName = Read-StringMacro "PDW_DISPLAY_VERSION"
+    $productVersion = Read-StringMacro "PDW_VERSION_STRING"
+    $resourceVersion = Read-StringMacro "PDW_VERSION_RESOURCE_STRING"
+    $executable = Join-Path $installDirectory "$displayName.exe"
     if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
         throw "Installed executable is missing for $Architecture."
     }
@@ -68,8 +78,8 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
         throw ("Installed {0} PE machine is 0x{1:X4}." -f $Architecture, $machine)
     }
     $version = (Get-Item -LiteralPath $executable).VersionInfo
-    if ($version.FileVersion -ne "5.0.0.0" -or
-        $version.ProductVersion -ne "5.0.0 2026 Release") {
+    if ($version.FileVersion -ne $resourceVersion -or
+        $version.ProductVersion -ne $productVersion) {
         throw "Installed executable metadata is incorrect for $Architecture."
     }
     foreach ($relative in @("PDW.INI", "filters.ini", "Receivers", "Wavfiles")) {
@@ -91,6 +101,8 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
     $customReceiver = Join-Path $installDirectory "Receivers\custom-receiver.ini"
     Set-Content -LiteralPath $customReceiver -Value "[Receiver]`r`nName=Installer smoke custom receiver" -Encoding Ascii
     $customReceiverHash = (Get-FileHash -LiteralPath $customReceiver -Algorithm SHA256).Hash
+    $predecessorExecutable = Join-Path $installDirectory "PDW v5 2026 Release.exe"
+    Set-Content -LiteralPath $predecessorExecutable -Value "synthetic predecessor executable" -Encoding Ascii
     Invoke-Setup $Architecture $installDirectory
     if ((Get-FileHash -LiteralPath (Join-Path $installDirectory "PDW.INI") -Algorithm SHA256).Hash -ne
         $preserveHash) {
@@ -99,6 +111,9 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
     if ((Get-FileHash -LiteralPath $customReceiver -Algorithm SHA256).Hash -ne
         $customReceiverHash) {
         throw "Upgrade overwrote the operator receiver for $Architecture."
+    }
+    if (Test-Path -LiteralPath $predecessorExecutable -PathType Leaf) {
+        throw "Upgrade left the renamed v5 predecessor executable for $Architecture."
     }
 
     Invoke-Uninstall $installDirectory

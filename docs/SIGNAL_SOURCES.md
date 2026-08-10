@@ -1,7 +1,7 @@
 # Radio, recording, and replay
 
 Open **Settings > Decoder and input > Radio and replay**. These inputs are
-additional choices inside the same `PDW v5 2026 Release.exe`; they do not create a separate
+additional choices inside the same `PDW v5.1 2026 Release.exe`; they do not create a separate
 edition or background helper.
 
 ## Local audio and serial compatibility
@@ -30,6 +30,19 @@ validates the `RTL0` header, configures the tuner, FM-demodulates and resamples
 IQ in process, and reconnects after a dropped connection. No decoded text is
 sent to the RTL-TCP server.
 
+**Enhanced IQ filtering and resampling** is an optional RTL-only signal
+conditioner. It applies a 60 dB windowed-sinc polyphase channel filter before
+the FM discriminator, then applies a second anti-alias filter while converting
+the discriminator stream to the configured audio rate. This can reduce
+out-of-channel energy and resampling aliases without changing POCSAG or FLEX
+protocol logic. It is disabled by default; with the box clear, PDW executes
+the original one-pole low-pass and averaging path sample-for-sample.
+
+The NFM value retains its established interpretation as the one-sided filter
+cutoff. Filtering cannot restore samples lost to tuner overload, clipping,
+USB loss, or insufficient RF signal. Compare the same legal diagnostic
+recording with the option off and on before retaining it for a receiver.
+
 ## RTL-SDR USB
 
 Select **Direct RTL-SDR USB receiver**. The Win32 distribution includes a
@@ -43,7 +56,7 @@ Use **Add receiver...** to import a matching-architecture `rtlsdr.dll` or
 `librtlsdr.dll`. PDW checks the PE architecture and required receive API, then
 copies the primary library and neighbouring DLL dependencies into a portable
 `Receivers\Custom` package. Existing compatible DLLs beside
-`PDW v5 2026 Release.exe` remain selectable as a legacy fallback. Arbitrary vendor
+`PDW v5.1 2026 Release.exe` remain selectable as a legacy fallback. Arbitrary vendor
 APIs are not loaded as if they were librtlsdr; those receivers can feed PDW
 through local/virtual audio or an RTL-TCP-compatible bridge.
 
@@ -64,8 +77,8 @@ It uses the recording's sample rate, resets protocol timing, runs through the
 normal PDW decoder functions in real time, then restores the exact prior live
 audio/radio/serial source. Stop a diagnostic recording before starting replay.
 
-The same dialog shows a rolling discriminator waveform, receive-quality
-history, level, noise, clipping, eye opening, signal score, corrected versus
+The same dialog shows a rolling discriminator waveform, audio spectrum,
+waterfall, receive-quality history, level, noise, clipping, eye opening, signal score, corrected versus
 uncorrectable errors, and FLEX phase A-D error totals. **Calibrate replay...**
 tests all 1,000 custom threshold/centering/resync combinations against the
 selected recording and offers the best signal-based result. Applying it uses

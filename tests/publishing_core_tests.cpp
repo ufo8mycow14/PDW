@@ -22,6 +22,9 @@ int main()
 	source.timestamp = "2026-08-10T12:00:00+09:30";
 	source.source = "PDW";
 	source.address = "1234567";
+	source.addressName = "Station Alpha";
+	source.agency = "Test Agency";
+	source.aliasColor = 12345;
 	source.mode = "POCSAG";
 	source.messageType = "Alpha";
 	source.message = "A <test> & \"quote\"\nnext";
@@ -38,6 +41,8 @@ int main()
 	pdw::publishing::PublishEvent published = pdw::publishing::ApplyTransform(source, options);
 	Require(source.address == "1234567", "transform mutated the decoded source event");
 	Require(published.address == "****567", "address masking did not retain only the last three digits");
+	Require(published.addressName.empty() && published.agency.empty() && published.aliasColor == 0,
+		"address masking did not remove identifying capcode alias metadata");
 	Require(published.source == "Adelaide receiver", "source alias was not applied to the published copy");
 
 	std::string json = pdw::publishing::BuildJsonObject(published);
@@ -49,6 +54,14 @@ int main()
 		"FLEX group metadata is missing");
 	Require(json.find("\"cycle\":2,\"frame\":17") != std::string::npos,
 		"FLEX cycle/frame metadata is missing");
+	options.maskAddress = false;
+	const std::string aliasJson = pdw::publishing::BuildJsonObject(
+		pdw::publishing::ApplyTransform(source, options), true);
+	Require(aliasJson.find("\"address_name\":\"Station Alpha\"") != std::string::npos &&
+		aliasJson.find("\"agency\":\"Test Agency\"") != std::string::npos,
+		"capcode alias metadata is missing from the explicit local representation");
+	Require(pdw::publishing::BuildJsonObject(source).find("address_name") == std::string::npos,
+		"local alias metadata leaked into the established external JSON schema");
 	std::vector<pdw::publishing::PublishEvent> events(1, published);
 	Require(pdw::publishing::BuildRssFeed(events).find("&lt;test&gt; &amp;") != std::string::npos,
 		"RSS text was not XML escaped");

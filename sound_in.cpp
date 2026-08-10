@@ -335,6 +335,7 @@ namespace
 		config.frequencyCorrectionPpm = Profile.rtlFrequencyCorrectionPpm;
 		config.nfmBandwidthHz = static_cast<std::uint32_t>(Profile.rtlBandwidthHz);
 		config.automaticGain = Profile.rtlAutomaticGain != 0;
+		config.signalConditionerEnabled = Profile.rtlSignalConditionerEnabled != 0;
 		g_wasapiFallbackSink.Clear();
 		if (!g_rtlTcpSource.Start(config, &g_wasapiFallbackSink)) return false;
 		bUsingWasapiFallback = true;
@@ -363,6 +364,7 @@ namespace
 		config.frequencyCorrectionPpm = Profile.rtlFrequencyCorrectionPpm;
 		config.nfmBandwidthHz = static_cast<std::uint32_t>(Profile.rtlBandwidthHz);
 		config.automaticGain = Profile.rtlAutomaticGain != 0;
+		config.signalConditionerEnabled = Profile.rtlSignalConditionerEnabled != 0;
 		g_wasapiFallbackSink.Clear();
 		if (!g_rtlSdrSource.Start(config, static_cast<unsigned int>(Profile.rtlDeviceIndex),
 			&g_wasapiFallbackSink)) return false;
@@ -1941,6 +1943,7 @@ namespace
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_GAIN), rtlAny && !IsDlgButtonChecked(dialog, IDC_RTL_AUTOMATIC_GAIN));
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_PPM), rtlAny);
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_BANDWIDTH), rtlAny);
+		EnableWindow(GetDlgItem(dialog, IDC_RTL_SIGNAL_CONDITIONER), rtlAny);
 	}
 
 	bool ReadRtlDialog(HWND dialog, pdw::signal::RtlTcpConfig& config, int& deviceIndex)
@@ -1973,6 +1976,8 @@ namespace
 		config.frequencyCorrectionPpm = static_cast<int>(ppm);
 		config.nfmBandwidthHz = static_cast<std::uint32_t>(bandwidth);
 		config.automaticGain = IsDlgButtonChecked(dialog, IDC_RTL_AUTOMATIC_GAIN) != 0;
+		config.signalConditionerEnabled =
+			IsDlgButtonChecked(dialog, IDC_RTL_SIGNAL_CONDITIONER) != 0;
 		return true;
 	}
 
@@ -2079,6 +2084,8 @@ namespace
 		SetDlgItemText(dialog, IDC_SIGNAL_METRICS, text);
 		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_WAVEFORM), NULL, FALSE);
 		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_QUALITY_HISTORY), NULL, FALSE);
+		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_SPECTRUM), NULL, FALSE);
+		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_WATERFALL), NULL, FALSE);
 	}
 
 	void DrawSignalDiagnosticControl(const DRAWITEMSTRUCT* item)
@@ -2088,6 +2095,36 @@ namespace
 		HBRUSH background = CreateSolidBrush(PdwThemeSurfaceColor());
 		FillRect(item->hDC, &bounds, background);
 		DeleteObject(background);
+		std::vector<float> waveform, history, spectrum, waterfall;
+		g_signalDiagnostics.Snapshot(&waveform, &history, &spectrum, &waterfall);
+		if (item->CtlID == IDC_SIGNAL_WATERFALL)
+		{
+			const std::size_t columns = 64;
+			const std::size_t rows = waterfall.size() / columns;
+			if (!rows) return;
+			HBRUSH cellBrush = static_cast<HBRUSH>(GetStockObject(DC_BRUSH));
+			for (std::size_t row = 0; row < rows; ++row)
+			{
+				for (std::size_t column = 0; column < columns; ++column)
+				{
+					const float level = (std::max)(0.0f, (std::min)(1.0f,
+						waterfall[row * columns + column]));
+					const int red = static_cast<int>(255.0f * (std::max)(0.0f, (level - 0.45f) / 0.55f));
+					const int green = static_cast<int>(255.0f * (std::min)(1.0f, level * 1.8f));
+					const int blue = static_cast<int>(190.0f * (1.0f - level));
+					SetDCBrushColor(item->hDC, RGB(red, green, blue));
+					RECT cell = {
+						bounds.left + static_cast<int>((bounds.right - bounds.left) * column / columns),
+						bounds.top + static_cast<int>((bounds.bottom - bounds.top) * row / rows),
+						bounds.left + static_cast<int>((bounds.right - bounds.left) * (column + 1) / columns),
+						bounds.top + static_cast<int>((bounds.bottom - bounds.top) * (row + 1) / rows)
+					};
+					FillRect(item->hDC, &cell, cellBrush);
+				}
+			}
+			return;
+		}
+
 		HPEN grid = CreatePen(PS_SOLID, 1, PdwThemeBorderColor());
 		HGDIOBJ previousPen = SelectObject(item->hDC, grid);
 		const int middle = (bounds.top + bounds.bottom) / 2;
@@ -2095,19 +2132,20 @@ namespace
 		LineTo(item->hDC, bounds.right, middle);
 		DeleteObject(SelectObject(item->hDC, previousPen));
 
-		std::vector<float> waveform, history;
-		g_signalDiagnostics.Snapshot(&waveform, &history);
-		const std::vector<float>& values = item->CtlID == IDC_SIGNAL_WAVEFORM ? waveform : history;
+		const std::vector<float>& values = item->CtlID == IDC_SIGNAL_WAVEFORM ? waveform :
+			(item->CtlID == IDC_SIGNAL_SPECTRUM ? spectrum : history);
 		if (values.size() < 2) return;
 		HPEN plot = CreatePen(PS_SOLID, 1, item->CtlID == IDC_SIGNAL_WAVEFORM ?
-			PdwThemeAccentColor() : RGB(16, 150, 80));
+			PdwThemeAccentColor() : (item->CtlID == IDC_SIGNAL_SPECTRUM ?
+			RGB(240, 170, 30) : RGB(16, 150, 80)));
 		previousPen = SelectObject(item->hDC, plot);
 		for (std::size_t index = 0; index < values.size(); ++index)
 		{
 			const int x = bounds.left + 1 + static_cast<int>((bounds.right - bounds.left - 2) *
 				index / (values.size() - 1));
 			const float normalized = item->CtlID == IDC_SIGNAL_WAVEFORM ?
-				(values[index] + 1.0f) * 0.5f : values[index] / 100.0f;
+				(values[index] + 1.0f) * 0.5f : (item->CtlID == IDC_SIGNAL_SPECTRUM ?
+				values[index] : values[index] / 100.0f);
 			const int y = bounds.bottom - 2 - static_cast<int>((bounds.bottom - bounds.top - 3) *
 				(std::max)(0.0f, (std::min)(1.0f, normalized)));
 			if (index == 0) MoveToEx(item->hDC, x, y, NULL);
@@ -2193,6 +2231,8 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 			SetDlgItemInt(hDlg, IDC_RTL_BANDWIDTH, Profile.rtlBandwidthHz, FALSE);
 			SetDlgItemInt(hDlg, IDC_RTL_DEVICE, Profile.rtlDeviceIndex, FALSE);
 			CheckDlgButton(hDlg, IDC_RTL_AUTOMATIC_GAIN, Profile.rtlAutomaticGain ? BST_CHECKED : BST_UNCHECKED);
+			CheckDlgButton(hDlg, IDC_RTL_SIGNAL_CONDITIONER,
+				Profile.rtlSignalConditionerEnabled ? BST_CHECKED : BST_UNCHECKED);
 			RefreshReceiverPackages(hDlg, Profile.rtlReceiverId);
 			EnableRtlControls(hDlg, Profile.audioSource);
 			SetDlgItemText(hDlg, IDC_SIGNAL_RECORD_PATH, "PDW-signal.wav");
@@ -2357,6 +2397,8 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 						Profile.rtlFrequencyCorrectionPpm = config.frequencyCorrectionPpm;
 						Profile.rtlBandwidthHz = static_cast<int>(config.nfmBandwidthHz);
 						Profile.rtlAutomaticGain = config.automaticGain ? 1 : 0;
+						Profile.rtlSignalConditionerEnabled =
+							config.signalConditionerEnabled ? 1 : 0;
 						Profile.rtlDeviceIndex = deviceIndex;
 						if (source == AUDIO_SOURCE_RTL_SDR)
 						{
@@ -2402,7 +2444,8 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 			return TRUE;
 
 		case WM_DRAWITEM:
-			if (wParam == IDC_SIGNAL_WAVEFORM || wParam == IDC_SIGNAL_QUALITY_HISTORY)
+			if (wParam == IDC_SIGNAL_WAVEFORM || wParam == IDC_SIGNAL_QUALITY_HISTORY ||
+				wParam == IDC_SIGNAL_SPECTRUM || wParam == IDC_SIGNAL_WATERFALL)
 			{
 				DrawSignalDiagnosticControl(reinterpret_cast<const DRAWITEMSTRUCT*>(lParam));
 				return TRUE;

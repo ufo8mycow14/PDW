@@ -8,16 +8,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+$sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$versionHeader = Get-Content -LiteralPath (Join-Path $sourceRoot "Headers\version.h") -Raw
+function Read-StringMacro([string]$Name) {
+    $match = [regex]::Match($versionHeader,
+        '(?m)^#define ' + [regex]::Escape($Name) + ' "([^"]+)"\r?$')
+    if (-not $match.Success) { throw "Unable to read $Name from Headers\version.h." }
+    return $match.Groups[1].Value
+}
+$displayName = Read-StringMacro "PDW_DISPLAY_VERSION"
+$resourceVersion = Read-StringMacro "PDW_VERSION_RESOURCE_STRING"
+$packageBase = Read-StringMacro "PDW_PACKAGE_BASENAME"
 $setupPath = (Resolve-Path -LiteralPath $Setup).Path
-if ([System.IO.Path]::GetFileName($setupPath) -ne "PDW-v5-2026-Release-Setup.exe") {
+if ([System.IO.Path]::GetFileName($setupPath) -ne "$packageBase-Setup.exe") {
     throw "Unexpected installer filename: $setupPath"
 }
 $version = (Get-Item -LiteralPath $setupPath).VersionInfo
-if ($version.FileVersion.Trim() -ne "5.0.0.0" -or
-    $version.ProductVersion.Trim() -ne "5.0.0.0" -or
-    $version.ProductName.Trim() -ne "PDW v5 2026 Release" -or
-    $version.FileDescription.Trim() -ne "PDW v5 2026 Release Setup") {
-    throw "Setup version metadata does not match PDW v5 2026 Release."
+if ($version.FileVersion.Trim() -ne $resourceVersion -or
+    $version.ProductVersion.Trim() -ne $resourceVersion -or
+    $version.ProductName.Trim() -ne $displayName -or
+    $version.FileDescription.Trim() -ne "$displayName Setup") {
+    throw "Setup version metadata does not match $displayName."
 }
 $bytes = [System.IO.File]::ReadAllBytes($setupPath)
 $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)

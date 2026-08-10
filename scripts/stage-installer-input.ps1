@@ -31,6 +31,7 @@ function Read-StringMacro([string]$Name) {
 }
 $displayName = Read-StringMacro "PDW_DISPLAY_VERSION"
 $productVersion = Read-StringMacro "PDW_VERSION_STRING"
+$resourceVersion = Read-StringMacro "PDW_VERSION_RESOURCE_STRING"
 $executable = Join-Path $buildRoot "$displayName.exe"
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Release executable does not exist: $executable"
@@ -44,8 +45,8 @@ if ($machine -ne $expectedMachine) {
     throw ("Executable does not match {0}: PE machine 0x{1:X4}." -f $Architecture, $machine)
 }
 $version = (Get-Item -LiteralPath $executable).VersionInfo
-if ($version.FileVersion -ne "5.0.0.0" -or $version.ProductVersion -ne $productVersion) {
-    throw "Executable version metadata does not match PDW v5."
+if ($version.FileVersion -ne $resourceVersion -or $version.ProductVersion -ne $productVersion) {
+    throw "Executable version metadata does not match $displayName."
 }
 
 $parent = Split-Path -Parent $destinationRoot

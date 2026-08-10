@@ -92,16 +92,17 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 
 - Fresh Visual Studio 2022/CMake Release builds completed from new build
   directories for Win32 and x64.
-- Win32 and x64 each pass 24 of 24 CTest tests.
+- Win32 and x64 each pass 28 of 28 CTest tests.
 - Optional WinMM and WASAPI hardware-smoke targets compile for both
   architectures.
 - PE machine values are Win32 `0x014C` and x64 `0x8664`; both executables
-  report file version `5.0.0.0` and product version `5.0.0 2026 Release`.
-- Both embedded manifests report `5.0.0.0`, architecture-neutral assembly
+  report file version `5.1.0.0` and product version `5.1.0 2026 Release`.
+- Both embedded manifests report `5.1.0.0`, architecture-neutral assembly
   metadata, and Per-Monitor V2 DPI awareness.
-- Native UI review passes for both v5 builds. The main title, About dialog, and
-  Settings **About me** page use the shared **PDW v5 2026 Release** identity;
-  the menu/toolbar/pane/status layout and Live Input percentage are visible.
+- Native UI review remains predecessor-v5 evidence. The v5.1 resources and
+  executable metadata use the shared **PDW v5.1 2026 Release** identity, while
+  current Light/Dark, compact-size, new-dialog, About, and Settings visual
+  confirmation remains open.
 - The preceding v4.6.0 repository-audit packages contain 318 Win32 and 310 x64
   manifest entries. Independent verification found zero missing,
   changed, unlisted, private-runtime, non-empty-secret, or obsolete-source
@@ -112,12 +113,15 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
   private-runtime, non-empty-secret, or obsolete-source files.
 - Win32 retains the intentional x86 RTL-SDR DLL and four mirrored legacy VxD
   copies; x64 contains neither.
-- The guided installer passes isolated x64 and Win32 installation, co-located
-  settings, upgrade-preservation, and uninstall-preservation smoke. Microsoft
-  Defender reports no threat in the unsigned local candidate.
-- `scripts/audit-release.ps1` enforces the v5 identity, both CI architectures,
+- The v5.1 guided installer passes isolated x64 and Win32 installation,
+  co-located settings, upgrade-preservation, exact renamed-v5 executable
+  cleanup, and uninstall-preservation smoke. Microsoft Defender reports no
+  threat in the unsigned local candidate.
+- `scripts/audit-release.ps1` enforces the v5.1 identity, both CI architectures,
   installer build/smoke coverage, Visual Basic review, obsolete-file
   exclusion, dependency-notice alignment, and prepared-statement SQL
   safeguards.
+- Operator-selected message archives fail closed unless current Windows SQLite
+  connection defenses and a first-on-open bounded quick integrity check pass.
 - Trusted Authenticode signing remains mandatory before the installer is
   promoted as the public stable release.

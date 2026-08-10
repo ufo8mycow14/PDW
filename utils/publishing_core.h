@@ -15,6 +15,9 @@ struct PublishEvent
 	std::string timestamp;
 	std::string source;
 	std::string address;
+	std::string addressName;
+	std::string agency;
+	unsigned long aliasColor;
 	std::string time;
 	std::string date;
 	std::string mode;
@@ -36,7 +39,7 @@ struct PublishEvent
 	int cycle;
 	int frame;
 	PublishEvent()
-		: filterMatched(false), monitorOnly(false), filtered(false), rejected(false),
+		: aliasColor(0), filterMatched(false), monitorOnly(false), filtered(false), rejected(false),
 		  blockedDuplicate(false), groupCall(false), groupFinal(false), fragmented(false),
 		  assembled(false), filterIndex(-1), groupBit(-1), cycle(-1), frame(-1) {}
 };
@@ -50,7 +53,7 @@ struct TransformOptions
 };
 
 PublishEvent ApplyTransform(const PublishEvent& source, const TransformOptions& options);
-std::string BuildJsonObject(const PublishEvent& event);
+std::string BuildJsonObject(const PublishEvent& event, bool includeLocalAliases = false);
 std::string BuildJsonFeed(const std::vector<PublishEvent>& events);
 std::string BuildJsonLines(const std::vector<PublishEvent>& events);
 std::string BuildRssFeed(const std::vector<PublishEvent>& events);
