@@ -25,6 +25,7 @@
 #include "headers\publishing.h"
 #include "publishing_core.h"
 #include "curl_runtime.h"
+#include "decoded_event.h"
 
 namespace
 {
@@ -93,7 +94,6 @@ namespace
 	std::vector<pdw::publishing::PublishEvent> g_feed;
 	Config g_config;
 	char g_status[512] = "Publishing has not been initialized.";
-	volatile LONG g_counter = 0;
 
 	void CopyText(char* destination, std::size_t size, const char* source)
 	{
@@ -157,41 +157,6 @@ namespace
 		const Config config(g_config);
 		LeaveCriticalSection(&g_lock);
 		return config;
-	}
-
-	std::string Utf8(const char* source)
-	{
-		if (!source || !source[0]) return std::string();
-		const int wideLength = MultiByteToWideChar(1252, 0, source, -1, NULL, 0);
-		if (wideLength <= 1) return std::string(source);
-		std::vector<wchar_t> wide(static_cast<std::size_t>(wideLength));
-		MultiByteToWideChar(1252, 0, source, -1, &wide[0], wideLength);
-		const int utf8Length = WideCharToMultiByte(CP_UTF8, 0, &wide[0], -1, NULL, 0, NULL, NULL);
-		if (utf8Length <= 1) return std::string();
-		std::vector<char> result(static_cast<std::size_t>(utf8Length));
-		WideCharToMultiByte(CP_UTF8, 0, &wide[0], -1, &result[0], utf8Length, NULL, NULL);
-		return std::string(&result[0]);
-	}
-
-	std::string NowIso8601()
-	{
-		SYSTEMTIME now;
-		GetSystemTime(&now);
-		char text[40];
-		snprintf(text, sizeof(text), "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
-			now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds);
-		return text;
-	}
-
-	std::string EventId()
-	{
-		SYSTEMTIME now;
-		GetSystemTime(&now);
-		char text[80];
-		snprintf(text, sizeof(text), "%04u%02u%02uT%02u%02u%02u-%lu-%ld",
-			now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond,
-			static_cast<unsigned long>(GetCurrentProcessId()), InterlockedIncrement(&g_counter));
-		return text;
 	}
 
 	bool WriteAtomic(const std::string& path, const std::string& contents)
@@ -628,37 +593,17 @@ void PublishingGetStatusText(char* buffer, size_t bufferSize)
 
 void PublishingPublishDecodedMessage(const DecodedMessageNotificationContext& context)
 {
+	PublishingPublishEvent(pdw::events::BuildDecodedEvent(context));
+}
+
+void PublishingPublishEvent(const pdw::publishing::PublishEvent& source)
+{
 	if (!g_initialized || InterlockedCompareExchange(&g_stopping, 0, 0)) return;
 	const Config config = SnapshotConfig();
 	if (!config.enabled || !config.acknowledged || config.paused ||
-		(!config.staticEnabled && !config.webhookEnabled) || (config.filteredOnly && !context.filtered)) return;
-	pdw::publishing::PublishEvent source;
-	source.id = EventId();
-	source.timestamp = NowIso8601();
-	source.source = "PDW";
-	source.address = Utf8(context.address);
-	source.time = Utf8(context.time);
-	source.date = Utf8(context.date);
-	source.mode = Utf8(context.mode);
-	source.messageType = Utf8(context.messageType);
-	source.bitrate = Utf8(context.bitrate);
-	source.message = Utf8(context.message);
-	source.filterLabel = Utf8(context.filterLabel);
-	source.filterMatched = context.filterMatched;
-	source.monitorOnly = context.monitorOnly;
-	source.filtered = context.filtered;
-	source.rejected = context.rejected;
-	source.blockedDuplicate = context.blockedDuplicate;
-	source.groupCall = context.groupCall;
-	source.groupFinal = context.groupFinal;
-	source.fragmented = context.fragmented;
-	source.assembled = context.assembled;
-	source.filterIndex = context.filterIndex;
-	source.groupBit = context.groupBit;
-	source.cycle = context.cycle;
-	source.frame = context.frame;
+		(!config.staticEnabled && !config.webhookEnabled) || (config.filteredOnly && !source.filtered)) return;
 	pdw::publishing::TransformOptions options;
-	options.sourceAlias = Utf8(config.sourceAlias.c_str());
+	options.sourceAlias = pdw::events::PdwTextToUtf8(config.sourceAlias.c_str());
 	options.maskAddress = config.maskAddress;
 	options.includeMessage = config.includeMessage;
 	PublishTask task;
@@ -719,7 +664,7 @@ BOOL FAR PASCAL PublishingDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
 					char url[PUBLISH_URL_LEN + 1]; GetDlgItemText(hDlg, IDC_PUBLISH_URL, url, sizeof(url));
 					if (strncmp(url, "https://", 8) != 0) { MessageBox(hDlg, "Webhook tests require an HTTPS URL.", "PDW Publishing", MB_ICONERROR); return TRUE; }
 					char bearer[2049], hmac[2049]; GetDlgItemText(hDlg, IDC_PUBLISH_BEARER, bearer, sizeof(bearer)); GetDlgItemText(hDlg, IDC_PUBLISH_HMAC, hmac, sizeof(hmac));
-					PublishTask task; task.test = true; task.testUrl = url; task.testBearer = bearer; task.testHmac = hmac; task.event.id = EventId(); task.event.timestamp = NowIso8601(); task.event.source = "PDW"; task.event.mode = "TEST"; task.event.messageType = "Publishing"; task.event.message = "PDW webhook configuration test"; task.payload = pdw::publishing::BuildJsonObject(task.event); QueueTask(task);
+					PublishTask task; task.test = true; task.testUrl = url; task.testBearer = bearer; task.testHmac = hmac; task.event = pdw::events::BuildTestEvent("Publishing"); task.event.message = "PDW webhook configuration test"; task.payload = pdw::publishing::BuildJsonObject(task.event); QueueTask(task);
 					SecureZeroMemory(bearer, sizeof(bearer)); SecureZeroMemory(hmac, sizeof(hmac));
 					SetDlgItemText(hDlg, IDC_PUBLISH_STATUS, "Webhook test queued without decoded message content.");
 					return TRUE;

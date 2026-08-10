@@ -22,6 +22,9 @@ set( PDW_SRCS
 	${PDW_SRCS}
 	${CMAKE_CURRENT_SOURCE_DIR}/audio_signal_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/curl_runtime.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/data_output_core.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/data_outputs.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/decoded_event.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/decoder_candidate_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/signal_recording_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/signal_diagnostics.cpp
@@ -29,9 +32,13 @@ set( PDW_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/rtl_tcp_source.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/receiver_catalog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/message_router.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/mysql_odbc_output.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/publishing.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/publishing_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/smtp_message_core.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/sqlite_output.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/telnet_output_server.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/windows_toast.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/Debug.cpp
   #${CMAKE_CURRENT_SOURCE_DIR}/OSTYPE.C
   ${CMAKE_CURRENT_SOURCE_DIR}/Ostype.cpp

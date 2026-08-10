@@ -76,6 +76,13 @@ foreach(PDW_TRANSFER_PROTOCOL FTP FTPS SFTP)
   endif()
 endforeach()
 
+foreach(PDW_MQTT_PROTOCOL MQTT MQTTS)
+  if(NOT CURL_SUPPORTS_${PDW_MQTT_PROTOCOL})
+    message(FATAL_ERROR
+      "The pinned libcurl dependency does not include ${PDW_MQTT_PROTOCOL} support.")
+  endif()
+endforeach()
+
 find_library(PDW_OPENSSL_SSL_LIBRARY NAMES libssl ssl
   PATHS "${PDW_DEPENDENCY_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
 find_library(PDW_OPENSSL_CRYPTO_LIBRARY NAMES libcrypto crypto
@@ -110,6 +117,14 @@ add_executable(PDW WIN32
   ${PDW_GFXS}
   ${PDW_INCLUDES}
   ${PDW_SRCS}
+)
+
+# New isolation/routing modules are warning-clean even though the untouched
+# decoder translation units still require their historical warning profile.
+set_source_files_properties(
+  utils/data_outputs.cpp
+  utils/decoded_event.cpp
+  PROPERTIES COMPILE_OPTIONS "/W4;/WX"
 )
 
 set_target_properties(PDW PROPERTIES OUTPUT_NAME "PDW v4.1.0 Beta")
@@ -149,6 +164,8 @@ target_link_libraries(PDW PRIVATE
 	Ole32.lib
 	Mmdevapi.lib
 	Uuid.lib
+	Winsqlite3.lib
+	Odbc32.lib
 )
 
 # Receiver support is deliberately data-driven and optional. Copying the
@@ -321,6 +338,86 @@ if(BUILD_TESTING)
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	add_test(NAME smtp-message-core COMMAND PDWSmtpMessageCoreTests)
+
+	add_executable(PDWDataOutputCoreTests
+		tests/data_output_core_tests.cpp
+		utils/data_output_core.cpp
+	)
+	target_include_directories(PDWDataOutputCoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWDataOutputCoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME data-output-core COMMAND PDWDataOutputCoreTests)
+
+	add_executable(PDWSQLiteOutputTests
+		tests/sqlite_output_tests.cpp
+		utils/data_output_core.cpp
+		utils/publishing_core.cpp
+		utils/sqlite_output.cpp
+	)
+	target_include_directories(PDWSQLiteOutputTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWSQLiteOutputTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWSQLiteOutputTests PRIVATE Winsqlite3.lib)
+	add_test(NAME sqlite-output COMMAND PDWSQLiteOutputTests)
+
+	add_executable(PDWTelnetOutputServerTests
+		tests/telnet_output_server_tests.cpp
+		utils/data_output_core.cpp
+		utils/telnet_output_server.cpp
+	)
+	target_include_directories(PDWTelnetOutputServerTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_definitions(PDWTelnetOutputServerTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+	target_compile_options(PDWTelnetOutputServerTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWTelnetOutputServerTests PRIVATE Ws2_32.lib)
+	add_test(NAME telnet-output-server COMMAND PDWTelnetOutputServerTests)
+
+	add_executable(PDWWindowsToastTests
+		tests/windows_toast_tests.cpp
+		utils/windows_toast.cpp
+	)
+	target_include_directories(PDWWindowsToastTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWWindowsToastTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWWindowsToastTests PRIVATE Advapi32.lib Shell32.lib)
+	add_test(NAME windows-toast-lazy COMMAND PDWWindowsToastTests)
+
+	add_executable(PDWMysqlOdbcOutputTests
+		tests/mysql_odbc_output_tests.cpp
+		utils/data_output_core.cpp
+		utils/mysql_odbc_output.cpp
+		utils/publishing_core.cpp
+	)
+	target_include_directories(PDWMysqlOdbcOutputTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWMysqlOdbcOutputTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWMysqlOdbcOutputTests PRIVATE Odbc32.lib)
+	add_test(NAME mysql-odbc-disabled COMMAND PDWMysqlOdbcOutputTests)
 
 	add_executable(PDWWasapiDeviceSmoke EXCLUDE_FROM_ALL
 		tests/wasapi_device_smoke.cpp

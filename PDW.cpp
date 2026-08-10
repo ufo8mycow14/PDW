@@ -311,6 +311,7 @@
 #include "headers\mobitex.h"
 #include "headers\ermes.h"
 #include "headers\ftp.h"
+#include "headers\data_outputs.h"
 #include "headers\notification.h"
 #include "headers\publishing.h"
 #include "headers\ui_theme.h"
@@ -554,6 +555,30 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	strcpy(Profile.publishingOutputPath, "Published");
 	Profile.publishingWebhookUrl[0] = '\0';
 	strcpy(Profile.publishingSourceAlias, "PDW");
+	Profile.dataOutputsEnabled = 0;
+	Profile.dataOutputsPermissionAcknowledged = 0;
+	Profile.dataOutputsFilteredOnly = 1;
+	Profile.dataOutputsMaskAddress = 1;
+	Profile.dataOutputsIncludeMessage = 0;
+	strcpy(Profile.dataOutputsSourceAlias, "PDW");
+	Profile.mqttEnabled = 0;
+	Profile.mqttAllowInsecure = 0;
+	strcpy(Profile.mqttBrokerUrl, "mqtts://localhost:8883");
+	strcpy(Profile.mqttTopic, "pdw/messages");
+	Profile.mqttUsername[0] = '\0';
+	Profile.sqliteOutputEnabled = 0;
+	strcpy(Profile.sqliteOutputPath, "pdw-messages.sqlite3");
+	strcpy(Profile.sqliteOutputTable, "pdw_messages");
+	Profile.mysqlOdbcEnabled = 0;
+	Profile.mysqlOdbcDsn[0] = '\0';
+	Profile.mysqlOdbcUsername[0] = '\0';
+	strcpy(Profile.mysqlOdbcTable, "pdw_messages");
+	Profile.telnetOutputEnabled = 0;
+	Profile.telnetAllowRemote = 0;
+	strcpy(Profile.telnetBindAddress, "127.0.0.1");
+	Profile.telnetPort = 8024;
+	Profile.windowsToastEnabled = 0;
+	Profile.windowsToastIncludeMessage = 0;
 
 	Profile.FlexTIME			= 0;	// Flag for FlexTIME as systemtime
 	Profile.FlexGroupMode		= 0;
@@ -733,6 +758,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	FtpInitialize();
 	NotificationManagerInitialize();
 	PublishingManagerInitialize();
+	DataOutputManagerInitialize();
 
 	if (hToolbar) TB_AutoSize(hToolbar);	// keep toolbar correct size!
 
@@ -1582,6 +1608,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 									 hWnd, (DLGPROC) PublishingDlgProc, 0L);
 				break;
 
+				case IDM_DATA_OUTPUTS:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(DATA_OUTPUTS_DLGBOX),
+									 hWnd, (DLGPROC) DataOutputsDlgProc, 0L);
+				break;
+
 				case IDM_RELOAD:
 
 				if (FileExists(szFilterPathName))
@@ -1911,6 +1942,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			if (bRecording) Stop_Recording();
 
 			// Stop background destinations while their configuration and shared state still exist.
+			DataOutputManagerShutdown();
 			PublishingManagerShutdown();
 			NotificationManagerShutdown();
 			FtpShutdown();
@@ -9946,6 +9978,40 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	if (pProfile->publishingEnabled && !pProfile->publishingPermissionAcknowledged)
 		pProfile->publishingEnabled = 0;
 
+	/***** Get optional data-output settings. Passwords stay in Credential Manager. *****/
+	pProfile->dataOutputsEnabled = (INT) GetPrivateProfileInt("DataOutputs", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->dataOutputsPermissionAcknowledged = (INT) GetPrivateProfileInt("DataOutputs", TEXT("PermissionAcknowledged"), 0, lpszIniPathName);
+	pProfile->dataOutputsFilteredOnly = (INT) GetPrivateProfileInt("DataOutputs", TEXT("FilteredOnly"), 1, lpszIniPathName);
+	pProfile->dataOutputsMaskAddress = (INT) GetPrivateProfileInt("DataOutputs", TEXT("MaskAddress"), 1, lpszIniPathName);
+	pProfile->dataOutputsIncludeMessage = (INT) GetPrivateProfileInt("DataOutputs", TEXT("IncludeMessage"), 0, lpszIniPathName);
+	GetPrivateProfileString("DataOutputs", TEXT("SourceAlias"), "PDW", pProfile->dataOutputsSourceAlias, sizeof(pProfile->dataOutputsSourceAlias), lpszIniPathName);
+
+	pProfile->mqttEnabled = (INT) GetPrivateProfileInt("MQTT", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->mqttAllowInsecure = (INT) GetPrivateProfileInt("MQTT", TEXT("AllowInsecure"), 0, lpszIniPathName);
+	GetPrivateProfileString("MQTT", TEXT("BrokerUrl"), "mqtts://localhost:8883", pProfile->mqttBrokerUrl, sizeof(pProfile->mqttBrokerUrl), lpszIniPathName);
+	GetPrivateProfileString("MQTT", TEXT("Topic"), "pdw/messages", pProfile->mqttTopic, sizeof(pProfile->mqttTopic), lpszIniPathName);
+	GetPrivateProfileString("MQTT", TEXT("Username"), "", pProfile->mqttUsername, sizeof(pProfile->mqttUsername), lpszIniPathName);
+
+	pProfile->sqliteOutputEnabled = (INT) GetPrivateProfileInt("SQLiteOutput", TEXT("Enable"), 0, lpszIniPathName);
+	GetPrivateProfileString("SQLiteOutput", TEXT("Path"), "pdw-messages.sqlite3", pProfile->sqliteOutputPath, sizeof(pProfile->sqliteOutputPath), lpszIniPathName);
+	GetPrivateProfileString("SQLiteOutput", TEXT("Table"), "pdw_messages", pProfile->sqliteOutputTable, sizeof(pProfile->sqliteOutputTable), lpszIniPathName);
+
+	pProfile->mysqlOdbcEnabled = (INT) GetPrivateProfileInt("MySQLOdbc", TEXT("Enable"), 0, lpszIniPathName);
+	GetPrivateProfileString("MySQLOdbc", TEXT("Dsn"), "", pProfile->mysqlOdbcDsn, sizeof(pProfile->mysqlOdbcDsn), lpszIniPathName);
+	GetPrivateProfileString("MySQLOdbc", TEXT("Username"), "", pProfile->mysqlOdbcUsername, sizeof(pProfile->mysqlOdbcUsername), lpszIniPathName);
+	GetPrivateProfileString("MySQLOdbc", TEXT("Table"), "pdw_messages", pProfile->mysqlOdbcTable, sizeof(pProfile->mysqlOdbcTable), lpszIniPathName);
+
+	pProfile->telnetOutputEnabled = (INT) GetPrivateProfileInt("TelnetOutput", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->telnetAllowRemote = (INT) GetPrivateProfileInt("TelnetOutput", TEXT("AllowRemote"), 0, lpszIniPathName);
+	GetPrivateProfileString("TelnetOutput", TEXT("BindAddress"), "127.0.0.1", pProfile->telnetBindAddress, sizeof(pProfile->telnetBindAddress), lpszIniPathName);
+	pProfile->telnetPort = (INT) GetPrivateProfileInt("TelnetOutput", TEXT("Port"), 8024, lpszIniPathName);
+	if (pProfile->telnetPort < 1 || pProfile->telnetPort > 65535) pProfile->telnetPort = 8024;
+
+	pProfile->windowsToastEnabled = (INT) GetPrivateProfileInt("WindowsToast", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->windowsToastIncludeMessage = (INT) GetPrivateProfileInt("WindowsToast", TEXT("IncludeMessage"), 0, lpszIniPathName);
+	if (pProfile->dataOutputsEnabled && !pProfile->dataOutputsPermissionAcknowledged)
+		pProfile->dataOutputsEnabled = 0;
+
 	/***** Get Filter settings *****/
 
 	pProfile->filterfile_enabled = (INT) GetPrivateProfileInt("Filter", TEXT("FilterFileEnabled"), pProfile->filterfile_enabled, lpszIniPathName);
@@ -10495,6 +10561,42 @@ void WriteSettings()
 		fprintf(pFile, "OutputPath=%s\n", Profile.publishingOutputPath);
 		fprintf(pFile, "WebhookUrl=%s\n", Profile.publishingWebhookUrl);
 		fprintf(pFile, "SourceAlias=%s\n", Profile.publishingSourceAlias);
+
+		fprintf(pFile, "\n[DataOutputs]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.dataOutputsEnabled);
+		fprintf(pFile, "PermissionAcknowledged=%i\n", Profile.dataOutputsPermissionAcknowledged);
+		fprintf(pFile, "FilteredOnly=%i\n", Profile.dataOutputsFilteredOnly);
+		fprintf(pFile, "MaskAddress=%i\n", Profile.dataOutputsMaskAddress);
+		fprintf(pFile, "IncludeMessage=%i\n", Profile.dataOutputsIncludeMessage);
+		fprintf(pFile, "SourceAlias=%s\n", Profile.dataOutputsSourceAlias);
+
+		fprintf(pFile, "\n[MQTT]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.mqttEnabled);
+		fprintf(pFile, "AllowInsecure=%i\n", Profile.mqttAllowInsecure);
+		fprintf(pFile, "BrokerUrl=%s\n", Profile.mqttBrokerUrl);
+		fprintf(pFile, "Topic=%s\n", Profile.mqttTopic);
+		fprintf(pFile, "Username=%s\n", Profile.mqttUsername);
+
+		fprintf(pFile, "\n[SQLiteOutput]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.sqliteOutputEnabled);
+		fprintf(pFile, "Path=%s\n", Profile.sqliteOutputPath);
+		fprintf(pFile, "Table=%s\n", Profile.sqliteOutputTable);
+
+		fprintf(pFile, "\n[MySQLOdbc]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.mysqlOdbcEnabled);
+		fprintf(pFile, "Dsn=%s\n", Profile.mysqlOdbcDsn);
+		fprintf(pFile, "Username=%s\n", Profile.mysqlOdbcUsername);
+		fprintf(pFile, "Table=%s\n", Profile.mysqlOdbcTable);
+
+		fprintf(pFile, "\n[TelnetOutput]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.telnetOutputEnabled);
+		fprintf(pFile, "AllowRemote=%i\n", Profile.telnetAllowRemote);
+		fprintf(pFile, "BindAddress=%s\n", Profile.telnetBindAddress);
+		fprintf(pFile, "Port=%i\n", Profile.telnetPort);
+
+		fprintf(pFile, "\n[WindowsToast]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.windowsToastEnabled);
+		fprintf(pFile, "IncludeMessage=%i\n", Profile.windowsToastIncludeMessage);
 
 		fprintf(pFile, "\n[Filter]\n");
 		fprintf(pFile, "FilterFileEnabled=%i\n",		Profile.filterfile_enabled);

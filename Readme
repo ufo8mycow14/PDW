@@ -141,6 +141,24 @@ under `PublishQueue\DeadLetter`.
 See [docs/PUBLISHING.md](docs/PUBLISHING.md) and
 [docs/SIGNAL_SOURCES.md](docs/SIGNAL_SOURCES.md) for setup and safety details.
 
+## Optional data outputs
+
+Open **Settings > Connections and automation > Data outputs** to route the same
+immutable decoded-event copy to MQTT, a local SQLite database, MySQL through a
+Windows ODBC DSN, a loopback-first read-only Telnet JSON stream, or native
+Windows notifications. These adapters are disabled by default and do not
+replace email, Apprise, FTP, website files, webhooks, or any legacy decoder
+path. Filtered-only routing, address masking, and message omission are the
+safe defaults, and enabling the group requires the same country/jurisdiction
+responsibility acknowledgement.
+
+MQTT uses the pinned libcurl transport (QoS 0, no retain), SQLite uses the
+Windows system component with prepared statements, MySQL relies on the
+operator's current ODBC driver and DSN TLS policy, and remote Telnet requires
+an explicit unencrypted-access opt-in. Passwords stay in Windows Credential
+Manager. See [docs/DATA_OUTPUTS.md](docs/DATA_OUTPUTS.md) for setup, limitations,
+and test behaviour.
+
 ## Repository layout
 
 - `PDW.cpp` and protocol-specific `.cpp` files contain the application and

@@ -137,6 +137,7 @@ BEGIN
             MENUITEM "&Push notifications...", IDM_APPRISE
             MENUITEM "&File transfer...",       IDM_FTP
 			MENUITEM "Publish to &web...",       IDM_PUBLISHING
+			MENUITEM "&Data outputs...",         IDM_DATA_OUTPUTS
         END
         POPUP "&Character set"
         BEGIN
@@ -1091,10 +1092,11 @@ BEGIN
 
     GROUPBOX        "Connections and automation",IDC_STATIC,10,212,450,58
     LTEXT           "Send decoded information by email, notification, secure upload, or an opt-in web feed.",IDC_STATIC,20,227,424,10
-    PUSHBUTTON      "Email...",IDC_SETTINGS_EMAIL,20,242,68,20
-    PUSHBUTTON      "Push notifications...",IDC_SETTINGS_NOTIFY,94,242,106,20
-    PUSHBUTTON      "File transfer...",IDC_SETTINGS_TRANSFER,206,242,88,20
-    PUSHBUTTON      "Publish to web...",IDC_SETTINGS_PUBLISH,300,242,92,20
+    PUSHBUTTON      "Email...",IDC_SETTINGS_EMAIL,20,242,58,20
+    PUSHBUTTON      "Push notifications...",IDC_SETTINGS_NOTIFY,84,242,98,20
+    PUSHBUTTON      "File transfer...",IDC_SETTINGS_TRANSFER,188,242,74,20
+    PUSHBUTTON      "Publish to web...",IDC_SETTINGS_PUBLISH,268,242,82,20
+    PUSHBUTTON      "Data outputs...",IDC_SETTINGS_DATA_OUTPUTS,356,242,94,20
 
     LTEXT           "Changes are saved in PDW's existing configuration, with secrets kept in Windows Credential Manager.",IDC_STATIC,16,282,350,22
     DEFPUSHBUTTON   "Close",IDOK,390,293,64,20
@@ -1198,6 +1200,84 @@ BEGIN
 
     DEFPUSHBUTTON   "Save",IDOK,338,348,56,20
     PUSHBUTTON      "Cancel",IDCANCEL,400,348,56,20
+END
+
+DATA_OUTPUTS_DLGBOX DIALOGEX 0, 0, 560, 460
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Data Outputs"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    CONTROL         "Enable data outputs",IDC_OUTPUT_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,10,102,13
+    CONTROL         "I understand that I am responsible for checking permissions, privacy obligations, radio laws, and data-sharing laws in my own country or jurisdiction.",IDC_OUTPUT_ACK,"Button",BS_AUTOCHECKBOX | BS_MULTILINE | WS_TABSTOP,14,28,532,28
+
+    GROUPBOX        "Routing and privacy",IDC_STATIC,8,62,544,67
+    CONTROL         "Filtered messages only",IDC_OUTPUT_FILTERED,"Button",BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,18,78,108,12
+    CONTROL         "All displayed decoded messages",IDC_OUTPUT_ALL,"Button",BS_AUTORADIOBUTTON | WS_TABSTOP,138,78,132,12
+    CONTROL         "Mask pager address except last three digits",IDC_OUTPUT_MASK,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,99,190,12
+    CONTROL         "Include decoded text in network and database outputs",IDC_OUTPUT_MESSAGE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,218,99,238,12
+    LTEXT           "Source name",IDC_STATIC,18,116,58,10
+    EDITTEXT        IDC_OUTPUT_ALIAS,80,113,190,14,ES_AUTOHSCROLL
+
+    CONTROL         "",IDC_OUTPUT_TAB,"SysTabControl32",WS_TABSTOP,8,136,544,222
+
+    GROUPBOX        "MQTT publisher",IDC_OUTPUT_MQTT_PANEL,18,160,524,184
+    CONTROL         "Enable MQTT",IDC_OUTPUT_MQTT_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,178,80,12
+    LTEXT           "Broker URL",IDC_OUTPUT_MQTT_BROKER_LABEL,30,204,55,10
+    EDITTEXT        IDC_OUTPUT_MQTT_BROKER,90,201,430,14,ES_AUTOHSCROLL
+    LTEXT           "Topic",IDC_OUTPUT_MQTT_TOPIC_LABEL,30,228,30,10
+    EDITTEXT        IDC_OUTPUT_MQTT_TOPIC,90,225,430,14,ES_AUTOHSCROLL
+    LTEXT           "Username",IDC_OUTPUT_MQTT_USER_LABEL,30,252,48,10
+    EDITTEXT        IDC_OUTPUT_MQTT_USER,90,249,150,14,ES_AUTOHSCROLL
+    LTEXT           "New password",IDC_OUTPUT_MQTT_PASSWORD_LABEL,252,252,66,10
+    EDITTEXT        IDC_OUTPUT_MQTT_PASSWORD,322,249,126,14,ES_PASSWORD | ES_AUTOHSCROLL
+    CONTROL         "Clear saved",IDC_OUTPUT_MQTT_CLEAR_PASSWORD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,454,251,68,12
+    CONTROL         "Allow unencrypted mqtt:// on a trusted local network",IDC_OUTPUT_MQTT_INSECURE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,276,256,12
+    PUSHBUTTON      "Send test",IDC_OUTPUT_MQTT_TEST,444,273,76,18
+    LTEXT           "Uses PDW's pinned libcurl: MQTT 3.1.1 publish, QoS 0, no retained messages. Prefer mqtts://.",IDC_OUTPUT_MQTT_NOTE,30,302,490,28
+
+    GROUPBOX        "SQLite database",IDC_OUTPUT_SQLITE_PANEL,18,160,524,184
+    CONTROL         "Enable SQLite",IDC_OUTPUT_SQLITE_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,178,86,12
+    LTEXT           "Database file",IDC_OUTPUT_SQLITE_PATH_LABEL,30,207,66,10
+    EDITTEXT        IDC_OUTPUT_SQLITE_PATH,100,204,352,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OUTPUT_SQLITE_BROWSE,458,202,62,18
+    LTEXT           "Table",IDC_OUTPUT_SQLITE_TABLE_LABEL,30,235,32,10
+    EDITTEXT        IDC_OUTPUT_SQLITE_TABLE,100,232,188,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Write test row",IDC_OUTPUT_SQLITE_TEST,430,230,90,18
+    LTEXT           "Stores UTF-8 messages locally with prepared statements, WAL mode, indexes, and idempotent event IDs. Relative paths stay beside PDW.",IDC_OUTPUT_SQLITE_NOTE,30,272,490,38
+
+    GROUPBOX        "MySQL through Windows ODBC",IDC_OUTPUT_MYSQL_PANEL,18,160,524,184
+    CONTROL         "Enable MySQL ODBC",IDC_OUTPUT_MYSQL_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,178,112,12
+    LTEXT           "Data source (DSN)",IDC_OUTPUT_MYSQL_DSN_LABEL,30,204,88,10
+    EDITTEXT        IDC_OUTPUT_MYSQL_DSN,122,201,398,14,ES_AUTOHSCROLL
+    LTEXT           "Username",IDC_OUTPUT_MYSQL_USER_LABEL,30,230,48,10
+    EDITTEXT        IDC_OUTPUT_MYSQL_USER,82,227,142,14,ES_AUTOHSCROLL
+    LTEXT           "New password",IDC_OUTPUT_MYSQL_PASSWORD_LABEL,236,230,66,10
+    EDITTEXT        IDC_OUTPUT_MYSQL_PASSWORD,306,227,142,14,ES_PASSWORD | ES_AUTOHSCROLL
+    CONTROL         "Clear saved",IDC_OUTPUT_MYSQL_CLEAR_PASSWORD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,454,229,68,12
+    LTEXT           "Table",IDC_OUTPUT_MYSQL_TABLE_LABEL,30,256,32,10
+    EDITTEXT        IDC_OUTPUT_MYSQL_TABLE,82,253,142,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Write test row",IDC_OUTPUT_MYSQL_TEST,430,251,90,18
+    LTEXT           "Install a current MySQL ODBC driver and configure TLS in the Windows DSN. PDW uses prepared inserts and does not weaken DSN security.",IDC_OUTPUT_MYSQL_NOTE,30,288,490,34
+
+    GROUPBOX        "Read-only Telnet JSON stream",IDC_OUTPUT_TELNET_PANEL,18,160,524,184
+    CONTROL         "Enable Telnet stream",IDC_OUTPUT_TELNET_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,178,106,12
+    LTEXT           "Bind address",IDC_OUTPUT_TELNET_BIND_LABEL,30,208,64,10
+    EDITTEXT        IDC_OUTPUT_TELNET_BIND,98,205,170,14,ES_AUTOHSCROLL
+    LTEXT           "Port",IDC_OUTPUT_TELNET_PORT_LABEL,282,208,24,10
+    EDITTEXT        IDC_OUTPUT_TELNET_PORT,310,205,62,14,ES_NUMBER | ES_AUTOHSCROLL
+    CONTROL         "Allow non-loopback clients (unencrypted)",IDC_OUTPUT_TELNET_REMOTE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,237,196,12
+    PUSHBUTTON      "Test listener",IDC_OUTPUT_TELNET_TEST,430,233,90,18
+    LTEXT           "Default 127.0.0.1 is local-only. Remote access is plain text and must be explicitly enabled; clients can only read JSON lines and cannot control PDW.",IDC_OUTPUT_TELNET_NOTE,30,276,490,42
+
+    GROUPBOX        "Windows notifications",IDC_OUTPUT_TOAST_PANEL,18,160,524,184
+    CONTROL         "Enable Windows notifications",IDC_OUTPUT_TOAST_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,178,146,12
+    CONTROL         "Include decoded message text (may appear on the Windows lock screen)",IDC_OUTPUT_TOAST_MESSAGE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,208,336,12
+    PUSHBUTTON      "Show test",IDC_OUTPUT_TOAST_TEST,430,203,90,18
+    LTEXT           "Native Windows notification support is loaded only when enabled or tested. Turning this off leaves PDW's existing tray behaviour unchanged.",IDC_OUTPUT_TOAST_NOTE,30,250,490,36
+
+    LTEXT           "Data outputs are disabled.",IDC_OUTPUT_STATUS,14,368,532,52
+    DEFPUSHBUTTON   "Save",IDOK,424,432,58,20
+    PUSHBUTTON      "Cancel",IDCANCEL,488,432,58,20
 END
 
 FTP_DLGBOX DIALOGEX 0, 0, 440, 350

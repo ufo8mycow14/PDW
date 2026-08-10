@@ -134,13 +134,16 @@ is created.
 - Store credentials in Windows Credential Manager; support HTTPS validation,
   bearer/API tokens, HMAC signing, batching, and rate limiting.
 
-Implemented in 4.1.0 Beta: opt-in filtered/all-message profiles, jurisdiction
+Implemented in the v4 beta integration branch: opt-in filtered/all-message profiles, jurisdiction
 acknowledgement, published-copy aliasing/address masking/message omission,
 responsive HTML plus JSON/JSONL/RSS/Atom, generic HTTPS JSON webhook delivery,
 Windows Credential Manager bearer/HMAC secrets, certificate verification,
 idempotency event IDs, rate limiting, pause, bounded retry/backoff, persistent
-queue files, and DeadLetter retention. Batching and MQTT remain optional future
-extensions; they are not required to publish a website or webhook today.
+queue files, and DeadLetter retention. Optional isolated data-output adapters
+now add MQTT, SQLite, MySQL through Windows ODBC, a loopback-first read-only
+Telnet JSON stream, and native Windows notifications. MQTT remains QoS 0 with
+no retained publish; FLEX fragment/group batching is a separate compatibility-
+gated enhancement and is not required to publish a website or webhook.
 
 ## Release gate for 4.0
 

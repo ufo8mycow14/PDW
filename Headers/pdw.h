@@ -18,6 +18,15 @@
 #define PUBLISH_PATH_LEN 511
 #define PUBLISH_URL_LEN 1023
 #define PUBLISH_ALIAS_LEN 127
+#define DATA_OUTPUT_ALIAS_LEN 127
+#define MQTT_BROKER_URL_LEN 511
+#define MQTT_TOPIC_LEN 255
+#define MQTT_USERNAME_LEN 127
+#define SQLITE_OUTPUT_PATH_LEN 511
+#define SQL_OUTPUT_TABLE_LEN 63
+#define MYSQL_ODBC_DSN_LEN 255
+#define MYSQL_ODBC_USERNAME_LEN 127
+#define TELNET_BIND_ADDRESS_LEN 63
 
 #define AUDIO_SOURCE_LOCAL   0
 #define AUDIO_SOURCE_RTL_TCP 1
@@ -243,6 +252,39 @@ typedef struct
 	char publishingOutputPath[PUBLISH_PATH_LEN+1];
 	char publishingWebhookUrl[PUBLISH_URL_LEN+1];
 	char publishingSourceAlias[PUBLISH_ALIAS_LEN+1];
+
+	// Optional modern outputs. These are deliberately separate from the legacy
+	// SMTP, Apprise, FTP, and web-publishing switches so an adapter can fail or
+	// be disabled without changing any established PDW behaviour.
+	int dataOutputsEnabled;
+	int dataOutputsPermissionAcknowledged;
+	int dataOutputsFilteredOnly;
+	int dataOutputsMaskAddress;
+	int dataOutputsIncludeMessage;
+	char dataOutputsSourceAlias[DATA_OUTPUT_ALIAS_LEN+1];
+
+	int mqttEnabled;
+	int mqttAllowInsecure;
+	char mqttBrokerUrl[MQTT_BROKER_URL_LEN+1];
+	char mqttTopic[MQTT_TOPIC_LEN+1];
+	char mqttUsername[MQTT_USERNAME_LEN+1];
+
+	int sqliteOutputEnabled;
+	char sqliteOutputPath[SQLITE_OUTPUT_PATH_LEN+1];
+	char sqliteOutputTable[SQL_OUTPUT_TABLE_LEN+1];
+
+	int mysqlOdbcEnabled;
+	char mysqlOdbcDsn[MYSQL_ODBC_DSN_LEN+1];
+	char mysqlOdbcUsername[MYSQL_ODBC_USERNAME_LEN+1];
+	char mysqlOdbcTable[SQL_OUTPUT_TABLE_LEN+1];
+
+	int telnetOutputEnabled;
+	int telnetAllowRemote;
+	char telnetBindAddress[TELNET_BIND_ADDRESS_LEN+1];
+	int telnetPort;
+
+	int windowsToastEnabled;
+	int windowsToastIncludeMessage;
 
 	COLORREF color_background;
 	COLORREF color_address;
