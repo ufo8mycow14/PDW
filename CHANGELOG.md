@@ -30,10 +30,14 @@ hardware paths remain available in one executable.
   live-input acceptance matrix.
 - CI tests for versioned publishing-job persistence, deterministic delivery
   transitions, restart-unique event IDs, and disabled-by-default release
-  configuration. The Release suite now contains 23 tests.
+  configuration. The Release suite now contains 24 tests.
 - An image-approved native Windows command bar, clickable live-input meter,
   quiet status bar, and single-instance modeless Settings Center with search,
   draft Apply/Revert behavior, persistent navigation, and an **About me** page.
+- Password-encrypted portable backup and restore for every saved INI setting,
+  filter, receiver frequency, username, and supported Credential Manager
+  secret. Backup / Restore stays under General; file transfer and web
+  publishing now share **Data outputs**, removing the duplicate navigation page.
 
 ### Changed
 
@@ -70,6 +74,10 @@ hardware paths remain available in one executable.
   signal surfaces, and retained dialogs now use the approved Windows light/dark
   palette. Settings typography and full-child resize repainting prevent clipped
   headings, duplicated pixels, and fragmented button labels at compact sizes.
+- Made the command bar's 54-pixel icon-and-label geometry authoritative from
+  first paint through resize, maximize/restore, DPI, and display changes. The
+  common-control content pass is retained for correct text placement, then its
+  legacy outer height is overridden before monitor panes are positioned.
 
 ### Compatibility
 

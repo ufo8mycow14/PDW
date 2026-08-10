@@ -16,8 +16,8 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 
 | Area | Current state | Next gate |
 | --- | --- | --- |
-| Win32 build | Clean local build passes all 23 tests; previously published fresh-clone build passed its 18-test checkpoint | Keep CI green and verify the expanded suite after push |
-| Windows interface | Approved 2026 command bar, live meter, modeless 11-page Settings Center, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
+| Win32 build | Local Release build passes all 24 tests; previously published fresh-clone build passed its 18-test checkpoint | Keep CI green and verify the expanded suite after push |
+| Windows interface | Approved 2026 command bar, live meter, modeless 10-page Settings Center, encrypted configuration backup/restore, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
 | Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
 | Windows audio | WinMM and WASAPI captured from the real default device on the development machine | Live device-loss, hot-plug, and broader device-matrix acceptance |
 | Direct radio | `rtl_tcp` and optional RTL-SDR USB implemented | Multi-device live-radio matrix and recovery tests |
@@ -160,10 +160,12 @@ current Windows volume control retains the legacy fallback; dialogs center and
 clamp within their owner's monitor; F1 help is staged in developer builds; and
 Delivery Health columns use the active DPI. The image-approved 2026 shell now
 adds the six-menu information architecture, six-command icon bar, real-sample
-live meter, persistent Settings navigation, 11 destinations including **About
+live meter, persistent Settings navigation, 10 destinations including **About
 me**, and resize-safe cards. Native-window smoke passed at 100% in Light and
-Dark, 1000x720, 820x600, and the 720x560 minimum. Keyboard-only, High Contrast,
-125-200% DPI, and physical-radio acceptance remain open in
+Dark, 1000x720, 820x600, and the 720x560 minimum. The command bar also retains
+its full icon labels and 54-pixel separation from Pane 1 on initial paint,
+display change, and repeated maximize/restore cycles. Keyboard-only, High
+Contrast, 125-200% DPI, and physical-radio acceptance remain open in
 `docs/WINDOWS_UI_ACCEPTANCE.md`.
 
 ## Milestone 6 - Maintainability and x64 evaluation

@@ -1363,6 +1363,37 @@ BEGIN
     PUSHBUTTON      "Cancel",IDCANCEL,376,276,48,14
 END
 
+CONFIG_BACKUP_DLGBOX DIALOGEX 0, 0, 430, 214
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PDW Backup / Restore"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    GROUPBOX        "Complete configuration",IDC_STATIC,8,8,414,104
+    LTEXT           "Create one portable backup containing PDW.INI, filters.ini, receiver frequencies, usernames, passwords and all supported Credential Manager secrets.",IDC_STATIC,18,24,392,28
+    LTEXT           "Backups are password-encrypted and can be saved anywhere. PDW never writes exported passwords as readable text.",IDC_STATIC,18,57,392,22
+    PUSHBUTTON      "Export all settings...",IDC_BACKUP_EXPORT,18,87,126,18
+    PUSHBUTTON      "Restore from backup...",IDC_BACKUP_RESTORE,154,87,130,18
+    GROUPBOX        "Status",IDC_STATIC,8,120,414,48
+    LTEXT           "Ready.",IDC_BACKUP_STATUS,18,136,392,24
+    LTEXT           "A successful restore closes PDW so every restored setting loads together on the next start.",IDC_STATIC,18,177,320,22
+    DEFPUSHBUTTON   "Close",IDOK,358,184,54,18
+END
+
+CONFIG_BACKUP_PASSWORD_DLGBOX DIALOGEX 0, 0, 352, 150
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Protect Configuration Backup"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    LTEXT           "Choose a password for this backup.",IDC_BACKUP_PASSWORD_INFO,12,10,328,28
+    LTEXT           "Password",IDC_BACKUP_PASSWORD_LABEL,12,49,68,10
+    EDITTEXT        IDC_BACKUP_PASSWORD,84,46,256,16,ES_PASSWORD | ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Confirm password",IDC_BACKUP_CONFIRM_LABEL,12,75,68,10
+    EDITTEXT        IDC_BACKUP_CONFIRM,84,72,256,16,ES_PASSWORD | ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "The password is used only to encrypt or decrypt this file.",IDC_STATIC,12,101,328,18
+    DEFPUSHBUTTON   "OK",IDOK,230,124,52,18
+    PUSHBUTTON      "Cancel",IDCANCEL,288,124,52,18
+END
+
 STRINGTABLE
 BEGIN
     IDS_SHORT_APPNAME       "PDW"

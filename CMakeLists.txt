@@ -125,6 +125,8 @@ add_executable(PDW WIN32
 # New isolation/routing modules are warning-clean even though the untouched
 # decoder translation units still require their historical warning profile.
 set_source_files_properties(
+  utils/config_backup.cpp
+  utils/config_backup_core.cpp
   utils/data_outputs.cpp
   utils/decoded_event.cpp
   utils/flex_fragment_reassembly_core.cpp
@@ -201,6 +203,26 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
+	add_executable(PDWConfigBackupCoreTests
+		tests/config_backup_core_tests.cpp
+		utils/config_backup_core.cpp
+	)
+	target_include_directories(PDWConfigBackupCoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+		"${PDW_DEPENDENCY_ROOT}/include"
+	)
+	target_compile_options(PDWConfigBackupCoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWConfigBackupCoreTests PRIVATE
+		"${PDW_OPENSSL_CRYPTO_LIBRARY}"
+		Crypt32.lib
+		Ws2_32.lib
+	)
+	add_test(NAME configuration-backup-core COMMAND PDWConfigBackupCoreTests)
+
   add_executable(PDWNotificationTests
     tests/notification_core_tests.cpp
     utils/notification_core.cpp

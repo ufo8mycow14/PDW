@@ -295,6 +295,7 @@
 #include <shlobj.h>
 
 #include "headers\resource.h"
+#include "headers\config_backup.h"
 #include "headers\PDW.h"
 #include "headers\slicer.h"
 #include "headers\toolbar.h"
@@ -330,7 +331,7 @@
 #define MIN_X_WIN_SIZE		444		// Smallest main win X size can be (was 444)
 #define MIN_Y_WIN_SIZE		261		// Smallest main win Y size can be (was 261)
 
-#define TOOLBAR_SIZE		54		// Approved 2026 command-bar height
+#define TOOLBAR_SIZE		PDW_COMMAND_BAR_HEIGHT
 #define WIN_DIVIDER_SIZE	19		// Pane1/Pane2 seperator size (was 56)
 #define PANE1_SIZE			1000	// Pane1 default scrollback size
 #define PANE2_SIZE			200		// Pane2 default scrollback size
@@ -1610,6 +1611,10 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					ShowSettingsCenter(hWnd, PDW_SETTINGS_SIGNAL);
 				break;
 
+				case IDM_CONFIG_BACKUP:
+					ShowConfigurationBackupDialog(hWnd);
+				break;
+
 				case IDM_THEME_SYSTEM:
 					PdwThemeSetMode(PDW_THEME_SYSTEM, hWnd);
 				break;
@@ -1865,13 +1870,47 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		case WM_GETMINMAXINFO:
 
-		if (bTrayed || lParam < 1000) break; // FIX: Don't handle WM_GETMINMAXINFO messages if trayed
+		if (bTrayed || !lParam) break; // Don't handle tracking limits while trayed
 
 		lpMMI=(LPMINMAXINFO)lParam;
 		lpMMI->ptMinTrackSize.x = GetSystemMetrics(SM_CXFULLSCREEN) / 2; // Window's Minimum X-size
 		lpMMI->ptMinTrackSize.y = GetSystemMetrics(SM_CYFULLSCREEN) / 3; // Window's Minimum Y-size
 
 		break;
+
+		case WM_DPICHANGED:
+		{
+			if (lParam)
+			{
+				RECT* suggested = reinterpret_cast<RECT*>(lParam);
+				SetWindowPos(hWnd, NULL, suggested->left, suggested->top,
+					suggested->right - suggested->left,
+					suggested->bottom - suggested->top,
+					SWP_NOZORDER | SWP_NOACTIVATE);
+			}
+			if (!bTrayed && cyChar && Pane1.hWnd && Pane2.hWnd)
+			{
+				RECT client;
+				GetClientRect(hWnd, &client);
+				SendMessage(hWnd, WM_SIZE,
+					IsZoomed(hWnd) ? SIZE_MAXIMIZED : SIZE_RESTORED,
+					MAKELPARAM(client.right, client.bottom));
+			}
+			return 0;
+		}
+
+		case WM_DISPLAYCHANGE:
+		{
+			if (!bTrayed && cyChar && Pane1.hWnd && Pane2.hWnd)
+			{
+				RECT client;
+				GetClientRect(hWnd, &client);
+				SendMessage(hWnd, WM_SIZE,
+					IsZoomed(hWnd) ? SIZE_MAXIMIZED : SIZE_RESTORED,
+					MAKELPARAM(client.right, client.bottom));
+			}
+			return 0;
+		}
 
 		case WM_SYSCOMMAND:
 
@@ -1954,6 +1993,9 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			GetClientRect(hWnd, &g_rect);
 			g_xNew = g_rect.right - g_rect.left;   // Width of client area
 			g_yNew = g_rect.bottom - g_rect.top;   // Height of client area
+			// Fix the command bar first. Pane placement below uses the same shared
+			// height and therefore cannot overlap icon labels during a relayout.
+			TB_AutoSize(hToolbar);
 			statusHeight = PdwStatusBarHeight(hWnd);
 			g_yNew -= TOOLBAR_SIZE+WIN_DIVIDER_SIZE+statusHeight; // Allow space for command and status bars
 
@@ -1982,10 +2024,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			SendMessage(Pane1.hWnd, WM_VSCROLL, SB_BOTTOM, 0L);
 			SendMessage(Pane2.hWnd, WM_VSCROLL, SB_BOTTOM, 0L);
 
-			TB_AutoSize(hToolbar);	// keep toolbar correct size!
 			GetClientRect(hWnd, &g_rect);
 			PdwStatusBarResize(hStatusBar, g_rect.right - g_rect.left,
 				g_rect.bottom - g_rect.top);
+			RedrawWindow(hWnd, NULL, NULL,
+				RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 		}
 		break;
 
@@ -2025,10 +2068,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					Profile.ySize = 442;
 				}
 			}
-			WriteSettings();
+			if (!ConfigurationRestoreCompleted()) WriteSettings();
 
 			if (Profile.SystemTray) SystemTrayIcon(true);	// Remove PDW-icon from systemtray
-			if (bUpdateFilters) WriteFilters(&Profile, 0);	// Save FILTERS.INI
+			if (!ConfigurationRestoreCompleted() && bUpdateFilters)
+				WriteFilters(&Profile, 0);	// Save FILTERS.INI
 
 			// A misbehaving third-party serial driver may ignore cancellation. In that rare
 			// case leave process-owned decoder/UI memory intact for the OS to reclaim rather
@@ -2066,7 +2110,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		case WM_CLOSE:
 
-		if (Profile.confirmExit)
+		if (Profile.confirmExit && !ConfigurationRestoreCompleted())
 		{
 			if (MessageBox(ghWnd, "Exit PDW - Sure?", "PDW Exit",
 				           MB_ICONQUESTION | MB_OKCANCEL) == IDCANCEL) break;

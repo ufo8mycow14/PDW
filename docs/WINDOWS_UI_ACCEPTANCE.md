@@ -31,6 +31,12 @@ screenshots or issue reports.
 - At 100% scale, the approved dark and light Settings layouts render at
   1000x720; dark compact/minimum relayout renders at 820x600 and 720x560 with
   all Signal & radio cards present and no stale text/button pixels.
+- The main command bar remains 54 pixels high with all six icon labels visible,
+  while Pane 1 begins at pixel 55, on the first settled frame, after a display
+  change, and through repeated restore/maximize cycles.
+- The merged General > Backup / Restore route keeps all 10 Settings
+  destinations, opens an unclipped 769x440 dark dialog, disables Settings while
+  modal, and restores Settings interaction when closed without changing data.
 
 These checks reduce risk but do not mark the matrices below as passed.
 
@@ -91,6 +97,19 @@ page switching, live-meter navigation, and modal return smoke. Content-free
 captures are stored locally under `out\ui-*.png`. This record does not cover
 live radio input, High Contrast, keyboard-only completion, other dialogs, or
 125-200% scaling.
+
+10 August 2026 command-bar regression: initial and post-display/resize captures
+show Source, Pause, Record, Filters, Clear, and Settings beneath their icons.
+Geometry checks held the toolbar at 54 pixels and Pane 1 at y=55 through three
+restore/maximize cycles. This closes the clipped-label/column-header overlap at
+100% scale; other DPI levels remain open.
+
+10 August 2026 merged-backup regression: General > Backup / Restore rendered
+at 769x440 in the Windows-following dark palette with all explanatory text and
+actions visible. Native-window checks counted all 10 Settings destinations and
+confirmed correct modal disable/re-enable behavior. Export and restore were not
+run during this visual smoke; cryptographic round-trip and failure behavior are
+covered by the configuration-backup core suite.
 
 For each run record Windows version/build, display resolution, scale, monitor
 arrangement, PDW commit, result, and a content-free defect description. A

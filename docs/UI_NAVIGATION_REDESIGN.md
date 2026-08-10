@@ -5,11 +5,13 @@ Updated: 10 August 2026
 ## Implementation status
 
 Implemented locally on 10 August 2026 against the approved redesign images.
-The Release build and all 23 automated tests pass. Native-window smoke verifies
+The Release build and all 24 automated tests pass. Native-window smoke verifies
 one persistent Settings window, navigation, live-meter routing, retained modal
 handoff, Light/Dark rendering, and resize-safe layouts at 1000x720, 820x600,
-and the 720x560 minimum. Live-radio movement, High Contrast, keyboard-only
-completion, and 125-200% DPI remain acceptance gates.
+and the 720x560 minimum. Command-bar first-paint, display-change, and repeated
+restore/maximize checks keep all labels visible above Pane 1. Live-radio
+movement, High Contrast, keyboard-only completion, and 125-200% DPI remain
+acceptance gates.
 
 ## Decision
 
@@ -162,10 +164,13 @@ The left navigation remains visible and contains:
 5. Signal & radio
 6. Filters
 7. Notifications
-8. Transfers & publishing
-9. Data outputs
-10. Health & diagnostics
-11. About me
+8. Data outputs
+9. Health & diagnostics
+10. About me
+
+General contains **Backup / Restore**. Data outputs contains file transfer,
+web publishing, MQTT, databases, Telnet, and other integrations. This removes
+a duplicate destination category while preserving every underlying editor.
 
 At wide sizes the navigation displays icons and labels. At narrower sizes it
 retains readable icon-and-label rows in a narrower rail. The content header
@@ -267,8 +272,8 @@ message text appears in the status bar or Delivery Health.
    child control.
 4. Create the single-instance modeless Settings Center and navigation shell.
 5. Move General, Appearance, Display, Decoder, and Signal pages first.
-6. Move Filters, Notifications, Transfers, Publishing, Data Outputs, and
-   Delivery Health.
+6. Move Filters and Notifications, then consolidate FTP, web publishing, and
+   other integrations under Data outputs.
 7. Route old menu and context-menu entry points to the matching Settings page.
 8. Remove superseded modal routes only after configuration round-trip and
    visual tests pass.
@@ -279,6 +284,8 @@ message text appears in the status bar or Delivery Health.
 - Opening Settings twice focuses one window rather than creating duplicates.
 - Monitoring and the live meter continue while Settings is open.
 - Every existing setting remains reachable and retains its storage semantics.
+- General can export and restore all saved settings, filters, frequencies,
+  usernames, and credentials through one password-encrypted portable file.
 - Menu commands and shortcuts invoke the same operation as before.
 - The signal meter moves from real active-input samples, reaches peak on a test
   transmission, and clearly shows paused/disconnected states.

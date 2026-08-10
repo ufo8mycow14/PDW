@@ -248,8 +248,11 @@ HWND NEAR InitInstance(HINSTANCE hInstance, int nCmdShow)
 	// load accelerators
 	ghAccel = LoadAccelerators(hInstance, MAKEINTRESOURCE( PDWACCEL ));
 
-	if (Profile.xSize < 100) Profile.xSize = 593;
-	if (Profile.ySize < 100) Profile.ySize = 442;
+	// Reject saved geometry that cannot contain the modern command bar, both
+	// monitor panes and status bar. This also repairs profiles written during an
+	// interrupted first-layout/display-change cycle.
+	if (Profile.xSize < 444) Profile.xSize = 593;
+	if (Profile.ySize < 261) Profile.ySize = 442;
 	RECT savedRect = {
 		Profile.xPos, Profile.yPos,
 		Profile.xPos + Profile.xSize, Profile.yPos + Profile.ySize

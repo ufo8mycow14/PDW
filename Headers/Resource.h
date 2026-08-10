@@ -33,6 +33,8 @@
 #define PUBLISHING_DLGBOX          129
 #define DATA_OUTPUTS_DLGBOX        130
 #define OUTPUT_HEALTH_DLGBOX       131
+#define CONFIG_BACKUP_DLGBOX       132
+#define CONFIG_BACKUP_PASSWORD_DLGBOX 133
 
 #define IDM_LOGFILE                201
 #define IDM_EXIT                   202
@@ -59,6 +61,7 @@
 #define IDM_PUBLISHING             246
 #define IDM_DATA_OUTPUTS           247
 #define IDM_OUTPUT_HEALTH          248
+#define IDM_CONFIG_BACKUP          249
 
 #define IDM_FILTERS                240
 #define IDM_FILTEROPTIONS          241
@@ -610,6 +613,14 @@
 #define IDC_HEALTH_REFRESH         1507
 #define IDC_SETTINGS_OUTPUT_HEALTH 1508
 #define IDC_OUTPUT_OPEN_HEALTH     1509
+#define IDC_BACKUP_EXPORT          1510
+#define IDC_BACKUP_RESTORE         1511
+#define IDC_BACKUP_STATUS          1512
+#define IDC_BACKUP_PASSWORD_INFO   1513
+#define IDC_BACKUP_PASSWORD_LABEL  1514
+#define IDC_BACKUP_PASSWORD        1515
+#define IDC_BACKUP_CONFIRM_LABEL   1516
+#define IDC_BACKUP_CONFIRM         1517
 
 #define IDS_SIGIND                1250
 #define IDS_EXCLAM                1251

@@ -278,6 +278,10 @@ HWND ShowMakeToolBar(HWND parent_hwnd, HINSTANCE)
 	if (PdwThemeUiFont()) SendMessage(toolbar, WM_SETFONT,
 		reinterpret_cast<WPARAM>(PdwThemeUiFont()), TRUE);
 	g_signalMeter = LiveSignalMeterCreate(toolbar, 2198);
+	// Establish the approved icon-and-label height before the parent is first
+	// shown. Waiting for a later WM_SIZE leaves a one-frame legacy-height bar on
+	// startup and after some remote-display changes.
+	TB_AutoSize(toolbar);
 	ToolbarRefreshState();
 	return toolbar;
 }
@@ -307,9 +311,17 @@ void TB_AutoSize(HWND toolbar)
 	SetCompactMode(toolbar, compact);
 	SendMessage(toolbar, TB_SETBUTTONSIZE, 0,
 		MAKELPARAM(compact ? 38 : 64, 48));
+	// Let the common control recalculate the internal icon-and-text row first;
+	// without this pass it clips labels to its legacy 31-pixel content height.
+	// TB_AUTOSIZE may also alter the outer window, so immediately reassert PDW's
+	// approved 54-pixel geometry afterward.
 	SendMessage(toolbar, TB_AUTOSIZE, 0, 0);
-	MoveWindow(toolbar, 0, 0, parent.right, 54, TRUE);
+	SetWindowPos(toolbar, HWND_TOP, 0, 0, parent.right,
+		PDW_COMMAND_BAR_HEIGHT,
+		SWP_NOACTIVATE | SWP_SHOWWINDOW);
 	LayoutSignalMeter(toolbar);
+	RedrawWindow(toolbar, NULL, NULL,
+		RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
 
 void SetToolTXT(HINSTANCE, LPARAM lParam)

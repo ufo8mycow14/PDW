@@ -75,12 +75,20 @@ tree. It includes:
 - owner-drawn File, Monitor, Filters, Outputs, View, and Help menus that follow
   the selected Windows light/dark palette;
 - a 54-pixel command bar with Source, Pause, Record, Filters, Clear, and
-  Settings icons and labels;
+  Settings icons and labels; its common-control content layout runs before the
+  first show and PDW immediately reasserts the shared 54-pixel outer height so
+  startup, resize, DPI, and remote-display changes cannot clip the labels into
+  the monitor-column header;
 - a clickable two-line **LIVE INPUT** meter driven by real signal diagnostics,
   with 12 history bars and a peak column;
 - one persistent modeless Settings window with search, draft retention,
-  Apply/Revert controls, 11 navigation destinations, and an **About me** entry
+  Apply/Revert controls, 10 navigation destinations, and an **About me** entry
   beneath **Health & diagnostics**;
+- **Backup / Restore** under General, producing a portable password-encrypted
+  `.pdwbackup` containing PDW.INI, filters.ini, and supported PDW Credential
+  Manager records;
+- FTP/FTPS/SFTP and web publishing consolidated with MQTT, databases, Telnet,
+  and related integrations under **Data outputs**;
 - a live signal preview on **Signal & radio**, with retained legacy dialogs
   opened from clear cards without closing Settings; and
 - compact-width relayout and full child repainting so moved headings, buttons,
@@ -108,16 +116,16 @@ before safe modification. See `docs/FLEX_FRAGMENTS.md`.
 
 ## Verified local build state
 
-The clean Win32 Release build completed on 10 August 2026 with Visual Studio
-2022 and the pinned x86 dependency set. The expanded local CTest suite passes
-**23 of 23 tests**.
+The Win32 Release build completed on 10 August 2026 with Visual Studio 2022 and
+the pinned x86 dependency set. The expanded local CTest suite passes
+**24 of 24 tests**.
 
 Verified executable metadata:
 
 - filename: `PDW v4.5.0 Beta.exe`;
 - file version: `4.5.0.0`;
 - product version: `4.5.0 Beta`;
-- SHA-256: `B9B8EAF1C25A9D6C4FA7E01C74ED7E1CB810E4451F72E2BC3611538E518D46D2`.
+- SHA-256: `4283E1EE13CA347F84BB8AFC13BD6889509F96453A3958020B5C83968E594D76`.
 
 A real startup smoke test created a main window titled **PDW v4.5.0 Beta**.
 The app remained running until the exact smoke-test process was stopped. The
@@ -135,6 +143,8 @@ Native-window UI smoke automation verified single-instance Settings behavior,
 General/Appearance/Signal navigation, live-meter routing to Signal & radio,
 legacy modal handoff and recovery, explicit Light and Windows-following Dark
 rendering, 1000x720 layout, 820x600 compact relayout, and the 720x560 minimum.
+The merged backup dialog smoke also verified all 10 navigation destinations,
+an unclipped 769x440 dark dialog, and correct disable/re-enable modality.
 The approved captures are under `out\ui-*.png`. Physical receiver behavior,
 keyboard-only completion, High Contrast, and 125-200% DPI acceptance remain
 explicit gates; a successful build is not presented as those results. The
@@ -203,7 +213,7 @@ filters, recordings, queues, logs, or monitoring data.
 The current local UI build was merged into the operator's preserved Desktop
 test installation on 10 August 2026. The root and
 `Application` executable copies both have SHA-256
-`B9B8EAF1C25A9D6C4FA7E01C74ED7E1CB810E4451F72E2BC3611538E518D46D2`.
+`E840FB41C6DC7AD1D56FA0779C2D4DAC8D2695A287DF873778B3FE543AB33AB8`.
 Static documentation, receiver support, help, notices, and WAV assets were
 refreshed. Existing `PDW.INI`, `filters.ini`, receiver additions, recordings,
 logs, queues, and monitoring data were deliberately preserved.
