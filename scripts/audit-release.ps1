@@ -29,6 +29,16 @@ function Require-Match([string]$Text, [string]$Pattern, [string]$Description) {
     }
 }
 
+function Read-HeaderStringMacro([string]$Text, [string]$Name) {
+    $match = [regex]::Match($Text,
+        '(?m)^#define ' + [regex]::Escape($Name) + ' "([^"]+)"$')
+    if (-not $match.Success) {
+        Add-Failure "Headers/version.h does not contain $Name."
+        return ""
+    }
+    return $match.Groups[1].Value
+}
+
 $versionHeader = Read-RepoFile "Headers\version.h"
 $majorMatch = [regex]::Match($versionHeader, '(?m)^#define PDW_VERSION_MAJOR ([0-9]+)$')
 $minorMatch = [regex]::Match($versionHeader, '(?m)^#define PDW_VERSION_MINOR ([0-9]+)$')
@@ -41,34 +51,54 @@ else {
     $version = "$($majorMatch.Groups[1].Value).$($minorMatch.Groups[1].Value).$($patchMatch.Groups[1].Value)"
 }
 
-$display = "PDW v$version Beta"
+$display = Read-HeaderStringMacro $versionHeader "PDW_DISPLAY_VERSION"
+$executableName = Read-HeaderStringMacro $versionHeader "PDW_EXECUTABLE_NAME"
+$productVersion = Read-HeaderStringMacro $versionHeader "PDW_VERSION_STRING"
+$packageBase = Read-HeaderStringMacro $versionHeader "PDW_PACKAGE_BASENAME"
 $resourceVersion = "$version.0"
 Require-Match $versionHeader ('(?m)^#define PDW_VERSION_RESOURCE_STRING "' + [regex]::Escape($resourceVersion) + '"$') "Resource version string does not match $resourceVersion."
-Require-Match $versionHeader ('(?m)^#define PDW_VERSION_STRING "' + [regex]::Escape("$version Beta") + '"$') "Product version string does not match $version Beta."
-Require-Match $versionHeader ('(?m)^#define PDW_DISPLAY_VERSION "' + [regex]::Escape($display) + '"$') "Display version does not match $display."
-Require-Match $versionHeader ('(?m)^#define PDW_EXECUTABLE_NAME "' + [regex]::Escape("$display.exe") + '"$') "Executable name does not match $display.exe."
+if ($productVersion -notmatch ('^' + [regex]::Escape($version) + ' ')) {
+    Add-Failure "Product version string does not begin with canonical version $version."
+}
+if ($executableName -ne "$display.exe") {
+    Add-Failure "Executable name does not match $display.exe."
+}
+if ($packageBase -notmatch '^PDW-') {
+    Add-Failure "Package basename must begin with PDW-."
+}
 
 $manifest = Read-RepoFile "PDW.manifest"
 Require-Match $manifest ('assemblyIdentity version="' + [regex]::Escape($resourceVersion) + '"') "PDW.manifest does not match $resourceVersion."
 
 $workflow = Read-RepoFile ".github\workflows\build.yml"
-Require-Match $workflow ([regex]::Escape("PDW-v$version-Beta-")) "GitHub artifact version does not match $version."
-Require-Match $workflow ([regex]::Escape("PDW v$version Beta.exe")) "GitHub executable path does not match $version."
+Require-Match $workflow ([regex]::Escape("$packageBase-")) "GitHub artifact identity does not match $packageBase."
+Require-Match $workflow ([regex]::Escape($executableName)) "GitHub executable path does not match $executableName."
 Require-Match $workflow 'architecture: x64' "GitHub workflow does not contain an x64 target."
 Require-Match $workflow 'architecture: x86' "GitHub workflow does not contain a Win32/x86 target."
 Require-Match $workflow ([regex]::Escape('.\scripts\audit-release.ps1')) "GitHub workflow does not run the release audit."
+Require-Match $workflow ([regex]::Escape('.\scripts\build-installer.ps1')) "GitHub workflow does not build the guided installer."
+Require-Match $workflow ([regex]::Escape('.\tests\installer_smoke.ps1')) "GitHub workflow does not test install, settings co-location, upgrade and uninstall."
+Require-Match $workflow ([regex]::Escape("$packageBase-Setup.exe")) "GitHub workflow installer name does not match $packageBase."
 
 $readme = Read-RepoFile "Readme"
-Require-Match $readme ([regex]::Escape("version-$version%20Beta")) "Readme version badge does not match $version Beta."
-Require-Match $readme ([regex]::Escape("| **$version Beta** |")) "Readme current release row does not match $version Beta."
+$badgeLabel = [uri]::EscapeDataString($display.Substring(4))
+Require-Match $readme ([regex]::Escape("version-$badgeLabel")) "Readme version badge does not match $display."
+Require-Match $readme ([regex]::Escape("| **$display** |")) "Readme current release row does not match $display."
 
 $changelog = Read-RepoFile "CHANGELOG.md"
 $firstHeading = [regex]::Match($changelog, '(?m)^## ([^\r\n]+)$')
-if (-not $firstHeading.Success -or $firstHeading.Groups[1].Value -ne "$version Beta") {
-    Add-Failure "The first changelog release must be $version Beta."
+if (-not $firstHeading.Success -or $firstHeading.Groups[1].Value -ne $display) {
+    Add-Failure "The first changelog release must be $display."
 }
 
-foreach ($required in @("AGENTS.md", "SECURITY.md", "docs\PROJECT_RULES.md", "docs\DEPENDENCY_SECURITY.md", "docs\REPOSITORY_AUDIT.md")) {
+foreach ($required in @(
+    "AGENTS.md", "SECURITY.md", "docs\PROJECT_RULES.md",
+    "docs\DEPENDENCY_SECURITY.md", "docs\REPOSITORY_AUDIT.md",
+    "docs\INSTALLATION.md", "installer\PDW.iss", "installer\INSTALL_NOTICE.txt",
+    "scripts\stage-installer-input.ps1", "scripts\build-installer.ps1",
+    "scripts\audit-installer.ps1",
+    "tests\installer_smoke.ps1"
+)) {
     [void](Read-RepoFile $required)
 }
 

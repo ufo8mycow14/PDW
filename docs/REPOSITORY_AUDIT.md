@@ -2,7 +2,7 @@
 
 Audited: 10 August 2026
 
-This audit defines the files intentionally maintained for PDW v4.6.1 and later.
+This audit defines the files intentionally maintained for PDW v5 2026 Release and later.
 PDW is one native C++ source tree with two CMake build targets: x64 and Win32.
 CMake is the only maintained project definition.
 
@@ -56,6 +56,10 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
   are the documented optional driver-installation set.
 - `packaging/PDW.INI` and `packaging/filters.ini` are sanitized release
   defaults, not operator data.
+- `packaging/Wavfiles` and `packaging/Legacy` contain reviewed, non-private
+  installer/package inputs required for reproducible clean-clone staging.
+- `installer/PDW.iss` is the maintained guided Windows Setup definition; Inno
+  Setup project output is generated and is not tracked.
 - Every retained C/C++ translation unit is referenced by a CMake application,
   test, or hardware-smoke target. Every retained GFX bitmap/icon is embedded by
   `Rsrc.rc` and listed in `GFX/CMakeLists.txt`.
@@ -78,7 +82,10 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 4. Verify PE machine type, file/product version, and embedded manifest.
 5. Run native startup and Settings visual smoke for both architectures.
 6. Generate and independently audit both portable packages.
-7. Confirm the Git tree and every attached worktree are clean before
+7. Build the guided installer, run isolated x64 and Win32
+   install/co-location/upgrade/uninstall smoke, scan it, and verify its signature
+   before public release.
+8. Confirm the Git tree and every attached worktree are clean before
    publication.
 
 ## Current validation state
@@ -89,11 +96,12 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 - Optional WinMM and WASAPI hardware-smoke targets compile for both
   architectures.
 - PE machine values are Win32 `0x014C` and x64 `0x8664`; both executables
-  report file version `4.6.1.0` and product version `4.6.1 Beta`.
-- Both embedded manifests report `4.6.1.0`, architecture-neutral assembly
+  report file version `5.0.0.0` and product version `5.0.0 2026 Release`.
+- Both embedded manifests report `5.0.0.0`, architecture-neutral assembly
   metadata, and Per-Monitor V2 DPI awareness.
-- Native UI smoke passes for both builds with 10 Settings destinations, an
-  unclipped 769x440 dark Backup / Restore dialog, and correct modal recovery.
+- Native UI review passes for both v5 builds. The main title, About dialog, and
+  Settings **About me** page use the shared **PDW v5 2026 Release** identity;
+  the menu/toolbar/pane/status layout and Live Input percentage are visible.
 - The preceding v4.6.0 repository-audit packages contain 318 Win32 and 310 x64
   manifest entries. Independent verification found zero missing,
   changed, unlisted, private-runtime, non-empty-secret, or obsolete-source
@@ -104,6 +112,12 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
   private-runtime, non-empty-secret, or obsolete-source files.
 - Win32 retains the intentional x86 RTL-SDR DLL and four mirrored legacy VxD
   copies; x64 contains neither.
-- `scripts/audit-release.ps1` passes for v4.6.1 and enforces release identity,
-  both CI architectures, Visual Basic review, obsolete-file exclusion,
-  dependency-notice alignment, and prepared-statement SQL safeguards.
+- The guided installer passes isolated x64 and Win32 installation, co-located
+  settings, upgrade-preservation, and uninstall-preservation smoke. Microsoft
+  Defender reports no threat in the unsigned local candidate.
+- `scripts/audit-release.ps1` enforces the v5 identity, both CI architectures,
+  installer build/smoke coverage, Visual Basic review, obsolete-file
+  exclusion, dependency-notice alignment, and prepared-statement SQL
+  safeguards.
+- Trusted Authenticode signing remains mandatory before the installer is
+  promoted as the public stable release.

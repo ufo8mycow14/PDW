@@ -1,7 +1,7 @@
 # Windows UI acceptance
 
-This checklist records the manual evidence still required before PDW v4.6 can
-move from beta toward a stable release. A successful resource compile, startup
+This checklist records the manual evidence required to maintain the stable
+PDW v5 2026 Release. A successful resource compile, startup
 smoke, or unit suite does not prove that every legacy dialog remains readable
 and operable at every Windows scale.
 

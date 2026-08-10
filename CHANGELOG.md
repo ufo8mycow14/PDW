@@ -1,5 +1,31 @@
 # Changelog
 
+## PDW v5 2026 Release
+
+The first non-beta release of the modernized PDW line. It retains the complete
+legacy decoder, receiver, slicer, filter, audio, serial, display and output
+surface while introducing a guided Windows installation and upgrade path.
+
+### Added
+
+- One Windows Setup program containing architecture-matched Win32 and x64 PDW
+  application choices, with Win32 retained for legacy receiver libraries.
+- Guided installation, existing portable-folder detection, configuration and
+  filter migration, Start Menu and optional Desktop shortcuts, and safe
+  upgrade/uninstall behavior.
+- Release automation for dual-architecture installer inputs, installer audit,
+  Microsoft Defender scanning, Authenticode verification, and signing gates.
+
+### Compatibility and security
+
+- Portable use remains supported and uses the same executable and beside-the-
+  application configuration behavior as previous PDW versions.
+- Setup is per-user and does not require administrator rights. It does not move
+  credentials out of Windows Credential Manager or enable any network output.
+- Public release remains blocked until the application and Setup signatures
+  validate against a trusted publisher and the extracted installation passes
+  the current Microsoft Defender scan.
+
 ## 4.6.1 Beta
 
 Maintenance release establishing enforceable repository and release rules for

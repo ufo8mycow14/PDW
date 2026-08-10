@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.20)
 # and build system.
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/Headers/version.h" PDW_VERSION_DEFINES
   REGEX "^#define PDW_VERSION_(MAJOR|MINOR|PATCH) [0-9]+$")
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/Headers/version.h" PDW_DISPLAY_DEFINE
+  REGEX "^#define PDW_DISPLAY_VERSION \"[^\"]+\"$")
 
 foreach(PART MAJOR MINOR PATCH)
   foreach(VERSION_DEFINE IN LISTS PDW_VERSION_DEFINES)
@@ -17,9 +19,11 @@ endforeach()
 
 if(NOT DEFINED PDW_VERSION_MAJOR OR
    NOT DEFINED PDW_VERSION_MINOR OR
-   NOT DEFINED PDW_VERSION_PATCH)
+   NOT DEFINED PDW_VERSION_PATCH OR
+   NOT PDW_DISPLAY_DEFINE MATCHES "^#define PDW_DISPLAY_VERSION \"([^\"]+)\"$")
   message(FATAL_ERROR "Unable to read the PDW version from Headers/version.h")
 endif()
+set(PDW_DISPLAY_VERSION "${CMAKE_MATCH_1}")
 
 project(PDW
   VERSION "${PDW_VERSION_MAJOR}.${PDW_VERSION_MINOR}.${PDW_VERSION_PATCH}"
@@ -136,7 +140,7 @@ set_source_files_properties(
   PROPERTIES COMPILE_OPTIONS "/W4;/WX"
 )
 
-set_target_properties(PDW PROPERTIES OUTPUT_NAME "PDW v${PROJECT_VERSION} Beta")
+set_target_properties(PDW PROPERTIES OUTPUT_NAME "${PDW_DISPLAY_VERSION}")
 
 target_include_directories(PDW PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"

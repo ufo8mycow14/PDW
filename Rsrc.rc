@@ -191,7 +191,7 @@ BEGIN
     LTEXT           "Copyright (c) 2001 - 2004 Jason Petty",IDC_STATIC,79,33,126,8
     LTEXT           "2004 - 2010 Peter Hunt",IDC_STATIC,122,45,100,8
     LTEXT           "Win2k/XP RS232 support by: Herman Withaar",IDC_STATIC,113,106,152,8
-    LTEXT           "Contributors: Kieran O'Rourke (v4.0.0 beta)",IDC_STATIC,79,122,190,8
+    LTEXT           "Contributor: Kieran O'Rourke",IDC_STATIC,79,122,190,8
     PUSHBUTTON      "Visit PDW website",IDC_WEBSITE,121,68,68,15
     LTEXT           "2013 GNU GENERAL PUBLIC LICENSE",IDC_STATIC,124,57,124,8
 END

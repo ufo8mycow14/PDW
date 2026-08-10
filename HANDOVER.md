@@ -1,307 +1,185 @@
-# PDW project handover
+# PDW v5 2026 Release handover
 
-Last synchronized: 10 August 2026
+Updated: 10 August 2026
 
-Read this file before changing code, replacing an operator installation, or
-publishing a release. The central rule is unchanged: PDW remains one program,
-the approved 2026 native-Windows navigation design and legacy decoder behavior
-stay authoritative, and enhancements must be additive or fail independently.
+## Current release identity
 
-## Repository and release identity
+- Repository: `C:\PDW Update\PDW-source`
+- Active branch: `pdw-v5-2026-release`
+- Product/display name: **PDW v5 2026 Release**
+- Executable: `PDW v5 2026 Release.exe`
+- Product version: `5.0.0 2026 Release`
+- File version: `5.0.0.0`
+- Installer: `PDW-v5-2026-Release-Setup.exe`
+- Portable packages: `PDW-v5-2026-Release-Win32` and
+  `PDW-v5-2026-Release-x64`
 
-- Source checkout: `C:\PDW Update\PDW-source`
-- Release branch: `pdw-v4.6.1-beta`
-- Product/display name: **PDW v4.6.1 Beta**
-- Win32 executable: `out\build-win32\Release\PDW v4.6.1 Beta.exe`
-- x64 executable: `out\build-x64\Release\PDW v4.6.1 Beta.exe`
-- Windows file version: `4.6.1.0`
-- Maintained project definition: root `CMakeLists.txt` only
-- File-retention evidence: `docs\REPOSITORY_AUDIT.md`
-- Writable fork remote: `fork` (`ufo8mycow14/PDW`)
-- Authoritative upstream: `origin` (`Discriminator/PDW`)
-- Audit-only comparison remote: `spiral`; push is disabled
-- Active task: `019fe6ff-3b3c-7cb2-9cb6-c4c09eb0c71e`
+The v5 release is one PDW product. The installer contains both application
+architectures and selects x64 by default on 64-bit Windows while retaining a
+clear Win32 compatibility choice. The portable folder workflow remains fully
+supported.
 
-Important integration checkpoints:
+`Headers/version.h` is the authoritative application identity. CMake reads the
+display name from that header for the output filename; the About dialog and
+Settings **About me** page render the same display macro. The installer,
+packaging, audit scripts, workflow names, documentation, and manifests are
+aligned to the v5 identity.
 
-- `cffbaea` - decoder/input/output hardening and the unified additive router;
-- `67454a1` - isolated optional data outputs;
-- `682dfd2` - content-free Delivery Health monitoring;
-- `98ff7ad` - INI preservation;
-- `77e23bd` - legacy-safe FLEX fragment reassembly.
+## Guided installer
 
-Fork publication state:
+The Inno Setup definition is `installer/PDW.iss`. It produces one guided,
+per-user installer that:
 
-- v4.5 PR #5 was merged into fork `master` on 10 August 2026;
-- pushed branch: `fork/pdw-v4.6.1-beta`;
-- draft PR: `https://github.com/ufo8mycow14/PDW/pull/7`;
-- v4.6.0 draft PR #6 is closed as superseded, with its branch retained as
-  rollback history;
-- PR #7 release-candidate checks pass for Win32, x64, CodeQL C/C++, CodeQL
-  Actions, and the final CodeQL gate;
-- the first v4.6 release commit is `14e9591`; GitHub checks run on every PR
-  update and the PR is the authoritative current CI state;
-- the repository audit, release rules, and package-evidence sync remain on the
-  v4.6.1 release branch rather than creating a separate legacy-cleanup edition;
-- superseded v4.1 draft PR #3 is closed, with its branch retained;
-- Win32 workflow run `31361744748` passed dependency build, application build,
-  all 18 tests, and artifact upload;
-- CodeQL C/C++, Actions, and final CodeQL checks passed;
-- uploaded artifact: `PDW-v4.5.0-Beta-Win32`;
-- downloaded artifact copy:
-  `C:\PDW Update\output\PDW-v4.5.0-Beta-GitHub-Artifact`.
+- installs without requiring administrator privileges;
+- offers x64 or Win32 on 64-bit Windows and automatically uses Win32 on
+  32-bit Windows;
+- supports `/ARCH=x64` and `/ARCH=Win32` for unattended deployment;
+- keeps `PDW.INI`, filters, receivers, WAV files, logs, and the executable in
+  one selected PDW installation folder;
+- leaves same-user Windows Credential Manager records available;
+- preserves operator INI files, filters, receivers, WAV files, logs, queues,
+  recordings, and databases on upgrade;
+- does not remove operator configuration during uninstall;
+- offers Start menu, optional Desktop, and optional Windows startup shortcuts;
+  and
+- can sign Setup and its uninstaller when an approved Authenticode signing
+  command is supplied.
 
-GitHub's separate AI-findings helper failed before reviewing code because its
-configured model was unsupported (HTTP 400). This was a GitHub service-side
-agent failure; the standard CodeQL and project checks passed.
+Tracked default WAV files and required legacy data are staged from `packaging`
+so a clean clone can build the installer. Obsolete VxD drivers are not installed
+automatically. Architecture-specific receiver rules remain enforced: Win32 can
+include the redistributed x86 RTL-SDR DLL; x64 excludes it and supports matching
+x64 custom libraries or the architecture-neutral `rtl_tcp` path.
 
-Historical v4.1, v4.5, and v4.6.0 references in release history and acceptance
-evidence are intentional. Current executable, workflow artifact, documentation,
-branch, and package targets use v4.6.1 Beta. The contributor credit records the
-historical contribution version and does not replace the live About version.
+## Current verification
 
-## Safe integration result
+Local Visual Studio 2022 Release builds completed for Win32 and x64. Each
+architecture passes **24 of 24 CTest tests**. Optional live audio smoke also
+passed on the development machine:
 
-The requested order was followed:
+- Win32 WinMM: 44,100 bytes at 44.1 kHz, 8-bit mono;
+- Win32 WASAPI: 48,480 samples at 48 kHz;
+- x64 WinMM: 44,100 bytes at 44.1 kHz, 8-bit mono; and
+- x64 WASAPI: 48,000 samples at 48 kHz.
 
-1. Harden corrupt-frame bounds, audio/serial/COM cleanup, shutdown, SMTP, and
-   configuration handling without replacing valid decoder output.
-2. Add one decoded-message router after PDW's established filtering boundary.
-3. Add MQTT, SQLite, MySQL through Windows ODBC, loopback-first Telnet JSON,
-   and Windows notifications as disabled-by-default independent adapters.
-4. Add content-free delivery counters/history and non-focus-stealing alerts.
-5. Preserve comments, unknown INI keys/sections, BOM, and line endings while
-   continuing to update PDW-managed values.
-6. Add FLEX fragment assembly last, disabled by default, as a bounded shadow
-   observer that never suppresses the legacy fragments.
+The current executables report:
 
-No wholesale source or UI merge was taken from Spiral. The current PDW menus,
-themes, receiver workflow, and dialog implementations remain the compatibility
-base. The approved 2026 command bar, modeless Settings Center, and live-input
-surface now provide the primary navigation over those retained commands.
+- Win32 PE machine `0x014C`, file version `5.0.0.0`, product version
+  `5.0.0 2026 Release`;
+- x64 PE machine `0x8664`, file version `5.0.0.0`, product version
+  `5.0.0 2026 Release`; and
+- embedded manifest version `5.0.0.0` with Per-Monitor V2 DPI awareness.
 
-The repository file audit found no Visual Basic source. Obsolete VC6 and
-VS2017 project metadata, generated IDE/resource caches, the redundant v3.1
-runtime ZIP, four unused source/resource metadata files, and two unreferenced
-bitmaps were removed. The manual and licensed receiver/driver materials remain
-because current help, Win32 hardware support, or redistribution obligations use
-them. CMake now lists the complete maintained header and embedded GFX sets for
-both architectures. See `docs/REPOSITORY_AUDIT.md`.
+Content-free native UI review passed for both application architectures. The
+main window, menu bar, six-command toolbar, pane headings, status bar, and Live
+Input percentage render without overlap. The About dialog and Settings
+**About me** page display **PDW v5 2026 Release**; the contributor line no
+longer carries an obsolete Beta suffix.
 
-## Approved 2026 Windows interface
+The isolated installer smoke passes for x64 and Win32. It verifies application
+architecture and version, settings co-location, upgrade preservation of
+modified settings and custom receivers, clean uninstall, and
+retention of operator-owned configuration after uninstall. Microsoft Defender
+reported no threat in the locally generated candidate.
 
-The image-approved navigation redesign is implemented in the current working
-tree. It includes:
+## Signing and public-release boundary
 
-- owner-drawn File, Monitor, Filters, Outputs, View, and Help menus that follow
-  the selected Windows light/dark palette;
-- a 54-pixel command bar with Source, Pause, Record, Filters, Clear, and
-  Settings icons and labels; its common-control content layout runs before the
-  first show and PDW immediately reasserts the shared 54-pixel outer height so
-  startup, resize, DPI, and remote-display changes cannot clip the labels into
-  the monitor-column header;
-- a clickable two-line **LIVE INPUT** meter driven by real signal diagnostics,
-  with 12 history bars and a peak column;
-- one persistent modeless Settings window with search, draft retention,
-  Apply/Revert controls, 10 navigation destinations, and an **About me** entry
-  beneath **Health & diagnostics**;
-- **Backup / Restore** under General, producing a portable password-encrypted
-  `.pdwbackup` containing PDW.INI, filters.ini, and supported PDW Credential
-  Manager records;
-- FTP/FTPS/SFTP and web publishing consolidated with MQTT, databases, Telnet,
-  and related integrations under **Data outputs**;
-- a live signal preview on **Signal & radio**, with retained legacy dialogs
-  opened from clear cards without closing Settings; and
-- compact-width relayout and full child repainting so moved headings, buttons,
-  cards, and meter pixels do not leave resize trails.
+The local installer candidate is intentionally not described as the public
+stable release because no trusted publisher certificate is configured. The
+release scripts support signing and `-RequireSignature`; the public-release
+path must fail when the signature is absent or invalid.
 
-The implementation changes presentation and command discovery only. Existing
-command IDs and the underlying decoder, capture, filter, configuration, and
-delivery implementations remain in place.
+Before attaching the stable installer to a GitHub Release:
 
-## FLEX compatibility boundary
+1. approve a trusted publisher identity and Authenticode certificate or an
+   approved managed signing service;
+2. sign both application executables and the installer/uninstaller;
+3. verify the signature chain and timestamp on a clean Windows machine;
+4. scan the signed artifacts with Microsoft Defender;
+5. rerun the isolated dual-architecture installer smoke; and
+6. if Defender or SmartScreen reports a false positive, submit the exact signed
+   artifact to Microsoft rather than weakening application or installer
+   security.
 
-**Settings > Display and behavior > Screen and columns** contains one added row:
-**Also show assembled FLEX alpha copy (original fragments remain)**.
-
-The option is off by default. Each fragment is displayed, filtered, logged,
-and routed through the original path first. A strict, complete non-group alpha
-or secure K/F/C chain can add one marked assembled copy. Orphans, gaps,
-out-of-order fragments, timeouts, capacity exhaustion, and truncation cannot
-remove the original fragment. Pending state is transient and cleared on decoder
-reset, option disable, or Group Mode activation.
-
-FLEX Group Mode is deliberately unchanged because its assignment, missed-call,
-conversion, duplicate, and logging state needs representative replay fixtures
-before safe modification. See `docs/FLEX_FRAGMENTS.md`.
-
-## Verified local build state
-
-Clean Visual Studio 2022 Release builds completed for Win32 and x64 on
-10 August 2026. Each architecture passes **24 of 24 tests**. The optional
-WinMM and WASAPI smoke targets also compile for both architectures.
-
-Verified executable metadata:
-
-- filename: `PDW v4.6.1 Beta.exe`;
-- file version: `4.6.1.0`;
-- product version: `4.6.1 Beta`;
-- Win32 PE machine: `0x014C`;
-- Win32 SHA-256: `95B0EBA5E180DACDC2249F82E1BFBD262E51C43B34DC35BDF8794B5C452AFC44`;
-- x64 PE machine: `0x8664`;
-- x64 SHA-256: `0AE8984935684C678E1239CE023C0B308CD4EA00296AD9792FC1AF23C3F4D28E`.
-
-Both executables created a responsive main window titled **PDW v4.6.1 Beta**
-when launched with the sanitized portable profile. Automated native-window
-smoke then verified all 10 Settings destinations, an unclipped 769x440 dark
-Backup / Restore dialog, and correct disable/re-enable modality on Win32 and
-x64. The About dialog in each displays **PDW v4.6.1 Beta** and the historical
-Kieran O'Rourke v4.0.0 beta contributor credit without clipping. The embedded
-manifest extracted from each executable reports version `4.6.1.0` with
-architecture-neutral assembly metadata; the PE header remains
-the authoritative executable architecture.
-
-Earlier v4.5 acceptance on 10 August 2026 measured responsive manual main-window
-starts from 243 ms to 1,189 ms, including 422 ms after the final clean build,
-and responsive `/startup` starts from 5,141 ms to 6,906 ms. The optional hardware smoke targets
-captured 44,100 bytes through legacy WinMM at 44.1 kHz 8-bit mono and 48,000
-samples through WASAPI at 48 kHz on the final clean-build rerun. See
-`docs/LIVE_INPUT_ACCEPTANCE.md`; device removal, hot-plug, `rtl_tcp`, and
-physical RTL-SDR tests remain separate open gates.
-
-Native-window UI smoke automation verified single-instance Settings behavior,
-General/Appearance/Signal navigation, live-meter routing to Signal & radio,
-legacy modal handoff and recovery, explicit Light and Windows-following Dark
-rendering, 1000x720 layout, 820x600 compact relayout, and the 720x560 minimum.
-The merged backup dialog smoke also verified all 10 navigation destinations,
-an unclipped 769x440 dark dialog, and correct disable/re-enable modality.
-The approved captures are under `out\ui-*.png`. Physical receiver behavior,
-keyboard-only completion, High Contrast, and 125-200% DPI acceptance remain
-explicit gates; a successful build is not presented as those results. The
-repeatable matrix is in `docs/WINDOWS_UI_ACCEPTANCE.md`.
-
-The continued roadmap pass added synthetic POCSAG alpha, numeric, and tone-only
-fixtures around the unchanged legacy decoder; version-2 per-target publishing
-state with frozen static folders, monotonic crash recovery, durable feed
-history, and restart-unique IDs; release default/privacy tests; keyboard
-tab-order fixes; High Contrast recovery; current/legacy volume routing;
-owner-monitor dialog clamping; developer-build F1 help; and DPI-scaled Delivery
-Health columns. These are additive safety and evidence changes; no protocol
-algorithm or legacy input/output was removed.
-
-Rebuild commands:
-
-```powershell
-.\scripts\build-dependencies.ps1
-cmake -S . -B out\build-win32 -A Win32
-cmake --build out\build-win32 --config Release --target clean
-cmake --build out\build-win32 --config Release --parallel
-ctest --test-dir out\build-win32 -C Release --output-on-failure
-
-.\scripts\build-dependencies.ps1 -Architecture x64
-cmake -S . -B out\build-x64 -A x64 `
-  -DPDW_DEPENDENCY_ROOT="$PWD\out\dependencies\x64"
-cmake --build out\build-x64 --config Release --target clean
-cmake --build out\build-x64 --config Release --parallel
-ctest --test-dir out\build-x64 -C Release --output-on-failure
-
-# Optional, machine-specific live audio checks
-cmake --build out\build-win32 --config Release --target PDWWinmmDeviceSmoke
-.\out\build-win32\Release\PDWWinmmDeviceSmoke.exe
-cmake --build out\build-win32 --config Release --target PDWWasapiDeviceSmoke
-.\out\build-win32\Release\PDWWasapiDeviceSmoke.exe
-```
-
-## Portable release package
-
-The reproducible package command is:
-
-```powershell
-.\scripts\package-release.ps1 -Architecture Win32
-.\scripts\package-release.ps1 -Architecture x64
-```
-
-It requires a clean Git tree and matching executable metadata, refuses to
-overwrite an existing release, stages under `C:\PDW Update\tmp`, and produces:
-
-- `C:\PDW Update\PDW-4.6.1-Beta-Win32` and its matching ZIP;
-- `C:\PDW Update\PDW-4.6.1-Beta-x64` and its matching ZIP.
-
-The ready-to-run root and `Application` copy include the executable, sanitized
-disabled-by-default `PDW.INI`, empty filters, documentation, standard receiver
-folder, available legacy support assets, and WAV alerts. `Source` is generated
-from `git archive HEAD`. `SHA256SUMS.txt` covers every staged file. The script
-rejects runtime logs, databases, IQ/SigMF data, publish queues, dead-letter
-content, and non-empty INI secret fields.
-
-The prior v4.1, v4.5, and v4.6.0 release folders are retained as rollback
-evidence and are not overwritten by the architecture-specific v4.6.1 packages.
-
-The clean v4.6.1 repository-audit packages verify 327 Win32 and 319 x64
-manifest entries with zero missing, changed, unlisted, private-runtime,
-non-empty-secret, or obsolete-source files. Their embedded repository audit
-document matches the committed Git blob. Win32 retains the bundled x86 RTL-SDR
-DLL and four mirrored legacy VxD assets; x64 contains neither. The Desktop test
-installation is a separate local state and is not automatically replaced by
-package generation or fork publication.
-
-## Desktop live-radio test installation
-
-The current local UI build was merged into the operator's preserved Desktop
-test installation on 10 August 2026. The root and
-`Application` executable copies both have SHA-256
-`E2602F6498401AB20AA5D1724F8F3CAD46ABAF78ADE93CFFFBF94B2D09757D8C`.
-Static documentation, receiver support, help, notices, and WAV assets were
-refreshed. Existing `PDW.INI`, `filters.ini`, receiver additions, recordings,
-logs, queues, and monitoring data were deliberately preserved.
-The installation's 291-path static-file manifest was recalculated
-after the merge and verified with zero hash mismatches; private runtime extras
-were not added to that manifest.
-
-A smoke launch from that exact Desktop path produced a responsive
-**PDW v4.5.0 Beta** main window with the `PDWLiveSignalMeter` child and exited
-gracefully. This proves installation/startup only; a physical live-radio
-transmission and peak response still require operator acceptance.
+Signing reduces unknown-publisher warnings and establishes identity and
+integrity. It cannot guarantee immediate SmartScreen reputation or that no
+security product will ever inspect the application.
 
 ## Compatibility and privacy boundaries
 
 - Preserve POCSAG, FLEX, ACARS, MOBITEX, and ERMES legacy protocol behavior.
 - Keep WinMM, WASAPI fallback, serial slicers, `.rec` playback, INI files,
-  filters, logs, WAV alerts, and existing hard-decision parsers available.
-- Keep SMTP, Apprise, FTP/FTPS/SFTP, static publishing, and webhooks intact;
-  modern data outputs are additional destinations, not replacements.
-- Publishing and every optional adapter remain disabled by default and require
-  the operator to consider laws and permissions in their own jurisdiction.
-- Never commit or package captured pager traffic, private logs, credentials,
-  queues, recordings, databases, or operator-specific configuration.
-- Secrets belong in Windows Credential Manager, not source, INI, logs,
-  screenshots, packages, or chat.
-- Keep Git source, local build, portable package, test installation, pushed
-  branch, PR, CI, and GitHub release/artifact status explicitly separate.
+  filters, logs, WAV alerts, and established hard-decision parsers available.
+- Keep SMTP, Apprise, FTP/FTPS/SFTP, static publishing, webhooks, MQTT,
+  SQLite, ODBC/MySQL, Telnet, and Windows notifications intact and independent.
+- Publishing and every optional adapter remain disabled by default. Operators
+  must consider the laws and permissions that apply in their own country.
+- Never commit or package pager traffic, operator logs, credentials, queues,
+  recordings, databases, or personal configuration.
+- Secrets remain in Windows Credential Manager and are excluded from INI
+  files, logs, screenshots, packages, and chat.
+- Git source, local builds, portable packages, installer candidates, test
+  installations, pushed branches, pull requests, CI, tags, and GitHub Releases
+  are separate states and must be reported separately.
+
+## Rebuild and audit
+
+```powershell
+.\scripts\build-dependencies.ps1
+cmake -S . -B out\v5-build-win32 -A Win32
+cmake --build out\v5-build-win32 --config Release --target clean
+cmake --build out\v5-build-win32 --config Release --parallel
+ctest --test-dir out\v5-build-win32 -C Release --output-on-failure
+
+.\scripts\build-dependencies.ps1 -Architecture x64
+cmake -S . -B out\v5-build-x64 -A x64 `
+  -DPDW_DEPENDENCY_ROOT="$PWD\out\dependencies\x64"
+cmake --build out\v5-build-x64 --config Release --target clean
+cmake --build out\v5-build-x64 --config Release --parallel
+ctest --test-dir out\v5-build-x64 -C Release --output-on-failure
+
+.\scripts\stage-installer-input.ps1 -Architecture Win32 `
+  -BuildDirectory out\v5-build-win32\Release `
+  -Destination out\v5-installer-input\Win32
+.\scripts\stage-installer-input.ps1 -Architecture x64 `
+  -BuildDirectory out\v5-build-x64\Release `
+  -Destination out\v5-installer-input\x64
+.\scripts\build-installer.ps1 `
+  -Win32ApplicationDirectory out\v5-installer-input\Win32 `
+  -X64ApplicationDirectory out\v5-installer-input\x64 `
+  -OutputDirectory out\v5-installer
+.\scripts\audit-installer.ps1 `
+  -Setup 'out\v5-installer\PDW-v5-2026-Release-Setup.exe'
+.\tests\installer_smoke.ps1 `
+  -Setup 'out\v5-installer\PDW-v5-2026-Release-Setup.exe' `
+  -TestRoot out\v5-installer-smoke
+
+.\scripts\audit-release.ps1
+```
+
+Public release builds add the approved signing command to
+`build-installer.ps1` and require signatures during the installer audit.
 
 ## Remaining acceptance work
 
-1. Complete keyboard-only, High Contrast, and 125%, 150%, and 200% DPI checks,
-   including Screen Options, Data Outputs, and Delivery Health. Light/Dark and
-   compact/minimum Settings layouts have 100% evidence.
-2. Verify WinMM/WASAPI loss and recovery, `rtl_tcp`, and supported physical
-   RTL-SDR USB devices on intended hardware. Default-device capture through
-   both Windows audio paths is now recorded in `docs/LIVE_INPUT_ACCEPTANCE.md`.
-3. Extend the synthetic POCSAG alpha/numeric/tone fixtures with audio, FLEX,
-   filtering, duplicate, correction, and other protocol evidence;
-   specifically exercise complete and broken FLEX chains.
-4. Test FTP/FTPS/SFTP, SMTP, Apprise, webhook, MQTT, ODBC, Telnet, and Windows
-   notification success/failure paths using disposable non-private data.
+1. Obtain and configure the trusted publisher signing identity.
+2. Complete keyboard-only, High Contrast, and 125%, 150%, and 200% DPI checks.
+3. Verify WinMM/WASAPI device loss and recovery, `rtl_tcp`, and physical
+   supported RTL-SDR devices on intended hardware.
+4. Extend synthetic decoder fixtures with audio, FLEX, filtering, duplicate,
+   correction, and remaining protocol coverage.
+5. Exercise secure outputs with disposable non-private test services.
 
-The maintained milestone view is in `docs/ROADMAP.md`.
+Historical v4.1, v4.5, v4.6.0, and v4.6.1 references remain only where they
+describe earlier release evidence or changelog history. They do not define the
+current product identity.
 
-## Git publication workflow
+## Publication workflow
 
-- Inspect the complete diff and preserve unrelated work.
-- Stage explicit release files; do not use broad cleanup/reset commands.
-- Build and test before committing.
-- Push `pdw-v4.6.1-beta` to the writable `fork` remote.
-- Open a draft PR against the fork's `master`; close older draft PRs only as
-  superseded references, without deleting their rollback branches.
-- Treat push, PR, merge, tag, GitHub release, and local installation as distinct
-  states and report each honestly.
+- Inspect and commit the complete v5 release diff.
+- Push `pdw-v5-2026-release` to the writable `fork` remote.
+- Open a draft pull request against the fork's `master` and let dual CI,
+  installer smoke, CodeQL, and artifact checks complete.
+- Do not merge/tag/publish the public stable installer until the signing gate
+  passes.
+- Retain earlier branches and packages as rollback evidence.

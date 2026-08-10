@@ -25,8 +25,9 @@ Every published update must advance and align all current-version surfaces:
 
 - `Headers/version.h`, Windows resources, embedded manifest, executable name,
   main-window title, About dialog, and Settings About me page;
-- CMake output, GitHub workflow artifact, package folder/ZIP, changelog,
-  Readme, handover, roadmap, release branch, pull request, and fork metadata.
+- CMake output, guided Setup, GitHub workflow artifact, package folder/ZIP,
+  changelog, Readme, handover, roadmap, release branch, pull request, and fork
+  metadata.
 
 Run `scripts/audit-release.ps1` before building or packaging. Historical
 release notes and contributor-version credits remain historical and must not
@@ -62,7 +63,10 @@ be rewritten merely to match the current release.
 6. Verify PE machine, file/product version, manifest, and About UI.
 7. Run native Light/Dark and compact-size UI smoke on both.
 8. Generate and independently audit both portable packages.
-9. Confirm every worktree is clean before publication.
+9. Build the combined installer; test Win32/x64 install, co-located settings,
+   upgrade and uninstall; scan it with Defender.
+10. Require trusted Authenticode signatures on public application, Setup and
+    uninstaller files, then confirm every worktree is clean before publication.
 
 See `docs/PROJECT_RULES.md`, `SECURITY.md`, and
 `docs/REPOSITORY_AUDIT.md` for the human-facing policy and evidence.

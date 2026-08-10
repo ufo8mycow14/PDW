@@ -1,0 +1,19 @@
+PDW v5 2026 Release keeps all established decoder, receiver, slicer, audio,
+serial, filter and output paths. This Setup installs the same PDW application
+that remains available in portable form.
+
+Only receive or share messages where monitoring and publication are lawful and
+authorised in your country. Every internet and notification output remains
+disabled by default.
+
+Setup never stores passwords in its log. Existing supported PDW credentials
+remain in Windows Credential Manager for the same Windows user.
+
+The executable, PDW.INI, filters, receivers, WAV files and logs remain together
+in the selected PDW folder. Setup does not offer a separate settings location.
+Use Settings > General > Backup / Restore after installation to move settings
+from another PDW copy.
+
+Win32 compatibility should be selected when an existing receiver requires an
+x86-only DLL. x64 should be selected only with x64-compatible receiver DLLs;
+rtl_tcp remains architecture-neutral.

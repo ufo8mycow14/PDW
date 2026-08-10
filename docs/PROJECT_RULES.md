@@ -1,6 +1,6 @@
 # PDW project rules
 
-These are binding release rules for PDW 4.6.1 Beta and later.
+These are binding release rules for PDW v5 2026 Release and later.
 
 ## One product, two maintained architectures
 
@@ -35,9 +35,9 @@ behavioral replacement requires all of the following:
 For every published update, advance the canonical semantic version in
 `Headers/version.h`. The executable file/product version, filename, title,
 About dialog, Settings About me page, manifest, workflow artifact, portable
-package, Readme, changelog, handover, roadmap, branch, pull request, and fork
-must describe the same release. Historical rows and contributor credits stay
-historical.
+package, guided Setup, Readme, changelog, handover, roadmap, branch, pull
+request, and fork must describe the same release. Historical rows and
+contributor credits stay historical.
 
 `scripts/audit-release.ps1` checks the repository-level identity before build
 or packaging. Native metadata and UI still require post-build inspection.
@@ -73,7 +73,11 @@ or packaging. Native metadata and UI still require post-build inspection.
 7. Smoke Light, Dark, minimum/compact, and normal layouts on both.
 8. Create both portable packages and independently validate hashes, secrets,
    forbidden runtime content, source snapshot, and architecture-only assets.
-9. Push a named release branch, open/update a draft pull request, wait for all
+9. Build the combined Setup and pass Win32/x64 install, co-located settings,
+   upgrade, uninstall, Defender, metadata, and architecture-selection checks.
+10. Require trusted Authenticode signatures for every public executable,
+    Setup, and uninstaller; unsigned CI outputs remain test artifacts only.
+11. Push a named release branch, open/update a draft pull request, wait for all
    dual-architecture CI and security checks, and keep the tree clean.
 
 Physical receiver, slicer, driver, network-service, and live-radio acceptance

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security maintenance targets the current beta release on both native Windows
+Security maintenance targets the current release on both native Windows
 architectures. Win32 remains supported because legacy receiver DLLs, scanners,
 serial slicers, and drivers may require a 32-bit process. x64 is not a
 replacement for those compatibility paths.
@@ -36,6 +36,12 @@ and a synthetic or redacted test case.
   against official releases and advisories before every release.
 - Win32 and x64 builds, tests, package audits, and native startup smoke are all
   release gates.
+- Public application, Setup, and uninstaller files require a valid trusted
+  Authenticode publisher signature and timestamp. Unsigned CI installers are
+  explicitly non-public test artifacts.
+- The complete Setup and its staged architecture inputs must pass Microsoft
+  Defender scanning before publication. Suspected false positives are reviewed
+  through Microsoft Security Intelligence rather than bypassed or excluded.
 
 Security fixes must preserve the legacy decoder, protocol, slicer, audio,
 serial, receiver, driver, filter, and configuration compatibility contract.

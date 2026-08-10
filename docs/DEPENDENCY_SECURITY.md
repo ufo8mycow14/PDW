@@ -13,6 +13,7 @@ the complete Win32 and x64 gates and preserves legacy support.
 | libssh2 | 1.11.1 | Newest archive on the official download index | Retain 1.11.1 and its verified source hash |
 | Windows SQLite | Operating-system component | Uses the supported Windows `winsqlite3` API; no bundled SQLite DLL | Retain platform binding; continue prepared-statement tests |
 | MySQL | Operator-installed ODBC driver | PDW does not bundle a driver or server | Keep DSN-based integration; operator maintains a supported driver |
+| Inno Setup | 6.7.3 | Current pinned stable Inno Setup 6 compiler used only to build Setup | Retain as a build-time dependency; no Inno runtime is installed with PDW |
 
 Official review sources:
 
@@ -21,6 +22,8 @@ Official review sources:
 - curl releases: <https://curl.se/docs/releases.html>
 - curl vulnerabilities: <https://curl.se/docs/vulnerabilities.html>
 - libssh2 downloads: <https://libssh2.org/download/>
+- Inno Setup releases: <https://jrsoftware.org/isinfo.php>
+- Inno Setup 6 revision history: <https://jrsoftware.org/files/is6-whatsnew.htm>
 
 Repository checks confirmed that SQLite and MySQL event values use prepared
 statements with bound parameters. Dynamic table names are accepted only after

@@ -68,8 +68,16 @@ if (-not $major -or -not $minor -or -not $patch) {
 }
 
 $version = "$major.$minor.$patch"
-$displayName = "PDW v$version Beta"
-$folderName = "PDW-$version-Beta-$Architecture"
+function Read-StringMacro([string]$Name) {
+    $match = [regex]::Match($versionHeader,
+        '(?m)^#define ' + [regex]::Escape($Name) + ' "([^"]+)"$')
+    if (-not $match.Success) { throw "Unable to read $Name from Headers\version.h." }
+    return $match.Groups[1].Value
+}
+$displayName = Read-StringMacro "PDW_DISPLAY_VERSION"
+$productVersion = Read-StringMacro "PDW_VERSION_STRING"
+$packageBase = Read-StringMacro "PDW_PACKAGE_BASENAME"
+$folderName = "$packageBase-$Architecture"
 $executable = Join-Path $BuildDirectory "$displayName.exe"
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Release executable does not exist: $executable"
@@ -83,7 +91,7 @@ if ($actualMachine -ne $expectedMachine) {
 
 $versionInfo = (Get-Item -LiteralPath $executable).VersionInfo
 if ($versionInfo.FileVersion -ne "$version.0" -or
-    $versionInfo.ProductVersion -ne "$version Beta") {
+    $versionInfo.ProductVersion -ne $productVersion) {
     throw "Executable metadata does not match $displayName."
 }
 
@@ -136,19 +144,21 @@ try {
         }
     }
 
-    $wavSource = Join-Path $LegacyAssetsRoot "Wavfiles"
-    if (Test-Path -LiteralPath $wavSource -PathType Container) {
-        Copy-Item -LiteralPath $wavSource -Destination $application -Recurse
-    }
+    $wavSource = Join-Path $SourceRoot "packaging\Wavfiles"
+    $legacyDataSource = Join-Path $SourceRoot "packaging\Legacy"
+    Copy-Item -LiteralPath $wavSource -Destination $application -Recurse
 
     $legacyNames = @("base-ids.txt", "language.df", "PDW.HLP")
-    if ($Architecture -eq "Win32") {
-        $legacyNames += @("COMPRT.VXD", "Comprt2.vxd", "xp_driver.zip")
-    }
     foreach ($legacyName in $legacyNames) {
-        $legacyPath = Join-Path $LegacyAssetsRoot $legacyName
-        if (Test-Path -LiteralPath $legacyPath -PathType Leaf) {
-            Copy-Item -LiteralPath $legacyPath -Destination (Join-Path $application $legacyName)
+        $legacyPath = Join-Path $legacyDataSource $legacyName
+        Copy-Item -LiteralPath $legacyPath -Destination (Join-Path $application $legacyName)
+    }
+    if ($Architecture -eq "Win32") {
+        foreach ($legacyDriver in @("COMPRT.VXD", "Comprt2.vxd", "xp_driver.zip")) {
+            $legacyPath = Join-Path $LegacyAssetsRoot $legacyDriver
+            if (Test-Path -LiteralPath $legacyPath -PathType Leaf) {
+                Copy-Item -LiteralPath $legacyPath -Destination (Join-Path $application $legacyDriver)
+            }
         }
     }
 
