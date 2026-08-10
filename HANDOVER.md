@@ -234,13 +234,13 @@ content, and non-empty INI secret fields.
 The prior v4.1, v4.5, and v4.6.0 release folders are retained as rollback
 evidence and are not overwritten by the architecture-specific v4.6.1 packages.
 
-The clean repository-audit packages verify 318 Win32 and 310 x64 manifest
-entries with zero missing, changed, unlisted, private-runtime, non-empty-secret,
-or obsolete-source files. Their embedded repository audit document matches the
-committed Git blob. Win32 retains the bundled x86 RTL-SDR DLL and legacy VxD
-assets; x64 contains neither. The Desktop test installation is a separate
-local state and is not automatically replaced by package generation or fork
-publication.
+The clean v4.6.1 repository-audit packages verify 327 Win32 and 319 x64
+manifest entries with zero missing, changed, unlisted, private-runtime,
+non-empty-secret, or obsolete-source files. Their embedded repository audit
+document matches the committed Git blob. Win32 retains the bundled x86 RTL-SDR
+DLL and four mirrored legacy VxD assets; x64 contains neither. The Desktop test
+installation is a separate local state and is not automatically replaced by
+package generation or fork publication.
 
 ## Desktop live-radio test installation
 

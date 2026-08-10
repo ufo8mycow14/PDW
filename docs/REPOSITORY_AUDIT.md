@@ -98,6 +98,10 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
   manifest entries. Independent verification found zero missing,
   changed, unlisted, private-runtime, non-empty-secret, or obsolete-source
   files. The packaged audit document matches the committed Git blob.
+- The v4.6.1 candidate packages contain 327 Win32 and 319 x64 manifest entries;
+  the additional maintained policy and audit files account for the increase.
+  Independent validation again found zero hash mismatch, missing, unlisted,
+  private-runtime, non-empty-secret, or obsolete-source files.
 - Win32 retains the intentional x86 RTL-SDR DLL and four mirrored legacy VxD
   copies; x64 contains neither.
 - `scripts/audit-release.ps1` passes for v4.6.1 and enforces release identity,

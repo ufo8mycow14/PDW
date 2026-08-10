@@ -30,7 +30,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Settings compatibility | Unknown INI keys, sections, comments, BOM, and line endings preserved at `98ff7ad` | Extend round-trip fixtures with future settings |
 | FLEX fragments | Additive non-group K/F/C alpha reassembly complete at `77e23bd`; original fragments remain authoritative | Recording-backed live acceptance; Group Mode remains legacy |
 | Repository hygiene | File-by-file x64/Win32 audit complete; obsolete VC6/VS2017 state, caches, duplicate archive, and unused code/assets removed; CMake is authoritative | Enforce `scripts/audit-release.ps1` and repeat the review when adding native dependencies or release-only assets |
-| Release packaging | Clean post-audit packages verify 628 combined manifest entries with no mismatch, unlisted file, private runtime file, INI secret, or obsolete source; architecture-specific receiver/legacy assets are correct | Retain prior packages as rollback evidence and repeat this audit for each release-candidate commit |
+| Release packaging | Clean v4.6.1 packages verify 646 combined manifest entries with no mismatch, unlisted file, private runtime file, INI secret, or obsolete source; architecture-specific receiver/legacy assets are correct | Retain prior packages as rollback evidence and repeat this audit for each release-candidate commit |
 | x64 | Native Release build, 24 tests, metadata, manifest extraction, package audit, and UI smoke pass locally; receiver DLL architecture is validated before load | Complete PR CI and physical receiver acceptance while keeping Win32 available |
 
 ## Safe integration sequence
