@@ -265,14 +265,17 @@ namespace
 		const bool narrowMeter = bounds.right < 220;
 		const int textWidth = narrowMeter ? 82 : (compactHeight ? 148 : 174);
 		const int waveLeft = textWidth;
+		const int qualityWidth = narrowMeter ? 34 : 40;
+		const int qualityRight = bounds.right - 18;
+		const int qualityLeft = (std::max)(waveLeft + 8, qualityRight - qualityWidth);
 
 		SetBkMode(memory, TRANSPARENT);
 		SetTextColor(memory, MeterStatusColour(state));
 		SelectObject(memory, PdwThemeUiSemiboldFont());
 		char primaryText[96];
-		if (compactHeight)
-			snprintf(primaryText, sizeof(primaryText), "%s  %.0f",
-				MeterLabel(state), DbValue(state.snapshot.rmsLevel));
+		if (compactHeight || narrowMeter)
+			snprintf(primaryText, sizeof(primaryText), "%s  %.0f%%",
+				MeterLabel(state), state.snapshot.signalQuality);
 		else
 			strncpy(primaryText, MeterLabel(state), sizeof(primaryText));
 		primaryText[sizeof(primaryText) - 1] = '\0';
@@ -295,13 +298,13 @@ namespace
 				DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
 		}
 
-		RECT waveform = { waveLeft + 8, 6, bounds.right - 22, bounds.bottom - 6 };
+		RECT waveform = { waveLeft + 8, 6, qualityLeft - 4, bounds.bottom - 6 };
 		const int waveWidth = (std::max)(0,
 			static_cast<int>(waveform.right - waveform.left));
-		const int barCount = waveWidth < 72 ? 6 : 12;
+		const int barCount = waveWidth < 24 ? 0 : (waveWidth < 72 ? 6 : 12);
 		const int barGap = 3;
-		const int barWidth = (std::max)(2,
-			(waveWidth - (barCount - 1) * barGap) / barCount);
+		const int barWidth = barCount ? (std::max)(2,
+			(waveWidth - (barCount - 1) * barGap) / barCount) : 0;
 		const int waveHeight = (std::max)(4,
 			static_cast<int>(waveform.bottom - waveform.top));
 		const float sampleScale = 1.0f / (std::max)(0.002f,
@@ -341,6 +344,17 @@ namespace
 		SelectObject(memory, oldPen);
 		SelectObject(memory, oldBrush);
 		DeleteObject(barBrush);
+
+		if (!compactHeight && !narrowMeter)
+		{
+			SetTextColor(memory, MeterStatusColour(state));
+			SelectObject(memory, PdwThemeUiSemiboldFont());
+			char quality[16];
+			snprintf(quality, sizeof(quality), "%.0f%%", state.snapshot.signalQuality);
+			RECT qualityRect = { qualityLeft, 5, qualityRight, bounds.bottom - 5 };
+			DrawTextA(memory, quality, -1, &qualityRect,
+				DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_END_ELLIPSIS);
+		}
 
 		RECT peakTrack = { bounds.right - 13, 5, bounds.right - 8, bounds.bottom - 5 };
 		HBRUSH trackBrush = CreateSolidBrush(PdwThemeBorderColor());

@@ -104,6 +104,12 @@ Geometry checks held the toolbar at 54 pixels and Pane 1 at y=55 through three
 restore/maximize cycles. This closes the clipped-label/column-header overlap at
 100% scale; other DPI levels remain open.
 
+10 August 2026 Live Input regression: explicit Light and Dark captures at
+normal and maximized window sizes show a dedicated green quality percentage
+between the waveform and peak track. Narrow-window rendering includes the
+percentage in the primary meter text and suppresses waveform bars when there
+is insufficient width, preventing the quality value from being obscured.
+
 10 August 2026 merged-backup regression: General > Backup / Restore rendered
 at 769x440 in the Windows-following dark palette with all explanatory text and
 actions visible. Native-window checks counted all 10 Settings destinations and

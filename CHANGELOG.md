@@ -26,6 +26,12 @@ receiver, driver, filter, and established output behavior are unchanged.
 - Advanced all current product, About, resource, manifest, workflow, package,
   branch, fork, and documentation identity to PDW v4.6.1 Beta.
 - Packaging and CI now run the release audit before producing an artifact.
+- Stabilized the main command bar's icon-and-label layout using the supported
+  Windows mixed-button toolbar styles so labels no longer clip into the message
+  column header during startup, resize, restore, or maximize.
+- Added a dedicated visible signal-quality percentage beside the Live Input
+  waveform, including compact-width presentation, instead of leaving the
+  quality value hidden behind the meter.
 
 ### Compatibility and security
 
