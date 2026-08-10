@@ -345,6 +345,46 @@ void TestTerminalFileActionPreservesPendingIdentityOnFailure()
 		"failed cleanup or dead-lettering requeues without releasing the pending ID");
 }
 
+void TestHeldSweepDoesNotWaitPerJob()
+{
+	BeginCase();
+	pdw::publishing::PublishHeldSweepState sweep;
+	bool waitedEarly = false;
+	for (std::size_t held = 0; held < 500; ++held)
+		waitedEarly = pdw::publishing::PublishHeldSweepShouldWait(sweep, 501) || waitedEarly;
+	Expect(!waitedEarly && sweep.heldJobsSeen == 500,
+		"five hundred held jobs do not delay a ready job later in the same queue sweep");
+	Expect(pdw::publishing::PublishHeldSweepShouldWait(sweep, 501) &&
+		sweep.heldJobsSeen == 0,
+		"the scheduler waits only after a complete held-only sweep");
+}
+
+void TestHeldOnlyQueueWaitsOncePerSweep()
+{
+	BeginCase();
+	pdw::publishing::PublishHeldSweepState sweep;
+	Expect(!pdw::publishing::PublishHeldSweepShouldWait(sweep, 3) &&
+		!pdw::publishing::PublishHeldSweepShouldWait(sweep, 3) &&
+		pdw::publishing::PublishHeldSweepShouldWait(sweep, 3),
+		"a held-only queue waits once after all queued jobs have been inspected");
+	Expect(!pdw::publishing::PublishHeldSweepShouldWait(sweep, 3) &&
+		sweep.heldJobsSeen == 1,
+		"a new held-only sweep starts immediately after the bounded wait");
+}
+
+void TestReadyWorkResetsHeldSweep()
+{
+	BeginCase();
+	pdw::publishing::PublishHeldSweepState sweep;
+	pdw::publishing::PublishHeldSweepShouldWait(sweep, 4);
+	pdw::publishing::PublishHeldSweepShouldWait(sweep, 4);
+	pdw::publishing::ResetPublishHeldSweep(sweep);
+	Expect(sweep.heldJobsSeen == 0 &&
+		!pdw::publishing::PublishHeldSweepShouldWait(sweep, 4) &&
+		sweep.heldJobsSeen == 1,
+		"ready work restarts held-sweep accounting instead of inheriting stale holds");
+}
+
 } // namespace
 
 int main()
@@ -366,13 +406,16 @@ int main()
 	TestPassWithoutFailuresHoldsIncompleteWork();
 	TestFailedPassUsesOneAttemptAndBoundedBackoff();
 	TestTerminalFileActionPreservesPendingIdentityOnFailure();
+	TestHeldSweepDoesNotWaitPerJob();
+	TestHeldOnlyQueueWaitsOncePerSweep();
+	TestReadyWorkResetsHeldSweep();
 
-	if (casesRun != 17)
+	if (casesRun != 20)
 	{
-		std::cerr << "FAILED: delivery-state test matrix did not run 17 cases\n";
+		std::cerr << "FAILED: delivery-state test matrix did not run 20 cases\n";
 		return 1;
 	}
 	if (failures != 0) return 1;
-	std::cout << "Publishing delivery-state tests passed (17 cases).\n";
+	std::cout << "Publishing delivery-state tests passed (20 cases).\n";
 	return 0;
 }

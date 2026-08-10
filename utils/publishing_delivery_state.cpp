@@ -167,5 +167,27 @@ PublishTerminalDecision FinishPublishTerminal(bool fileActionSucceeded)
 	return decision;
 }
 
+void ResetPublishHeldSweep(PublishHeldSweepState& state)
+{
+	state.heldJobsSeen = 0;
+}
+
+bool PublishHeldSweepShouldWait(PublishHeldSweepState& state,
+	std::size_t queuedJobsAfterRequeue)
+{
+	// The held task has already been moved to the back of the queue. Keep
+	// scanning until every task that was in this sweep has been observed as
+	// held. This prevents a disabled webhook-only job from adding a delay in
+	// front of each later static-ready job.
+	if (queuedJobsAfterRequeue == 0 ||
+		state.heldJobsSeen >= queuedJobsAfterRequeue - 1)
+	{
+		ResetPublishHeldSweep(state);
+		return true;
+	}
+	++state.heldJobsSeen;
+	return false;
+}
+
 } // namespace publishing
 } // namespace pdw

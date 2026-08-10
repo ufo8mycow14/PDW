@@ -1,6 +1,8 @@
 #ifndef PDW_PUBLISHING_DELIVERY_STATE_H
 #define PDW_PUBLISHING_DELIVERY_STATE_H
 
+#include <cstddef>
+
 #include "publishing_job_store.h"
 
 namespace pdw
@@ -112,6 +114,13 @@ struct PublishTerminalDecision
 		: action(PublishTerminalAction::REQUEUE_PENDING), releasePendingId(false) {}
 };
 
+struct PublishHeldSweepState
+{
+	std::size_t heldJobsSeen;
+
+	PublishHeldSweepState() : heldJobsSeen(0) {}
+};
+
 bool PublishShouldIntake(const PublishRuntimeState& runtime, bool eventFiltered);
 PublishEnqueueAction DecidePublishEnqueue(bool stopping);
 PublishWorkDecision DecidePublishWork(const PublishJobState& job,
@@ -121,6 +130,9 @@ PublishTargetTransition RecordPublishTarget(const PublishPassState& pass,
 	unsigned int target, bool succeeded);
 PublishFinishPassDecision FinishPublishPass(const PublishPassState& pass);
 PublishTerminalDecision FinishPublishTerminal(bool fileActionSucceeded);
+void ResetPublishHeldSweep(PublishHeldSweepState& state);
+bool PublishHeldSweepShouldWait(PublishHeldSweepState& state,
+	std::size_t queuedJobsAfterRequeue);
 
 } // namespace publishing
 } // namespace pdw

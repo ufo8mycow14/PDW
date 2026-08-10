@@ -450,14 +450,16 @@ namespace
 		LeaveCriticalSection(&g_lock);
 	}
 
-	void RequeueTask(PublishTask& task, bool front)
+	std::size_t RequeueTask(PublishTask& task, bool front)
 	{
 		EnterCriticalSection(&g_lock);
 		if (front) g_queue.push_front(task);
 		else g_queue.push_back(task);
+		const std::size_t queuedTasks = g_queue.size();
 		LeaveCriticalSection(&g_lock);
 		WipeTaskSecrets(task);
 		if (g_workEvent) SetEvent(g_workEvent);
+		return queuedTasks;
 	}
 
 	bool DeleteSpool(PublishTask& task)
@@ -495,6 +497,7 @@ namespace
 
 	unsigned int __stdcall Worker(void*)
 	{
+		pdw::publishing::PublishHeldSweepState heldSweep;
 		while (WaitForSingleObject(g_stopEvent, 0) != WAIT_OBJECT_0)
 		{
 			PublishTask task;
@@ -518,6 +521,7 @@ namespace
 			Config config = SnapshotConfig();
 			if (task.test)
 			{
+				pdw::publishing::ResetPublishHeldSweep(heldSweep);
 				config.webhookEnabled = true;
 				config.webhookUrl = task.testUrl;
 				if (InterlockedCompareExchange(&g_stopping, 0, 0))
@@ -567,6 +571,8 @@ namespace
 
 			const pdw::publishing::PublishWorkDecision work =
 				pdw::publishing::DecidePublishWork(JobState(task), RuntimeState(config));
+			if (work.action != pdw::publishing::PublishWorkAction::HOLD)
+				pdw::publishing::ResetPublishHeldSweep(heldSweep);
 			if (work.action == pdw::publishing::PublishWorkAction::RETAIN_FOR_RELOAD)
 			{
 				WipeTaskSecrets(task);
@@ -616,8 +622,9 @@ namespace
 			{
 				if (config.enabled && config.acknowledged && !config.paused)
 					SetStatus("Publishing has durable queued work waiting for its selected destination to be enabled.");
-				RequeueTask(task, false);
-				WaitForSingleObject(g_stopEvent, 1000);
+				const std::size_t queuedTasks = RequeueTask(task, false);
+				if (pdw::publishing::PublishHeldSweepShouldWait(heldSweep, queuedTasks))
+					WaitForSingleObject(g_stopEvent, 1000);
 				continue;
 			}
 
@@ -761,7 +768,6 @@ namespace
 					break;
 				}
 				RequeueTask(task, false);
-				WaitForSingleObject(g_stopEvent, 1000);
 				continue;
 			}
 			if (pass.attemptedTargets && config.minimumInterval && WaitForSingleObject(g_stopEvent,
