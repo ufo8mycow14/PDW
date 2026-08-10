@@ -38,7 +38,7 @@ struct RtlSdrDeviceInfo
 	RtlSdrDeviceInfo();
 };
 
-// Receiver packages live below Receivers beside PDW v4.1.0 Beta.exe. Keeping the optional
+// Receiver packages live below Receivers beside PDW v4.5.0 Beta.exe. Keeping the optional
 // native files there prevents them from changing legacy application startup.
 std::string GetReceiverRootDirectory();
 

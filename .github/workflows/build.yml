@@ -36,8 +36,7 @@ jobs:
 
       - name: Build
         shell: pwsh
-        run: |
-          cmake --build build --config Release --target PDW PDWNotificationTests PDWAudioSignalTests PDWDecoderCandidateTests PDWSignalRecordingTests PDWSignalDiagnosticsTests PDWWasapiCaptureTests PDWRtlTcpTests PDWReceiverCatalogTests PDWPublishingCoreTests
+        run: cmake --build build --config Release --parallel
 
       - name: Test
         shell: pwsh
@@ -46,9 +45,9 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v4.1.0-Beta-Win32
+          name: PDW-v4.5.0-Beta-Win32
           path: |
-            build\Release\PDW v4.1.0 Beta.exe
+            build\Release\PDW v4.5.0 Beta.exe
             License
             THIRD_PARTY_NOTICES.md
             out\dependencies\x86\pdw-dependencies.lock

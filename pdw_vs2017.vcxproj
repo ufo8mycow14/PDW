@@ -72,7 +72,7 @@
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>openssl-1.0.2/include;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
     <LibraryPath>openssl-1.0.2/lib;$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86);$(NETFXKitsDir)Lib\um\x86</LibraryPath>
-    <TargetName>PDW v4.1.0 Beta</TargetName>
+    <TargetName>PDW v4.5.0 Beta</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">

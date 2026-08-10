@@ -7,7 +7,7 @@ boundary at a time.
 
 ## Non-negotiable compatibility boundaries
 
-- Ship one `PDW v4.1.0 Beta.exe`, one settings experience, and one consolidated message
+- Ship one `PDW v4.5.0 Beta.exe`, one settings experience, and one consolidated message
   stream. Do not create separate legacy/enhanced editions or helper services.
 - Do not alter protocol algorithms without representative signal recordings
   and before/after decoder-output comparisons.
@@ -134,7 +134,7 @@ is created.
 - Store credentials in Windows Credential Manager; support HTTPS validation,
   bearer/API tokens, HMAC signing, batching, and rate limiting.
 
-Implemented in the v4 beta integration branch: opt-in filtered/all-message profiles, jurisdiction
+Implemented in the v4.5 Beta integration: opt-in filtered/all-message profiles, jurisdiction
 acknowledgement, published-copy aliasing/address masking/message omission,
 responsive HTML plus JSON/JSONL/RSS/Atom, generic HTTPS JSON webhook delivery,
 Windows Credential Manager bearer/HMAC secrets, certificate verification,
@@ -142,12 +142,14 @@ idempotency event IDs, rate limiting, pause, bounded retry/backoff, persistent
 queue files, and DeadLetter retention. Optional isolated data-output adapters
 now add MQTT, SQLite, MySQL through Windows ODBC, a loopback-first read-only
 Telnet JSON stream, and native Windows notifications. MQTT remains QoS 0 with
-no retained publish; FLEX fragment/group batching is a separate compatibility-
-gated enhancement and is not required to publish a website or webhook.
+no retained publish. Optional FLEX K/F/C reassembly is a bounded shadow path:
+legacy non-group alpha fragments are always shown first and a complete strict
+chain can add one marked assembled copy. FLEX Group Mode stays on its legacy
+path; fragment assembly is not required to publish a website or webhook.
 
-## Release gate for 4.0
+## Release gate for 4.5 Beta
 
-A 3.3 stable build should require:
+A public 4.5 Beta build requires:
 
 1. A successful clean Visual Studio 2022 Win32 Release build.
 2. Startup and shutdown tests on current Windows.

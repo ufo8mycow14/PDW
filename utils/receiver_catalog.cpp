@@ -315,7 +315,7 @@ std::vector<ReceiverPackage> EnumerateRtlReceiverPackages(const std::string& rec
 		ReceiverPackage legacy;
 		legacy.id = "legacy-side-by-side";
 		legacy.displayName = "Legacy side-by-side RTL-SDR DLL";
-		legacy.description = "Existing receiver DLL beside PDW v4.1.0 Beta.exe";
+		legacy.description = "Existing receiver DLL beside PDW v4.5.0 Beta.exe";
 		legacy.libraryPath = legacyPath;
 		legacy.compatible = ValidateRtlReceiverLibrary(legacy.libraryPath, legacy.status);
 		packages.push_back(legacy);

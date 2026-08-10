@@ -129,7 +129,7 @@ set_source_files_properties(
   PROPERTIES COMPILE_OPTIONS "/W4;/WX"
 )
 
-set_target_properties(PDW PROPERTIES OUTPUT_NAME "PDW v4.1.0 Beta")
+set_target_properties(PDW PROPERTIES OUTPUT_NAME "PDW v4.5.0 Beta")
 
 target_include_directories(PDW PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"

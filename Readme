@@ -12,11 +12,14 @@ preserved.
 
 ## Development status
 
-Version 4.1.0 Beta is the first application-focused modernization of the
-open-source release. Decoder behaviour is intentionally
-being preserved while the Windows build, safety, configuration, and interface
-are updated in small, testable changes. See [CHANGELOG.md](CHANGELOG.md) and
-[docs/MODERNIZATION.md](docs/MODERNIZATION.md).
+Version 4.5.0 Beta is the compatibility-first integration release. It keeps
+the v4.1 layout and every legacy decoder/input/output path while adding
+disabled-by-default modern inputs, diagnostics, publishing, data outputs,
+delivery health, settings preservation, and additive FLEX reassembly. See
+[CHANGELOG.md](CHANGELOG.md) and
+[docs/MODERNIZATION.md](docs/MODERNIZATION.md). Developers and future work
+sessions should begin with [HANDOVER.md](HANDOVER.md); the concise milestone
+plan is maintained in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Build on Windows
 
@@ -34,7 +37,7 @@ From a Developer PowerShell for Visual Studio:
 ```powershell
 .\scripts\build-dependencies.ps1
 cmake -S . -B build -G "Visual Studio 17 2022" -A Win32
-cmake --build build --config Release --target PDW PDWNotificationTests
+cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
@@ -42,7 +45,7 @@ The dependency script downloads official source archives, verifies their
 SHA-256 checksums, and builds the pinned Win32 static dependencies under
 `out\dependencies\x86`. It currently pins OpenSSL 3.5.7, curl 8.21.0, and
 libssh2 1.11.1. The executable is written to
-`build\Release\PDW v4.1.0 Beta.exe`. GitHub
+`build\Release\PDW v4.5.0 Beta.exe`. GitHub
 Actions performs the same dependency and Win32 Release build for every push
 and pull request to `master`.
 
@@ -57,7 +60,7 @@ WindowTitle=North Dispatch
 ```
 
 After PDW restarts, the main window and system-tray tooltip display
-`North Dispatch - PDW v4.1.0 Beta`. The value is retained when PDW saves its
+`North Dispatch - PDW v4.5.0 Beta`. The value is retained when PDW saves its
 settings. PDW still permits only one running instance per application folder;
 use a separate folder and configuration for each concurrent instance.
 
@@ -121,6 +124,18 @@ recording calibration action. Calibration compares all custom threshold,
 centering and resync combinations and applies a suggestion only after user
 confirmation; the original receiver presets are retained.
 
+## Optionally assemble FLEX alpha fragments
+
+Open **Settings > Display and behavior > Screen and columns** and select
+**Also show assembled FLEX alpha copy (original fragments remain)**. The option
+is off by default. PDW continues to display, filter, log, and route every
+legacy fragment first; after a complete, strictly ordered non-group alpha or
+secure chain is received, it adds one clearly marked assembled copy. Missing,
+late, out-of-order, or excess chains produce no extra copy and cannot remove a
+legacy fragment. FLEX Group Mode remains on its established legacy path. See
+[docs/FLEX_FRAGMENTS.md](docs/FLEX_FRAGMENTS.md) for the exact sequence and
+fallback guarantees.
+
 ## Publish decoded messages to a website or webhook
 
 Open **Settings > Connections and automation > Publish to web**. Publishing is
@@ -159,6 +174,19 @@ an explicit unencrypted-access opt-in. Passwords stay in Windows Credential
 Manager. See [docs/DATA_OUTPUTS.md](docs/DATA_OUTPUTS.md) for setup, limitations,
 and test behaviour.
 
+Open **Output > Delivery Health** for content-free success/failure/drop counts,
+recent sanitized operational history, and optional consecutive-failure alerts.
+This observer stores no pager address or message text and cannot change whether
+an output succeeds, retries, or fails.
+
+## Build the portable release folder
+
+After a clean Release build and successful CTest run, execute
+`.\scripts\package-release.ps1`. It validates the canonical version and binary
+metadata, requires a clean Git tree, rejects generated/private runtime files,
+and creates `PDW-4.5.0-Beta` plus `PDW-4.5.0-Beta-Win32.zip` beside the source
+checkout. The prior v4.1 package is not overwritten.
+
 ## Repository layout
 
 - `PDW.cpp` and protocol-specific `.cpp` files contain the application and
@@ -167,6 +195,7 @@ and test behaviour.
 - `utils/` contains serial, notification, SMTP, and supporting code.
 - `GFX/` and `Rsrc.rc` contain the native Windows resources.
 - `scripts/` contains the reproducible third-party dependency build.
+- `packaging/` contains sanitized disabled-by-default release configuration.
 - `docs/` contains operator and modernization guidance.
 
 Third-party component versions, source locations, checksums, and licenses are

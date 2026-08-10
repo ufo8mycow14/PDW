@@ -66,3 +66,16 @@ test row; MQTT sends one synthetic JSON object; Telnet tests bind/listen; and
 Windows shows a synthetic notification. The queue is bounded at 500 events.
 An adapter error is recorded for status reporting and never blocks decoding or
 prevents another selected adapter from receiving the same event.
+
+## Delivery Health
+
+**Output > Delivery Health** shows per-destination enabled state, successes,
+failures, dropped events, consecutive failures, last outcome, and a bounded
+recent operational history. It retains only destination names, timestamps,
+counters, and sanitized summaries. Pager addresses and decoded message text are
+never stored in this ledger.
+
+Alerts use a taskbar flash and warning sound after the configured consecutive
+failure threshold; they do not steal keyboard focus. Delivery Health is a
+one-way observer: reporting failure or closing the dialog cannot alter routing,
+retry, capture, or decoder behavior.

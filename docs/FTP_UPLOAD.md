@@ -35,7 +35,7 @@ unless a custom port has already been entered.
 
 **Upload now** saves the settings and starts a background upload immediately.
 The latest result appears in the dialog, and detailed results are appended to
-`FileTransfer.log` beside `PDW v4.1.0 Beta.exe`.
+`FileTransfer.log` beside `PDW v4.5.0 Beta.exe`.
 
 Each selected file keeps its existing filename on the server. PDW prevents two
 selected files with the same filename because they would target the same remote

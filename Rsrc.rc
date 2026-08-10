@@ -923,7 +923,7 @@ BEGIN
             VALUE "FileDescription", "POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder"
             VALUE "FileVersion", PDW_VERSION_RESOURCE_STRING
             VALUE "InternalName", "PDW"
-            VALUE "OriginalFilename", "PDW v4.1.0 Beta.exe"
+            VALUE "OriginalFilename", "PDW v4.5.0 Beta.exe"
             VALUE "ProductName", "PDW"
             VALUE "ProductVersion", PDW_VERSION_STRING
         END

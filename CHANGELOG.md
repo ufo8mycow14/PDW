@@ -1,5 +1,51 @@
 # Changelog
 
+## 4.5.0 Beta
+
+Compatibility-first integration release. The v4.1 layout and legacy decoder,
+input, filtering, display, logging, SMTP, Apprise, FTP, publishing, and
+hardware paths remain available in one executable.
+
+### Added
+
+- One post-filter decoded-message router used by additive destinations without
+  replacing the established display/filter/deduplication boundary.
+- Disabled-by-default MQTT, SQLite, MySQL through Windows ODBC, loopback-first
+  read-only Telnet JSON, and native Windows notification outputs.
+- Content-free Delivery Health counters, bounded history, and non-intrusive
+  taskbar/sound alerts. Health records never retain pager addresses or decoded
+  message text and cannot alter a destination's result.
+- Optional standard FLEX K/F/C alpha-fragment reassembly. Original fragments
+  are always processed first; a strict, bounded shadow observer can add one
+  marked assembled copy after a complete chain. FLEX Group Mode remains on its
+  legacy path.
+- Warning-clean unit coverage for optional data outputs, delivery health, INI
+  preservation, and FLEX fragment sequence, timeout, capacity, restart, and
+  truncation behavior. The Release suite now contains 18 tests.
+
+### Changed
+
+- Hardened corrupt-frame bounds, long-address handling, COM/serial cleanup,
+  audio device recovery, worker shutdown, SMTP queue/TLS behavior, and filter
+  parsing without replacing valid legacy output.
+- PDW settings saves now merge generated known values into the existing INI.
+  Comments, unknown keys, unknown sections, line endings, and BOMs survive;
+  stale managed FTP entries and reset-only known values are still removed.
+- GitHub CI now builds every configured Release target before running CTest,
+  so newly added suites cannot be silently omitted.
+- Product, executable, package, artifact, and release-branch naming is aligned
+  to PDW v4.5.0 Beta.
+
+### Compatibility
+
+- Every new delivery adapter and FLEX reassembly remain disabled by default.
+- WinMM, WASAPI fallback, serial slicers, `.rec` playback, filters, logs, WAV
+  alerts, legacy protocols, SMTP, Apprise, FTP/FTPS/SFTP, static publishing,
+  and webhooks remain in the same program.
+- Failed, incomplete, out-of-order, timed-out, or capacity-limited FLEX
+  assemblies never suppress the fragment output that older PDW versions show.
+- Existing INI extensions remain intact when settings are saved.
+
 ## 4.1.0 Beta
 
 Beta release.
