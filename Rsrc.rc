@@ -11,6 +11,7 @@
 #include "windows.h"
 #undef APSTUDIO_HIDDEN_SYMBOLS
 #include "headers\resource.h"
+#include "headers\version.h"
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
@@ -20,7 +21,7 @@
 
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
-#pragma code_page(1252)
+#pragma code_page(65001)
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -52,6 +53,7 @@ IDS_ABOUTLOGO           BITMAP                  "GFX\\pdwlogo2.bmp"
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 PDWICON                 ICON                    "GFX\\pdw.ico"
+1                       24                      "PDW.manifest"
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -60,70 +62,83 @@ PDWICON                 ICON                    "GFX\\pdw.ico"
 
 PDWMENU MENU
 BEGIN
-    POPUP "File"
+    POPUP "&File"
     BEGIN
-        MENUITEM "&Open/Close Logfile...\tAlt+L", IDM_LOGFILE
+        MENUITEM "&Log file...\tAlt+L",             IDM_LOGFILE
+        MENUITEM "&Record signal...\tAlt+Shift+R",  IDM_RECORD
+        MENUITEM "&Play recording...\tAlt+Shift+P", IDM_PLAYBACK
         MENUITEM SEPARATOR
-        MENUITEM "&Exit\tAlt+F4",               IDM_EXIT
-    END
-    POPUP "&Edit"
-    BEGIN
-        MENUITEM "&Copy Selection\tCtrl+C",     IDM_COPY_SELECTION
-        MENUITEM "Copy &Monitor Window\tCtrl+U", IDM_COPY_UPPER
-        MENUITEM "Copy &Filter Window\tCtrl+L", IDM_COPY_LOWER
-        MENUITEM "&Save Clipboard...",          IDM_COPY_SAVE
-        MENUITEM "&Print Clipboard...\tCtrl+P", IDM_COPY_PRINT
-    END
-    POPUP "&Interface"
-    BEGIN
-        MENUITEM "&Setup...\tCtrl-S",           IDM_INTERFACE
-        MENUITEM "&Volume...\tAlt-V",           IDM_VOLUME
-    END
-    POPUP "Options"
-    BEGIN
-        MENUITEM "&Options...\tCtrl-O",         IDM_OPTIONS
-        MENUITEM "&General...\tCtrl-G",         IDM_GENERAL
-        MENUITEM "&SMTP/Email...\tCtrl-M",      IDM_MAIL
-    END
-    POPUP "Filters"
-    BEGIN
-        MENUITEM "&Filter List...\tCtrl-F",     IDM_FILTERS
-        MENUITEM "&Filter Options...",          IDM_FILTEROPTIONS
-        MENUITEM "&Reload Filters",             IDM_RELOAD
-        MENUITEM "&Reset &ALL Hitcounters...",  IDM_RESET_HITCOUNTERS
+        MENUITEM "&Save copied data...",            IDM_COPY_SAVE
+        MENUITEM "&Print copied data...\tCtrl+P",   IDM_COPY_PRINT
         MENUITEM SEPARATOR
-        MENUITEM "Filter File Output",          IDM_FILTERFILE_EN
-        MENUITEM "Filter Command File",         IDM_FILTERCOMMANDFILE
-    END
-    POPUP "&Display"
-    BEGIN
-        MENUITEM "C&lear Screen...\tCtrl-D",    IDM_CLEARDISPLAY
-        MENUITEM "&Colors...",                  IDM_COLOR
-        MENUITEM "&Font...\tAlt-F",             IDM_FONT
-        MENUITEM "Screen &Options...",          IDM_SCREENOPTIONS
-        MENUITEM "&Scrollback...",              IDM_SCROLLBACK
-        MENUITEM "System&tray...\tCtrl-T",      IDM_SYSTEMTRAY
+        MENUITEM "E&xit\tAlt+F4",                   IDM_EXIT
     END
     POPUP "&Monitor"
     BEGIN
-        MENUITEM "&POCSAG/FLEX",                IDM_POCSAGFLEX
-        MENUITEM "&ACARS",                      IDM_ACARS
-        MENUITEM "&MOBITEX",                    IDM_MOBITEX
-        MENUITEM "&ERMES",                      IDM_ERMES
+        MENUITEM "&Signal source and radio...",    IDM_SETTINGS_SIGNAL_PAGE
+        MENUITEM "&Pause or resume",               IDT_TOOLBAR_BTN9
         MENUITEM SEPARATOR
-        MENUITEM "&Statistics...\tAlt-S",       IDM_MONSTAT
+        POPUP "&Decoder mode"
+        BEGIN
+            MENUITEM "&POCSAG / FLEX",             IDM_POCSAGFLEX
+            MENUITEM "&ACARS",                     IDM_ACARS
+            MENUITEM "&MOBITEX",                   IDM_MOBITEX
+            MENUITEM "&ERMES",                     IDM_ERMES
+        END
+        MENUITEM SEPARATOR
+        MENUITEM "&Statistics...\tAlt+S",          IDM_MONSTAT
+        MENUITEM "&Diagnostics...\tF12",           IDM_DEBUG
     END
-    POPUP "&Character Set"
+    POPUP "&Filters"
     BEGIN
-        MENUITEM "&Default",                    IDM_ENGLISH
+        MENUITEM "&Manage filters...\tCtrl+F",     IDM_FILTERS
+        MENUITEM "Filter &options...",             IDM_FILTEROPTIONS
+        MENUITEM "&Reload filters\tCtrl+R",        IDM_RELOAD
+        MENUITEM "Reset &all hit counters...",     IDM_RESET_HITCOUNTERS
+        MENUITEM SEPARATOR
+        POPUP "&Advanced"
+        BEGIN
+            MENUITEM "Write &filter file",          IDM_FILTERFILE_EN
+            MENUITEM "Run filter &command file",    IDM_FILTERCOMMANDFILE
+        END
+    END
+    POPUP "&Outputs"
+    BEGIN
+        MENUITEM "Delivery &health...",             IDM_OUTPUT_HEALTH
+        MENUITEM SEPARATOR
+        MENUITEM "Publish to &web...",              IDM_PUBLISHING
+        MENUITEM "&File transfer...",                IDM_FTP
+        MENUITEM "&Push and Windows notifications...", IDM_APPRISE
+        MENUITEM "&Email...\tCtrl+M",               IDM_MAIL
+        MENUITEM "&Data outputs...",                 IDM_DATA_OUTPUTS
+    END
+    POPUP "&View"
+    BEGIN
+        MENUITEM "&Switch focused pane",             IDM_PANE_SWITCH
+        MENUITEM "View and &columns...",             IDM_SCREENOPTIONS
+        MENUITEM "&Scrollback...",                   IDM_SCROLLBACK
+        MENUITEM SEPARATOR
+        POPUP "&Theme"
+        BEGIN
+            MENUITEM "Follow &Windows",              IDM_THEME_SYSTEM
+            MENUITEM "&Light",                       IDM_THEME_LIGHT
+            MENUITEM "&Dark",                        IDM_THEME_DARK
+        END
+        MENUITEM "&Text and colours...",             IDM_COLOR
+        MENUITEM "&Font...\tAlt+F",                  IDM_FONT
+        MENUITEM "System &tray...\tCtrl+T",          IDM_SYSTEMTRAY
+        MENUITEM SEPARATOR
+        POPUP "&Character set"
+        BEGIN
+            MENUITEM "&Default",                     IDM_ENGLISH
+        END
     END
     POPUP "&Help"
     BEGIN
-        MENUITEM "&Help (opens PDW.pdf)\tF1",   IDM_HELP
+        MENUITEM "&User guide\tF1",                 IDM_HELP
+        MENUITEM "&Keyboard shortcuts",              IDM_KEYBOARD_SHORTCUTS
         MENUITEM SEPARATOR
-        MENUITEM "&Debug Information...\tF12",  IDM_DEBUG
-        MENUITEM SEPARATOR
-        MENUITEM "&About...",                   IDM_ABOUT
+        MENUITEM "&About PDW...",                    IDM_ABOUT
     END
 END
 
@@ -136,6 +151,7 @@ END
 PDWACCEL ACCELERATORS
 BEGIN
     "C",            IDM_COPY_SELECTION,     VIRTKEY, CONTROL, NOINVERT
+    VK_OEM_COMMA,   IDM_SETTINGS,           VIRTKEY, CONTROL, NOINVERT
     "L",            IDM_LOGFILE,            VIRTKEY, ALT, NOINVERT
     "D",            IDM_CLEARDISPLAY,       VIRTKEY, CONTROL, NOINVERT
     "F",            IDM_FILTERS,            VIRTKEY, CONTROL, NOINVERT
@@ -165,7 +181,7 @@ END
 // Dialog
 //
 
-ABOUTDLGBOX DIALOG 10, 10, 282, 156
+ABOUTDLGBOX DIALOG 10, 10, 282, 166
 STYLE DS_SETFONT | DS_MODALFRAME | DS_3DLOOK | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
 CAPTION "About..."
 FONT 8, "Verdana"
@@ -176,6 +192,7 @@ BEGIN
     LTEXT           "Copyright (c) 2001 - 2004 Jason Petty",IDC_STATIC,79,33,126,8
     LTEXT           "2004 - 2010 Peter Hunt",IDC_STATIC,122,45,100,8
     LTEXT           "Win2k/XP RS232 support by: Herman Withaar",IDC_STATIC,113,106,152,8
+    LTEXT           "Contributors: Kieran O'Rourke (v4.1.0 beta)",IDC_STATIC,79,122,190,8
     PUSHBUTTON      "Visit PDW website",IDC_WEBSITE,121,68,68,15
     LTEXT           "2013 GNU GENERAL PUBLIC LICENSE",IDC_STATIC,124,57,124,8
 END
@@ -209,13 +226,13 @@ BEGIN
     LTEXT           ".....",IDC_DEBUG_FLEXTIME,46,50,48,8
     LTEXT           "Messages :",IDC_STATIC,116,20,38,8
     LTEXT           ".....",IDC_DEBUG_MSG,183,20,34,8
-    LTEXT           "· Rejected :",IDC_STATIC,116,30,39,8
+    LTEXT           "Â· Rejected :",IDC_STATIC,116,30,39,8
     LTEXT           ".....",IDC_DEBUG_REJECTED,183,30,34,8
-    LTEXT           "· Blocked :",IDC_STATIC,116,40,36,8
+    LTEXT           "Â· Blocked :",IDC_STATIC,116,40,36,8
     LTEXT           ".....",IDC_DEBUG_BLOCKED,183,40,34,8
-    LTEXT           "· Buffer (timer) :",IDC_STATIC,120,50,56,8
+    LTEXT           "Â· Buffer (timer) :",IDC_STATIC,120,50,56,8
     LTEXT           ".....",IDC_DEBUG_BLOCKBUFFER,183,50,34,8
-    LTEXT           "· Groupcalls :",IDC_STATIC,116,60,45,8
+    LTEXT           "Â· Groupcalls :",IDC_STATIC,116,60,45,8
     LTEXT           ".....",IDC_DEBUG_GROUPMSG,183,60,34,8
     LTEXT           "Missed groupcalls :",IDC_STATIC,116,70,63,8
     LTEXT           ".....",IDC_DEBUG_MISSED,183,70,34,8
@@ -387,7 +404,7 @@ BEGIN
     EDITTEXT        IDC_BLOCKDUPTIMER,271,41,9,13,ES_CENTER | ES_AUTOHSCROLL | ES_NUMBER
     CONTROL         "Log blocked messages to 'blocked.txt'",IDC_BLOCKEDTXT,
                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,43,140,10
-    CONTROL         "Convert '»' character to linefeed",IDC_LINEFEEDS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,15,62,122,10
+    CONTROL         "Convert 'Â»' character to linefeed",IDC_LINEFEEDS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,15,62,122,10
     CONTROL         "Separate/group messages with empty line",IDC_SEPARATOR,
                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,142,62,154,10
     LTEXT           "Date format (as logfile name) :",IDC_STATIC,15,82,103,8
@@ -532,13 +549,13 @@ BEGIN
     DEFPUSHBUTTON   "OK",IDOK,29,90,44,14
     GROUPBOX        " ",IDC_STATIC,5,26,152,55
     CONTROL         "Move to systemtray when minimized",IDC_SYSTEMTRAY,
-                    "Button",BS_AUTOCHECKBOX,11,9,132,8
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,9,132,8
     CONTROL         "Any new message",IDC_SYSTEMTRAY_NEW,"Button",BS_AUTORADIOBUTTON | WS_TABSTOP,11,42,72,8
     CONTROL         "A new monitor-only or filtered message",IDC_SYSTEMTRAY_MONLY,
                     "Button",BS_AUTORADIOBUTTON | WS_TABSTOP,11,55,143,8
     CONTROL         "A new filtered message",IDC_SYSTEMTRAY_FILTER,"Button",BS_AUTORADIOBUTTON | WS_TABSTOP,11,67,89,8
     CONTROL         "Restore window if PDW receives :",IDC_SYSTEMTRAY_RESTORE,
-                    "Button",BS_AUTOCHECKBOX,11,25,122,10
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,25,122,10
 END
 
 FILTERDLGBOX DIALOG 10, 10, 473, 341
@@ -565,7 +582,7 @@ BEGIN
     EDITTEXT        IDC_FILTERFILE,52,20,163,13,ES_AUTOHSCROLL
     CONTROL         "In monitor window && monitor logfile",IDC_LABELLOG,
                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,12,93,133,10
-    CONTROL         "Enable filter file output",IDC_FILTERFILEEN,"Button",BS_AUTOCHECKBOX,12,4,90,10
+    CONTROL         "Enable filter file output",IDC_FILTERFILEEN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,12,4,90,10
     CONTROL         "Use date as filename",IDC_FILTERFILEDATE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,247,23,85,10
     GROUPBOX        " ",IDC_STATIC,6,115,347,34
     PUSHBUTTON      "Browse",IDC_FILTERCMDBROWSE,11,128,32,13,WS_DISABLED
@@ -748,12 +765,12 @@ BEGIN
     RTEXT           "0%",IDC_FILTERDUP_PCT,301,35,22,8
 END
 
-SCREENOPTIONSDLGBOX DIALOG 10, 10, 363, 131
+SCREENOPTIONSDLGBOX DIALOG 10, 10, 363, 151
 STYLE DS_SETFONT | DS_MODALFRAME | DS_3DLOOK | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
 CAPTION "PDW Screen Options"
 FONT 8, "Verdana"
 BEGIN
-    GROUPBOX        "Columns to be shown on screen",IDC_STATIC,5,7,353,96
+    GROUPBOX        "Columns to be shown on screen",IDC_STATIC,5,7,353,116
     LTEXT           "Column 1",IDC_STATIC,16,23,32,8
     COMBOBOX        801,13,38,45,80,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     LTEXT           "Column 2",IDC_STATIC,65,23,32,8
@@ -775,8 +792,10 @@ BEGIN
                     "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,146,66,173,10
     CONTROL         "Hide groupcodes within successfully converted groupcalls",IDC_FGM_HIDEGROUPCODES,
                     "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,146,85,203,10
-    PUSHBUTTON      "OK",IDOK,140,110,38,14
-    PUSHBUTTON      "Cancel",IDCANCEL,194,110,38,14
+    CONTROL         "Also show assembled FLEX alpha copy (original fragments remain)",IDC_FLEX_REASSEMBLY,
+                    "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,14,105,300,10
+    PUSHBUTTON      "OK",IDOK,140,130,38,14
+    PUSHBUTTON      "Cancel",IDCANCEL,194,130,38,14
 END
 
 MAIL_DLGBOX DIALOGEX 0, 0, 357, 265
@@ -785,7 +804,7 @@ CAPTION "SMTP / email settings"
 FONT 8, "Verdana", 0, 0, 0x0
 BEGIN
     GROUPBOX        " ",IDC_STATIC,8,8,339,33
-    CONTROL         "Enable Email Notification",IDC_SMTP,"Button",BS_AUTOCHECKBOX,14,8,90,8
+    CONTROL         "Enable Email Notification",IDC_SMTP,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,8,90,8
     LTEXT           "Setting",IDC_STATIC,16,24,23,8
     COMBOBOX        IDC_SMTP_SETTING,56,22,116,84,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     LTEXT           "Port",IDC_STATIC,295,24,14,8
@@ -798,7 +817,7 @@ BEGIN
     LTEXT           "&From",IDC_STATIC,16,100,19,8
     EDITTEXT        IDC_SMTP_FROM,56,97,116,13,ES_AUTOHSCROLL
     GROUPBOX        "",IDC_STATIC,184,48,163,51
-    CONTROL         "Enable &Authentication",IDC_SMTP_AUTH,"Button",BS_AUTOCHECKBOX,191,48,84,8
+    CONTROL         "Enable &Authentication",IDC_SMTP_AUTH,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,191,48,84,8
     LTEXT           "&Username",IDC_STATIC,191,65,34,8
     EDITTEXT        IDC_SMTP_USER,227,62,113,13,ES_AUTOHSCROLL
     LTEXT           "&Password",IDC_STATIC,191,83,33,8
@@ -869,8 +888,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 3,1,0,0
- PRODUCTVERSION 3,1,0,0
+ FILEVERSION PDW_VERSION_RESOURCE
+ PRODUCTVERSION PDW_VERSION_RESOURCE
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x21L
@@ -885,14 +904,14 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "Comments", "Supports Windows 95, 98, ME, 2K and XP"
-            VALUE "CompanyName", "WitWarez"
+            VALUE "Comments", "Native Win32 decoder for current Windows systems"
+            VALUE "CompanyName", "PDW Open Source Project"
             VALUE "FileDescription", "POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder"
-            VALUE "FileVersion", "3.1"
+            VALUE "FileVersion", PDW_VERSION_RESOURCE_STRING
             VALUE "InternalName", "PDW"
-            VALUE "OriginalFilename", "PDW3_1.exe"
+            VALUE "OriginalFilename", "PDW v4.5.0 Beta.exe"
             VALUE "ProductName", "PDW"
-            VALUE "ProductVersion", "3.1"
+            VALUE "ProductVersion", PDW_VERSION_STRING
         END
     END
     BLOCK "VarFileInfo"
@@ -1030,7 +1049,349 @@ END
 
 STRINGTABLE
 BEGIN
-    IDS_APPNAME             " PDW v3.2b01 - Windows POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder"
+    IDS_APPNAME             PDW_APP_NAME
+END
+
+SETTINGS_HUB_DLGBOX DIALOGEX 0, 0, 470, 324
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PDW Settings"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    LTEXT           "Settings",IDC_STATIC,16,12,210,17,SS_LEFT
+    LTEXT           "Everything in one place, grouped around the way you use PDW.",IDC_STATIC,16,29,438,10
+
+    GROUPBOX        "Appearance and startup",IDC_STATIC,10,48,450,94
+    LTEXT           "Theme",IDC_STATIC,20,65,34,10
+    COMBOBOX        IDC_SETTINGS_THEME,58,61,118,70,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "PDW changes automatically with Windows.",IDC_SETTINGS_THEME_STATUS,186,64,258,20
+    PUSHBUTTON      "Colours...",IDC_SETTINGS_COLORS,20,88,72,20
+    PUSHBUTTON      "Font...",IDC_SETTINGS_FONT,98,88,72,20
+    PUSHBUTTON      "View and columns...",IDC_SETTINGS_VIEW,176,88,102,20
+    PUSHBUTTON      "System tray...",IDC_SETTINGS_TRAY,284,88,82,20
+    PUSHBUTTON      "Scrollback...",IDC_SETTINGS_SCROLLBACK,372,88,72,20
+    CONTROL         "Start PDW with Windows",IDC_SETTINGS_START_WINDOWS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,20,117,112,12
+    LTEXT           "Automatic startup waits 5 seconds after sign-in.",IDC_SETTINGS_START_STATUS,146,118,298,18
+
+    GROUPBOX        "Decoder and input",IDC_STATIC,10,148,450,58
+    LTEXT           "Configure what PDW decodes and where its signal comes from.",IDC_STATIC,20,163,424,10
+    PUSHBUTTON      "Decoder options...",IDC_SETTINGS_DECODER,20,178,96,20
+    PUSHBUTTON      "General behaviour...",IDC_SETTINGS_GENERAL,122,178,104,20
+    PUSHBUTTON      "Input setup...",IDC_SETTINGS_INPUT,232,178,70,20
+    PUSHBUTTON      "Radio and replay...",IDC_SETTINGS_SIGNAL_SOURCE,308,178,92,20
+    PUSHBUTTON      "Volume...",IDC_SETTINGS_VOLUME,406,178,44,20
+
+    GROUPBOX        "Connections and automation",IDC_STATIC,10,212,450,58
+    LTEXT           "Send decoded information by email, notification, secure upload, or an opt-in web feed.",IDC_STATIC,20,227,424,10
+    PUSHBUTTON      "Email...",IDC_SETTINGS_EMAIL,20,242,58,20
+    PUSHBUTTON      "Push notifications...",IDC_SETTINGS_NOTIFY,84,242,98,20
+    PUSHBUTTON      "File transfer...",IDC_SETTINGS_TRANSFER,188,242,74,20
+    PUSHBUTTON      "Publish to web...",IDC_SETTINGS_PUBLISH,268,242,82,20
+    PUSHBUTTON      "Data outputs...",IDC_SETTINGS_DATA_OUTPUTS,356,242,94,20
+
+    LTEXT           "Changes use PDW's existing configuration; secrets stay in Windows Credential Manager.",IDC_STATIC,16,282,270,22
+    PUSHBUTTON      "Output health...",IDC_SETTINGS_OUTPUT_HEALTH,294,293,88,20
+    DEFPUSHBUTTON   "Close",IDOK,390,293,64,20
+END
+
+SIGNAL_SOURCE_DLGBOX DIALOGEX 0, 0, 500, 442
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Radio and Signal Sources"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    LTEXT           "Signal source",IDC_STATIC,14,15,62,10
+    COMBOBOX        IDC_SIGNAL_SOURCE,82,11,250,70,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Local inputs retain WinMM, serial and slicer behaviour; WASAPI remains an automatic fallback.",IDC_STATIC,14,34,470,18
+
+    GROUPBOX        "Receiver",IDC_STATIC,8,57,484,174
+    LTEXT           "Support package",IDC_STATIC,18,77,78,10
+    COMBOBOX        IDC_RTL_RECEIVER_PACKAGE,99,73,220,120,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Add receiver...",IDC_RTL_RECEIVER_ADD,326,72,78,18
+    PUSHBUTTON      "Open folder",IDC_RTL_RECEIVER_FOLDER,410,72,70,18
+    LTEXT           "RTL-TCP host",IDC_STATIC,18,103,62,10
+    EDITTEXT        IDC_RTL_HOST,84,100,150,14,ES_AUTOHSCROLL
+    LTEXT           "Port",IDC_STATIC,245,103,24,10
+    EDITTEXT        IDC_RTL_PORT,272,100,54,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "Connected device",IDC_STATIC,337,103,70,10
+    COMBOBOX        IDC_RTL_DEVICE,410,99,70,95,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Frequency (Hz)",IDC_STATIC,18,127,66,10
+    EDITTEXT        IDC_RTL_FREQUENCY,84,124,104,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "IQ sample rate",IDC_STATIC,202,127,66,10
+    EDITTEXT        IDC_RTL_SAMPLE_RATE,272,124,74,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "Audio rate",IDC_STATIC,364,127,42,10
+    EDITTEXT        IDC_RTL_AUDIO_RATE,410,124,70,14,ES_NUMBER | ES_AUTOHSCROLL
+    CONTROL         "Automatic gain",IDC_RTL_AUTOMATIC_GAIN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,151,80,12
+    LTEXT           "Manual gain (0.1 dB)",IDC_STATIC,118,152,88,10
+    EDITTEXT        IDC_RTL_GAIN,210,149,50,14,ES_AUTOHSCROLL
+    LTEXT           "Correction (ppm)",IDC_STATIC,270,152,72,10
+    EDITTEXT        IDC_RTL_PPM,344,149,42,14,ES_AUTOHSCROLL
+    LTEXT           "NFM BW (Hz)",IDC_STATIC,392,152,54,10
+    EDITTEXT        IDC_RTL_BANDWIDTH,446,149,34,14,ES_NUMBER | ES_AUTOHSCROLL
+    PUSHBUTTON      "Test selected source",IDC_RTL_TEST,18,176,112,20
+    LTEXT           "Not tested.",IDC_RTL_STATUS,140,178,340,42
+
+    GROUPBOX        "Recording and replay",IDC_STATIC,8,237,484,95
+    LTEXT           "Record",IDC_STATIC,18,255,32,10
+    EDITTEXT        IDC_SIGNAL_RECORD_PATH,52,252,286,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_SIGNAL_RECORD_BROWSE,344,251,54,16
+    PUSHBUTTON      "Start",IDC_SIGNAL_RECORD_START,404,251,32,16
+    PUSHBUTTON      "Stop",IDC_SIGNAL_RECORD_STOP,442,251,32,16
+    LTEXT           "Replay",IDC_STATIC,18,278,32,10
+    EDITTEXT        IDC_SIGNAL_REPLAY_PATH,52,275,286,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_SIGNAL_REPLAY_BROWSE,344,274,54,16
+    PUSHBUTTON      "Start",IDC_SIGNAL_REPLAY_START,404,274,32,16
+    PUSHBUTTON      "Stop",IDC_SIGNAL_REPLAY_STOP,442,274,32,16
+    LTEXT           "WAV stores normalized decoder audio; SigMF stores normalized rf32_le samples.",IDC_SIGNAL_DIAGNOSTIC_STATUS,18,302,460,18
+
+    GROUPBOX        "Live signal and recording calibration",IDC_STATIC,8,334,484,64
+    CONTROL         "",IDC_SIGNAL_WAVEFORM,"Static",SS_OWNERDRAW | WS_BORDER,18,350,220,30
+    CONTROL         "",IDC_SIGNAL_QUALITY_HISTORY,"Static",SS_OWNERDRAW | WS_BORDER,246,350,128,30
+    PUSHBUTTON      "Calibrate replay...",IDC_SIGNAL_CALIBRATE,382,349,96,20
+    LTEXT           "Level --  Noise --  Clipping --  Eye --  Decode history --",IDC_SIGNAL_METRICS,18,383,458,10
+
+    DEFPUSHBUTTON   "OK",IDOK,356,410,58,20
+    PUSHBUTTON      "Cancel",IDCANCEL,420,410,58,20
+END
+
+PUBLISHING_DLGBOX DIALOGEX 0, 0, 470, 372
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Publishing and Web Integration"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    CONTROL         "Enable publishing",IDC_PUBLISH_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,12,96,13
+    CONTROL         "I understand that I am responsible for checking permissions, privacy obligations, radio laws, and publication laws in my own country or jurisdiction.",IDC_PUBLISH_ACK,"Button",BS_AUTOCHECKBOX | BS_MULTILINE | WS_TABSTOP,14,31,440,30
+
+    GROUPBOX        "Messages and privacy",IDC_STATIC,8,68,454,70
+    CONTROL         "Filtered messages only",IDC_PUBLISH_FILTERED,"Button",BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,18,84,108,12
+    CONTROL         "All displayed decoded messages",IDC_PUBLISH_ALL,"Button",BS_AUTORADIOBUTTON | WS_TABSTOP,138,84,132,12
+    CONTROL         "Mask pager address except last three digits",IDC_PUBLISH_MASK,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,105,188,12
+    CONTROL         "Include decoded message text",IDC_PUBLISH_MESSAGE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,218,105,146,12
+    LTEXT           "Public source name",IDC_STATIC,18,123,78,10
+    EDITTEXT        IDC_PUBLISH_ALIAS,100,120,190,14,ES_AUTOHSCROLL
+
+    GROUPBOX        "Static website/feed files",IDC_STATIC,8,145,454,55
+    CONTROL         "Maintain JSON, JSONL, RSS, Atom, and responsive HTML files",IDC_PUBLISH_STATIC,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,160,292,12
+    EDITTEXT        IDC_PUBLISH_PATH,18,178,316,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_PUBLISH_BROWSE,340,177,54,16
+    PUSHBUTTON      "Open",IDC_PUBLISH_OPEN,400,177,42,16
+
+    GROUPBOX        "Generic HTTPS webhook",IDC_STATIC,8,207,454,80
+    CONTROL         "Send JSON webhook",IDC_PUBLISH_WEBHOOK,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,222,102,12
+    LTEXT           "URL",IDC_STATIC,18,243,18,10
+    EDITTEXT        IDC_PUBLISH_URL,40,240,402,14,ES_AUTOHSCROLL
+    LTEXT           "New bearer token",IDC_STATIC,18,264,74,10
+    EDITTEXT        IDC_PUBLISH_BEARER,96,261,122,14,ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "New HMAC secret",IDC_STATIC,230,264,74,10
+    EDITTEXT        IDC_PUBLISH_HMAC,308,261,134,14,ES_PASSWORD | ES_AUTOHSCROLL
+
+    CONTROL         "Pause delivery but retain queued events",IDC_PUBLISH_PAUSED,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,298,180,12
+    LTEXT           "Minimum interval (seconds)",IDC_STATIC,211,299,108,10
+    EDITTEXT        IDC_PUBLISH_INTERVAL,323,296,48,14,ES_NUMBER | ES_AUTOHSCROLL
+    PUSHBUTTON      "Test webhook",IDC_PUBLISH_TEST,378,294,72,18
+    LTEXT           "Publishing is disabled.",IDC_PUBLISH_STATUS,14,319,438,28
+
+    DEFPUSHBUTTON   "Save",IDOK,338,348,56,20
+    PUSHBUTTON      "Cancel",IDCANCEL,400,348,56,20
+END
+
+DATA_OUTPUTS_DLGBOX DIALOGEX 0, 0, 560, 460
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Data Outputs"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    CONTROL         "Enable data outputs",IDC_OUTPUT_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,10,102,13
+    CONTROL         "I understand that I am responsible for checking permissions, privacy obligations, radio laws, and data-sharing laws in my own country or jurisdiction.",IDC_OUTPUT_ACK,"Button",BS_AUTOCHECKBOX | BS_MULTILINE | WS_TABSTOP,14,28,532,28
+
+    GROUPBOX        "Routing and privacy",IDC_STATIC,8,62,544,67
+    CONTROL         "Filtered messages only",IDC_OUTPUT_FILTERED,"Button",BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,18,78,108,12
+    CONTROL         "All displayed decoded messages",IDC_OUTPUT_ALL,"Button",BS_AUTORADIOBUTTON | WS_TABSTOP,138,78,132,12
+    CONTROL         "Mask pager address except last three digits",IDC_OUTPUT_MASK,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,99,190,12
+    CONTROL         "Include decoded text in network and database outputs",IDC_OUTPUT_MESSAGE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,218,99,238,12
+    LTEXT           "Source name",IDC_STATIC,18,116,58,10
+    EDITTEXT        IDC_OUTPUT_ALIAS,80,113,190,14,ES_AUTOHSCROLL
+
+    CONTROL         "",IDC_OUTPUT_TAB,"SysTabControl32",WS_TABSTOP,8,136,544,222
+
+    GROUPBOX        "MQTT publisher",IDC_OUTPUT_MQTT_PANEL,18,160,524,184
+    CONTROL         "Enable MQTT",IDC_OUTPUT_MQTT_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,178,80,12
+    LTEXT           "Broker URL",IDC_OUTPUT_MQTT_BROKER_LABEL,30,204,55,10
+    EDITTEXT        IDC_OUTPUT_MQTT_BROKER,90,201,430,14,ES_AUTOHSCROLL
+    LTEXT           "Topic",IDC_OUTPUT_MQTT_TOPIC_LABEL,30,228,30,10
+    EDITTEXT        IDC_OUTPUT_MQTT_TOPIC,90,225,430,14,ES_AUTOHSCROLL
+    LTEXT           "Username",IDC_OUTPUT_MQTT_USER_LABEL,30,252,48,10
+    EDITTEXT        IDC_OUTPUT_MQTT_USER,90,249,150,14,ES_AUTOHSCROLL
+    LTEXT           "New password",IDC_OUTPUT_MQTT_PASSWORD_LABEL,252,252,66,10
+    EDITTEXT        IDC_OUTPUT_MQTT_PASSWORD,322,249,126,14,ES_PASSWORD | ES_AUTOHSCROLL
+    CONTROL         "Clear saved",IDC_OUTPUT_MQTT_CLEAR_PASSWORD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,454,251,68,12
+    CONTROL         "Allow unencrypted mqtt:// on a trusted local network",IDC_OUTPUT_MQTT_INSECURE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,276,256,12
+    PUSHBUTTON      "Send test",IDC_OUTPUT_MQTT_TEST,444,273,76,18
+    LTEXT           "Uses PDW's pinned libcurl: MQTT 3.1.1 publish, QoS 0, no retained messages. Prefer mqtts://.",IDC_OUTPUT_MQTT_NOTE,30,302,490,28
+
+    GROUPBOX        "SQLite database",IDC_OUTPUT_SQLITE_PANEL,18,160,524,184
+    CONTROL         "Enable SQLite",IDC_OUTPUT_SQLITE_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,178,86,12
+    LTEXT           "Database file",IDC_OUTPUT_SQLITE_PATH_LABEL,30,207,66,10
+    EDITTEXT        IDC_OUTPUT_SQLITE_PATH,100,204,352,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OUTPUT_SQLITE_BROWSE,458,202,62,18
+    LTEXT           "Table",IDC_OUTPUT_SQLITE_TABLE_LABEL,30,235,32,10
+    EDITTEXT        IDC_OUTPUT_SQLITE_TABLE,100,232,188,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Write test row",IDC_OUTPUT_SQLITE_TEST,430,230,90,18
+    LTEXT           "Stores UTF-8 messages locally with prepared statements, WAL mode, indexes, and idempotent event IDs. Relative paths stay beside PDW.",IDC_OUTPUT_SQLITE_NOTE,30,272,490,38
+
+    GROUPBOX        "MySQL through Windows ODBC",IDC_OUTPUT_MYSQL_PANEL,18,160,524,184
+    CONTROL         "Enable MySQL ODBC",IDC_OUTPUT_MYSQL_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,178,112,12
+    LTEXT           "Data source (DSN)",IDC_OUTPUT_MYSQL_DSN_LABEL,30,204,88,10
+    EDITTEXT        IDC_OUTPUT_MYSQL_DSN,122,201,398,14,ES_AUTOHSCROLL
+    LTEXT           "Username",IDC_OUTPUT_MYSQL_USER_LABEL,30,230,48,10
+    EDITTEXT        IDC_OUTPUT_MYSQL_USER,82,227,142,14,ES_AUTOHSCROLL
+    LTEXT           "New password",IDC_OUTPUT_MYSQL_PASSWORD_LABEL,236,230,66,10
+    EDITTEXT        IDC_OUTPUT_MYSQL_PASSWORD,306,227,142,14,ES_PASSWORD | ES_AUTOHSCROLL
+    CONTROL         "Clear saved",IDC_OUTPUT_MYSQL_CLEAR_PASSWORD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,454,229,68,12
+    LTEXT           "Table",IDC_OUTPUT_MYSQL_TABLE_LABEL,30,256,32,10
+    EDITTEXT        IDC_OUTPUT_MYSQL_TABLE,82,253,142,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Write test row",IDC_OUTPUT_MYSQL_TEST,430,251,90,18
+    LTEXT           "Install a current MySQL ODBC driver and configure TLS in the Windows DSN. PDW uses prepared inserts and does not weaken DSN security.",IDC_OUTPUT_MYSQL_NOTE,30,288,490,34
+
+    GROUPBOX        "Read-only Telnet JSON stream",IDC_OUTPUT_TELNET_PANEL,18,160,524,184
+    CONTROL         "Enable Telnet stream",IDC_OUTPUT_TELNET_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,178,106,12
+    LTEXT           "Bind address",IDC_OUTPUT_TELNET_BIND_LABEL,30,208,64,10
+    EDITTEXT        IDC_OUTPUT_TELNET_BIND,98,205,170,14,ES_AUTOHSCROLL
+    LTEXT           "Port",IDC_OUTPUT_TELNET_PORT_LABEL,282,208,24,10
+    EDITTEXT        IDC_OUTPUT_TELNET_PORT,310,205,62,14,ES_NUMBER | ES_AUTOHSCROLL
+    CONTROL         "Allow non-loopback clients (unencrypted)",IDC_OUTPUT_TELNET_REMOTE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,237,196,12
+    PUSHBUTTON      "Test listener",IDC_OUTPUT_TELNET_TEST,430,233,90,18
+    LTEXT           "Default 127.0.0.1 is local-only. Remote access is plain text and must be explicitly enabled; clients can only read JSON lines and cannot control PDW.",IDC_OUTPUT_TELNET_NOTE,30,276,490,42
+
+    GROUPBOX        "Windows notifications",IDC_OUTPUT_TOAST_PANEL,18,160,524,184
+    CONTROL         "Enable Windows notifications",IDC_OUTPUT_TOAST_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,178,146,12
+    CONTROL         "Include decoded message text (may appear on the Windows lock screen)",IDC_OUTPUT_TOAST_MESSAGE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,30,208,336,12
+    PUSHBUTTON      "Show test",IDC_OUTPUT_TOAST_TEST,430,203,90,18
+    LTEXT           "Native Windows notification support is loaded only when enabled or tested. Turning this off leaves PDW's existing tray behaviour unchanged.",IDC_OUTPUT_TOAST_NOTE,30,250,490,36
+
+    LTEXT           "Data outputs are disabled.",IDC_OUTPUT_STATUS,14,368,532,52
+    PUSHBUTTON      "Delivery health...",IDC_OUTPUT_OPEN_HEALTH,14,432,90,20
+    DEFPUSHBUTTON   "Save",IDOK,424,432,58,20
+    PUSHBUTTON      "Cancel",IDCANCEL,488,432,58,20
+END
+
+OUTPUT_HEALTH_DLGBOX DIALOGEX 0, 0, 720, 438
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Delivery Health and History"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    LTEXT           "Runtime delivery health contains operational outcomes only; pager addresses and decoded message text are never stored here.",IDC_STATIC,12,10,696,18
+    LTEXT           "No output alerts are pending.",IDC_HEALTH_SUMMARY,12,30,696,20
+    CONTROL         "",IDC_HEALTH_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP,10,54,700,166
+
+    GROUPBOX        "Recent output activity (newest first)",IDC_STATIC,10,228,700,136
+    LISTBOX         IDC_HEALTH_HISTORY,20,244,680,110,LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_HSCROLL | WS_TABSTOP
+
+    GROUPBOX        "Alerts",IDC_STATIC,10,370,430,56
+    CONTROL         "Alert after",IDC_HEALTH_ALERTS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,20,386,66,12
+    EDITTEXT        IDC_HEALTH_THRESHOLD,90,383,34,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "consecutive failures (1 to 20) using taskbar flash and warning sound",IDC_STATIC,130,386,292,22
+    PUSHBUTTON      "Apply",IDC_HEALTH_APPLY,360,403,58,18
+
+    PUSHBUTTON      "Acknowledge alerts",IDC_HEALTH_ACKNOWLEDGE,454,386,104,20
+    PUSHBUTTON      "Refresh",IDC_HEALTH_REFRESH,564,386,66,20
+    DEFPUSHBUTTON   "Close",IDOK,636,386,66,20
+END
+
+FTP_DLGBOX DIALOGEX 0, 0, 440, 350
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Continuous File Transfer"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    GROUPBOX        "Connection",IDC_STATIC,6,6,428,118
+    LTEXT           "Protocol",IDC_STATIC,14,22,37,8
+    COMBOBOX        IDC_FTP_PROTOCOL,55,19,110,80,CBS_DROPDOWNLIST | CBS_AUTOHSCROLL | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Server",IDC_STATIC,174,22,30,8
+    EDITTEXT        IDC_FTP_SERVER,204,19,130,13,ES_AUTOHSCROLL
+    LTEXT           "Port",IDC_STATIC,342,22,20,8
+    EDITTEXT        IDC_FTP_PORT,362,19,42,13,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Username",IDC_STATIC,14,42,40,8
+    EDITTEXT        IDC_FTP_USERNAME,55,39,176,13,ES_AUTOHSCROLL
+    LTEXT           "Password",IDC_STATIC,238,42,38,8
+    EDITTEXT        IDC_FTP_PASSWORD,276,39,88,13,ES_PASSWORD | ES_AUTOHSCROLL
+    PUSHBUTTON      "Clear",IDC_FTP_CLEAR_PASSWORD,369,39,55,13
+    LTEXT           "Remote folder",IDC_STATIC,14,62,58,8
+    EDITTEXT        IDC_FTP_REMOTE_DIR,76,59,348,13,ES_AUTOHSCROLL
+    CONTROL         "Passive mode",IDC_FTP_PASSIVE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,80,66,10
+    LTEXT           "SSH host key SHA256",IDC_STATIC,88,81,94,8
+    EDITTEXT        IDC_FTP_SSH_HOST_KEY,186,77,238,13,ES_AUTOHSCROLL
+    LTEXT           "FTP is unencrypted. Prefer FTPS or SFTP whenever the hosting provider supports it.",IDC_FTP_SECURITY_NOTICE,14,101,410,12
+    GROUPBOX        "Files to upload",IDC_STATIC,6,130,428,92
+    LISTBOX         IDC_FTP_FILES,14,145,320,56,LBS_NOINTEGRALHEIGHT | LBS_EXTENDEDSEL | WS_VSCROLL | WS_HSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Add files...",IDC_FTP_ADD_FILES,342,145,76,14
+    PUSHBUTTON      "Remove",IDC_FTP_REMOVE_FILES,342,165,76,14
+    LTEXT           "Each file is uploaded using its existing filename.",IDC_STATIC,14,207,310,10
+    GROUPBOX        "Schedule",IDC_STATIC,6,228,428,38
+    CONTROL         "Enable automatic uploads",IDC_FTP_ENABLED,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,242,124,10
+    LTEXT           "Every",IDC_STATIC,180,243,24,8
+    EDITTEXT        IDC_FTP_INTERVAL,208,240,44,13,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "seconds (10 to 86400)",IDC_STATIC,258,243,104,8
+    GROUPBOX        "Status",IDC_STATIC,6,272,428,38
+    LTEXT           "File-transfer uploader is ready.",IDC_FTP_STATUS,14,286,410,16
+    PUSHBUTTON      "Upload now",IDC_FTP_UPLOAD_NOW,14,326,76,14
+    DEFPUSHBUTTON   "OK",IDOK,322,326,48,14
+    PUSHBUTTON      "Cancel",IDCANCEL,376,326,48,14
+END
+
+APPRISE_DLGBOX DIALOGEX 0, 0, 440, 296
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Apprise Notifications"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    GROUPBOX        "Delivery",IDC_STATIC,6,6,428,136
+    CONTROL         "Enable Apprise",IDC_APPRISE_ENABLED,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,18,82,10
+    LTEXT           "Apprise API notify URL",IDC_STATIC,14,39,92,8
+    EDITTEXT        IDC_APPRISE_ENDPOINT,110,36,314,13,ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "API username",IDC_STATIC,14,59,56,8
+    EDITTEXT        IDC_APPRISE_USERNAME,74,56,130,13,ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "API password",IDC_STATIC,218,59,54,8
+    EDITTEXT        IDC_APPRISE_PASSWORD,276,56,148,13,ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "Destination URL(s)",IDC_STATIC,14,79,78,8
+    EDITTEXT        IDC_APPRISE_DESTINATIONS,96,76,328,13,ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "Separate multiple Apprise URLs with spaces or commas. Leave blank when using a configured /notify/{key} endpoint.",IDC_STATIC,14,96,410,20
+    CONTROL         "Include filter details and decoded text (may appear on a phone lock screen)",IDC_APPRISE_INCLUDE_MESSAGE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,120,360,10
+    GROUPBOX        "Security",IDC_STATIC,6,148,428,52
+    LTEXT           "HTTPS and authenticated Basic access are required. Endpoint, destination URLs, and API credentials are stored in Windows Credential Manager and are never written to pdw.ini or logs.",IDC_STATIC,14,162,410,28
+    GROUPBOX        "Status",IDC_STATIC,6,206,428,42
+    LTEXT           "Apprise status is not available.",IDC_APPRISE_STATUS,14,220,410,20
+    LTEXT           "Compatibility: Apprise API v1.5.1 / Apprise v1.12.0",IDC_APPRISE_VERSION,14,258,250,10
+    PUSHBUTTON      "Send test notification",IDC_APPRISE_TEST,14,276,102,14
+    PUSHBUTTON      "Clear saved settings",IDC_APPRISE_CLEAR,122,276,98,14
+    DEFPUSHBUTTON   "OK",IDOK,322,276,48,14
+    PUSHBUTTON      "Cancel",IDCANCEL,376,276,48,14
+END
+
+CONFIG_BACKUP_DLGBOX DIALOGEX 0, 0, 430, 214
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PDW Backup / Restore"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    GROUPBOX        "Complete configuration",IDC_STATIC,8,8,414,104
+    LTEXT           "Create one portable backup containing PDW.INI, filters.ini, receiver frequencies, usernames, passwords and all supported Credential Manager secrets.",IDC_STATIC,18,24,392,28
+    LTEXT           "Backups are password-encrypted and can be saved anywhere. PDW never writes exported passwords as readable text.",IDC_STATIC,18,57,392,22
+    PUSHBUTTON      "Export all settings...",IDC_BACKUP_EXPORT,18,87,126,18
+    PUSHBUTTON      "Restore from backup...",IDC_BACKUP_RESTORE,154,87,130,18
+    GROUPBOX        "Status",IDC_STATIC,8,120,414,48
+    LTEXT           "Ready.",IDC_BACKUP_STATUS,18,136,392,24
+    LTEXT           "A successful restore closes PDW so every restored setting loads together on the next start.",IDC_STATIC,18,177,320,22
+    DEFPUSHBUTTON   "Close",IDOK,358,184,54,18
+END
+
+CONFIG_BACKUP_PASSWORD_DLGBOX DIALOGEX 0, 0, 352, 150
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Protect Configuration Backup"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    LTEXT           "Choose a password for this backup.",IDC_BACKUP_PASSWORD_INFO,12,10,328,28
+    LTEXT           "Password",IDC_BACKUP_PASSWORD_LABEL,12,49,68,10
+    EDITTEXT        IDC_BACKUP_PASSWORD,84,46,256,16,ES_PASSWORD | ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Confirm password",IDC_BACKUP_CONFIRM_LABEL,12,75,68,10
+    EDITTEXT        IDC_BACKUP_CONFIRM,84,72,256,16,ES_PASSWORD | ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "The password is used only to encrypt or decrypt this file.",IDC_STATIC,12,101,328,18
+    DEFPUSHBUTTON   "OK",IDOK,230,124,52,18
+    PUSHBUTTON      "Cancel",IDCANCEL,288,124,52,18
 END
 
 STRINGTABLE

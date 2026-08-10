@@ -27,6 +27,7 @@
 #include "headers\helper_funcs.h"
 #include "headers\initapp.h"
 #include "utils\debug.h"
+#include "utils\flex_fragment_reassembly_core.h"
 
 #define min(a,b) (((a) < (b)) ? (a) : (b))
 #define max(a,b) (((a) > (b)) ? (a) : (b))
@@ -91,6 +92,24 @@ int syncs[8] = { 0x870C, 0x7B18, 0xB068, 0xDEA0, 0, 0, 0, 0x4C7C };
 
 char phase;
 
+// The reassembler is a shadow observer only. FLEX::showframe always sends the
+// original fragment through the established path before an optional assembled
+// copy is emitted.
+static pdw::flex::FragmentReassembler g_flexFragmentReassembler(
+	16, 120000, MAX_STR_LEN - 1);
+
+static std::uint64_t FlexFragmentNowMs()
+{
+	// Keep the legacy GetTickCount import while extending its 32-bit wrap for
+	// the two-minute fragment timeout. Decoder callbacks are serialized.
+	static DWORD previousTick = 0;
+	static std::uint64_t tickEpoch = 0;
+	const DWORD currentTick = GetTickCount();
+	if (currentTick < previousTick) tickEpoch += (static_cast<std::uint64_t>(1) << 32);
+	previousTick = currentTick;
+	return tickEpoch + currentTick;
+}
+
 
 FLEX::FLEX()
 {
@@ -110,6 +129,12 @@ void flex_reset(void)
 	flex_timer = 0;
 	bReflex = false;
 	bFlexActive = false;
+	flex_fragment_reassembly_reset();
+}
+
+void flex_fragment_reassembly_reset(void)
+{
+	g_flexFragmentReassembler.Reset();
 }
 
 // checksum check for BIW and vector type words
@@ -158,17 +183,19 @@ void FLEX::show_address(long int l, long int l2, bool bLongAddress)
 		if (FLEX_9) FLEX_9--;
 	}
 	else
-	{	
+	{
 		// to get capcode: take second word, invert it...
-		capcode = (l2 & 0x1fffffl) ^ 0x1fffffl;
+		unsigned long long wideCapcode =
+			(unsigned long long)((l2 & 0x1fffffl) ^ 0x1fffffl);
 
 		// multiply by 32768
-		capcode = capcode << 15;
+		wideCapcode <<= 15;
 
 		// add in 2068480 and first word
 		// NOTE : in the patent for FLEX, the number given was 2067456...
 		//			 which is apparently not correct
-		capcode = capcode + 2068480l + (l & 0x1fffffl);
+		wideCapcode += 2068480ull + (unsigned long long)(l & 0x1fffffl);
+		capcode = (wideCapcode > 999999999ull) ? -1l : (long int)wideCapcode;
 
 		if (FLEX_9 < 91) FLEX_9 += 10;
 	}
@@ -311,30 +338,36 @@ void FLEX::FlexTIME()
 			switch((frame[i] >> 4) & 0x07)
 			{
 				case 0:
-//					OUTPUTDEBUGMSG((("frame[i]: Type == SSID/Local ID’s (i8-i0)(512) & Coverage Zones (c4-c0)(32)\n")));		
+//					OUTPUTDEBUGMSG((("frame[i]: Type == SSID/Local IDâ€™s (i8-i0)(512) & Coverage Zones (c4-c0)(32)\n")));
 					break;
 				case 1:
-					frame[i] >>= 7;
-					recFlexTime.wYear = (frame[i] & 0x1F) + 1994;
-					frame[i] >>= 5;
-					recFlexTime.wDay = frame[i] & 0x1F;
-					frame[i] >>= 5;
-					recFlexTime.wMonth = (frame[i] & 0xF);
+				{
+					long biw = frame[i];
+					biw >>= 7;
+					recFlexTime.wYear = (biw & 0x1F) + 1994;
+					biw >>= 5;
+					recFlexTime.wDay = biw & 0x1F;
+					biw >>= 5;
+					recFlexTime.wMonth = (biw & 0xF);
 					bDate = true;
 					FLEX_date=1;
 //					OUTPUTDEBUGMSG((("BIW DATE: %d-%d-%d\n"), recFlexTime.wDay, recFlexTime.wMonth, recFlexTime.wYear));		
 					break;
+				}
 				case 2:
-					frame[i] >>= 7;
-					recFlexTime.wHour = frame[i] & 0x1F;
-					frame[i] >>= 5;
-					recFlexTime.wMinute = frame[i] & 0x3F;
-					frame[i] >>= 6;
+				{
+					long biw = frame[i];
+					biw >>= 7;
+					recFlexTime.wHour = biw & 0x1F;
+					biw >>= 5;
+					recFlexTime.wMinute = biw & 0x3F;
+					biw >>= 6;
 					recFlexTime.wSecond = seconds;
 					bTime = true;
 					FLEX_time=1;
 //					OUTPUTDEBUGMSG((("BIW TIME: %02d:%02d:%02d\n"), recFlexTime.wHour, recFlexTime.wMinute, recFlexTime.wSecond));
 					break;
+				}
 				case 5:
 //					OUTPUTDEBUGMSG((("frame[i]: Type == System Information (I9-I0. A3-A0) - related to NID roaming\n")));		
 					break;
@@ -390,10 +423,11 @@ void FLEX::FlexTIME()
 void FLEX::showframe(int asa, int vsa)
 {
 	int vb, vt, tt, w1, w2, j, k, l, m, n=0, i, c=0;
-	long int cc, cc2, cc3;
-	bool bLongAddress=false, bXsumError=false;
+	long int cc, cc2, cc3, fragmentHeader=0;
+	bool bLongAddress=false, bXsumError=false, bFlexAssembledCopyReady=false;
 
-	int iFragmentNumber, iAssignedFrame;
+	int iFragmentNumber, iContinuationFlag=0, iAssignedFrame;
+	pdw::flex::FragmentResult flexFragmentResult;
 
 	extern unsigned long hourly_stat[NUM_STAT][2];
 	extern unsigned long hourly_char[NUM_STAT][2];
@@ -408,8 +442,14 @@ void FLEX::showframe(int asa, int vsa)
 
 	if (xsumchk(frame[0]) == 0)			// make sure we start out with valid BIW
 	{
+		if (asa < 1 || asa > vsa || vsa > 88) return;
+
 		for (j=asa; j<vsa; j++, c=0, bLongAddress=false, bXsumError=false) // run through whole address field
 		{
+			bFlexAssembledCopyReady = false;
+			flexFragmentResult = pdw::flex::FragmentResult();
+			fragmentHeader = 0;
+			iContinuationFlag = 0;
 			cc2 = frame[j] & 0x1fffffl;	// Check if this can be the low part of a long address
 
 			// check for long addresses (bLongAddress indicates long address)
@@ -422,10 +462,12 @@ void FLEX::showframe(int asa, int vsa)
 
 			if (xsumchk(frame[vb]) != 0)
 			{
+				if (bLongAddress) j++;
 				continue; 	// screwed up vector fields are not processed
 			}
 			if (Profile.FlexGroupMode && bLongAddress)
 			{
+				j++;
 				continue; 	// Don't process long addresses if FlexGroupMode
 			}
 			strcpy(szWindowText[4], "");
@@ -443,17 +485,24 @@ void FLEX::showframe(int asa, int vsa)
 				w2 = w1 >> 7;
 				w1 = w1 & 0x7f;
 				w2 = (w2 & 0x7f) + w1 - 1;
+				if (w2 > 199) w2 = 199;
+				if (w1 > w2) { if (bLongAddress) j++; continue; }
 
 				// get message fragment number (bits 11 and 12) from first header word
 				// if != 3 then this is a continued message
 				if (!bLongAddress)
 				{
-					iFragmentNumber = (int) (frame[w1] >> 11) & 0x03;
+					fragmentHeader = frame[w1];
+					iFragmentNumber = (int) (fragmentHeader >> 11) & 0x03;
+					iContinuationFlag = (int) (fragmentHeader >> 10) & 0x01;
 					w1++;
 				}
 				else
 				{
-					iFragmentNumber = (int) (frame[vb+1] >> 11) & 0x03;
+					if (vb + 1 >= 200) { j++; continue; }
+					fragmentHeader = frame[vb+1];
+					iFragmentNumber = (int) (fragmentHeader >> 11) & 0x03;
+					iContinuationFlag = (int) (fragmentHeader >> 10) & 0x01;
 					w2--;
 				}
 
@@ -493,6 +542,26 @@ void FLEX::showframe(int asa, int vsa)
 						hourly_char[flex_speed][STAT_ALPHA]++;
 						daily_char [flex_speed][STAT_ALPHA]++;
 					}
+				}
+
+				// Compatibility-first shadow assembly. Every fragment is still shown
+				// by the original ShowMessage()/ConvertGroupcall logic below. Group
+				// mode stays entirely on its proven legacy behavior.
+				if (Profile.flexFragmentReassemblyEnabled && !Profile.FlexGroupMode &&
+					!bFLEX_groupmessage && capcode >= 0 &&
+					strchr(Current_MSG[MSG_CAPCODE], '?') == NULL &&
+					fragmentHeader >= 0 && fragmentHeader <= 0x3fffffl)
+				{
+					pdw::flex::FragmentObservation observation;
+					observation.address = static_cast<std::uint32_t>(capcode);
+					observation.fragmentNumber = static_cast<unsigned int>(iFragmentNumber);
+					observation.continuation = iContinuationFlag != 0;
+					observation.observedAtMs = FlexFragmentNowMs();
+					observation.text = message_buffer;
+					observation.colors = reinterpret_cast<const std::uint8_t*>(message_color);
+					observation.length = static_cast<std::size_t>(iMessageIndex);
+					flexFragmentResult = g_flexFragmentReassembler.Observe(observation);
+					bFlexAssembledCopyReady = flexFragmentResult.assembled;
 				}
 
 				if (iFragmentNumber < 3)	// Change last 0 of bitrate into fragmentnumber
@@ -554,6 +623,7 @@ void FLEX::showframe(int asa, int vsa)
 				w2 = w1 >> 7;
 				w1 = w1 & 0x7f;
 				w2 = (w2 & 0x07) + w1;	// numeric message is 7 words max
+				if (w2 > 199) w2 = 199;
 
 				if (!bLongAddress)		// load first message word into cc
 				{
@@ -561,7 +631,11 @@ void FLEX::showframe(int asa, int vsa)
 					w1++;
 					w2++;
 				}
-				else cc = frame[vb+1];	// long address - first message word in second vector field
+				else
+				{
+					if (vb + 1 >= 200) { j++; continue; }
+					cc = frame[vb+1];	// long address - first message word in second vector field
+				}
 
 				// skip over first 10 bits for numbered numeric, otherwise skip first 2
 
@@ -652,6 +726,8 @@ void FLEX::showframe(int asa, int vsa)
 				w2 = w1 >> 7;
 				w1 = w1 & 0x7f;
 				w2 = (w2 & 0x7f) + w1 - 1;
+				if (w2 > 199) w2 = 199;
+				if (w1 > w2) { if (bLongAddress) j++; continue; }
 
 				if (!bLongAddress)
 				{
@@ -662,6 +738,7 @@ void FLEX::showframe(int asa, int vsa)
 				}
 				else
 				{
+					if (vb + 1 >= 200) { j++; continue; }
 					iFragmentNumber = (int) (frame[vb+1] >> 13) & 0x03;
 
 					if (iFragmentNumber == 3) w1++;
@@ -703,7 +780,17 @@ void FLEX::showframe(int asa, int vsa)
 				}
 				else AddAssignment(iAssignedFrame, FlexTempAddress, capcode);
 			}
-			else ShowMessage();
+			else
+			{
+				ShowMessage();
+				if (bFlexAssembledCopyReady)
+				{
+					ShowAssembledFlexCopy(
+						reinterpret_cast<const unsigned char*>(flexFragmentResult.text.data()),
+						flexFragmentResult.colors.empty() ? NULL : &flexFragmentResult.colors[0],
+						flexFragmentResult.text.size());
+				}
+			}
 
 			if (bLongAddress) j++;	// if long address then make sure we skip over both parts
 		}
@@ -728,8 +815,7 @@ void FLEX::showblock(int blknum)
 			ob[j] = block[k];
 		}
 
-		err = ecd();		// do error correction
-		CountBiterrors(err);
+		err = ecd();		// do error correction (ecd also updates quality counters)
 
 		k = (blknum << 3) + i;
 

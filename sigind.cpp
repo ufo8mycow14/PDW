@@ -23,7 +23,9 @@
 #include "headers\toolbar.h"
 #include "headers\gfx.h"
 #include "headers\initapp.h"
+#include "headers\live_signal_meter.h"
 #include "headers\sigind.h"
+#include "headers\ui_theme.h"
 
 #define MAX_SI_POS        20	// 0-12. Max positions available to signal indicator.
 #define AUDIO_POINT_VALUE 2	// Used for working out samples per signal
@@ -76,67 +78,23 @@ int sip[21][4] =	{//from: x,  y, To: x,  y
 // Get signal indicator bitmap resource
 BOOL LoadSigInd(HINSTANCE hThisInstance)
 {
-	if (!(got_sigind))
-	{
-		if (hbm_sigind = LoadBitmap(hThisInstance,MAKEINTRESOURCE((WORD)IDS_SIGIND)))
-		{
-			if (GetObject(hbm_sigind, sizeof(bms), &bms)) got_sigind=TRUE;
-			else DeleteObject(hbm_sigind);
-		}
-	}
+	(void)hThisInstance;
+	// The original indicator was a fixed bitmap with a white background.
+	// It is now rendered with theme-aware GDI shapes.
+	got_sigind = TRUE;
 	return(got_sigind);
 }
 
 // Free bitmap object
 void FreeSigInd(void)
 {
-	if (got_sigind) DeleteObject(hbm_sigind);
+	got_sigind = FALSE;
 }
 
 // Draw signal indicator on toolbar
 void DrawSigInd(HWND hwnd)
 {
-	HDC hdc;
-	RECT r;
-	int x=5,y=4;
-	si_index=0;  // this is used by UpdateSigInd().
-	extern double dRX_Quality;
-
-	if (got_sigind)
-	{
-		hdc = GetDC(hwnd);
-		SelectObject(hdc,null_pen);
-
-		if (old_rect_flg)
-		{  // erase last display of bitmap
-			SelectObject(hdc,lgray_brush);
-			Rectangle(hdc,old_rect.right-(bms.bmWidth+x),y,old_rect.right-(x-1),bms.bmHeight+y+1);
-		}
-
-		GetClientRect(hwnd, &r);
-		GetClientRect(hwnd, &old_rect);
-		old_rect_flg=TRUE;
-
-		// need black background for bitmap
-		SelectObject(hdc,black_brush);
-		Rectangle(hdc,r.right-(bms.bmWidth+x),y,r.right-(x-1),bms.bmHeight+y+1);
-
-		// Keep record of bitmaps current location
-		sig_rect.left	= r.right-(bms.bmWidth+x);
-		sig_rect.top	= y;
-		sig_rect.bottom	= bms.bmHeight + y;
-		sig_rect.right	= r.right-(x-1);
-
-		// draw bitmap
-		if (hdcMemory = CreateCompatibleDC(hdc))
-		{
-			SelectObject(hdcMemory, hbm_sigind);
-			BitBlt(hdc,sig_rect.left,sig_rect.top, bms.bmWidth, bms.bmHeight, hdcMemory, 0, 0, SRCPAINT);
-			DeleteDC(hdcMemory);
-		}
-		ReleaseDC(hwnd,hdc);
-		show_sigind(0, 0);	// show sigind needle
-	}
+	(void)hwnd;
 }
 
 // Update signal indicator on toolbar.
@@ -144,81 +102,24 @@ void DrawSigInd(HWND hwnd)
 // removing old line first.
 void UpdateSigInd(int direction_flg)
 {
-	si_old_index = si_index;
-
-	if (old_rect_flg)
-	{
-		if (direction_flg)	// Move indictor right 1
-		{
-			si_low_hover=0;
-			si_index ? si_index+=2 : si_index++;
-
-			if (si_index > MAX_SI_POS)
-			{
-				si_hi_hover++;
-				si_index=MAX_SI_POS;
-				return;
-			}
-	 	}
-		else
-		{							// Move indictor left 1
-			if (si_low_hover)
-			{
-				if (si_low_hover==1)
-				{
-					show_sigind(1, 0);
-				}
-				if (si_low_hover > 1)
-				{
-					si_low_hover=0;
-					show_sigind(0, 1);
-				}
-			}
-			si_hi_hover=0;
-			si_index--;
-
-			if (si_index < 0)
-			{
-				si_low_hover++;
-				si_index=0;
-				return;
-			}
-		}
-		show_sigind(si_index, si_old_index);
-	}
+	// Legacy serial/slicer paths do not expose normalized audio samples. Record
+	// their real transitions for the new UI meter instead of painting from the
+	// decoder thread.
+	LiveSignalMeterNoteLegacyActivity(direction_flg);
 }
 
 
 // Draw signal indicator needle.
 // Draw needle at new_pos.
 // old_pos is used to erase previous line.
+void DrawToolbarIndicators(HDC hdc)
+{
+	(void)hdc;
+}
+
 void show_sigind(int new_pos,int old_pos)
 {
-	HDC hdc;
-	int x,y;
-
-	hdc = GetDC(ghWnd);
-
-	// erase old line.
-	SelectObject(hdc,SysPEN[WHITE]);
-	x = sig_rect.left+sip[old_pos][0];
-	y = sig_rect.top+sip[old_pos][1];
-	MoveToEx(hdc,x,y,NULL);
-
-	x = sig_rect.left+sip[old_pos][2];
-	y = sig_rect.top+sip[old_pos][3];
-	LineTo(hdc,x,y);
-
-	// Draw new line.
-	SelectObject(hdc,SysPEN[RED]);
-	x = sig_rect.left+sip[new_pos][0];
-	y = sig_rect.top+sip[new_pos][1];
-	MoveToEx(hdc,x,y,NULL);
-
-	x = sig_rect.left+sip[new_pos][2];
-	y = sig_rect.top+sip[new_pos][3];
-	LineTo(hdc,x,y);
-
-	ReleaseDC(ghWnd,hdc);
+	(void)new_pos;
+	(void)old_pos;
 }
 

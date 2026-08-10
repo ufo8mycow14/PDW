@@ -28,6 +28,7 @@
 #include "headers\toolbar.h"
 #include "headers\gfx.h"
 #include "headers\initapp.h"
+#include "headers\ui_theme.h"
 
 #include "headers\helper_funcs.h"
 
@@ -85,7 +86,7 @@ UINT GetPathFromFullPathName(LPCTSTR lpFullPathName, LPTSTR lpPathBuffer,
    UINT nLength;
    int i;
 
-   if ((nLength = (UINT) lstrlen(lpFullPathName)) > nPathBufferLength) return(nLength);
+	if ((nLength = (UINT) lstrlen(lpFullPathName)) >= nPathBufferLength) return(nLength);
 
    lstrcpy(lpPathBuffer, lpFullPathName);
 
@@ -102,7 +103,8 @@ BOOL NEAR InitApplication(HINSTANCE hInstance)
 
 	LPCTSTR lpszIniFileExt  = TEXT("INI");
 	LPCTSTR lpszHelpFileExt = TEXT("HLP");
-	TCHAR szApiFailedMsg[]	= TEXT("A Windows API Failed");
+	strncpy(szApiFailedMsg, TEXT("A Windows API Failed"), sizeof(szApiFailedMsg)-1);
+	szApiFailedMsg[sizeof(szApiFailedMsg)-1] = '\0';
 
 	//-- Load the "A Windows API Failed" resource string
 
@@ -120,16 +122,21 @@ BOOL NEAR InitApplication(HINSTANCE hInstance)
 	GetModuleFileName((HINSTANCE) NULL, szExePathName, sizeof(szExePathName)/sizeof(TCHAR));
 	GetPathFromFullPathName(szExePathName, szPath, sizeof(szPath)/sizeof(TCHAR));
 
-	wsprintf(szLogPathName,   TEXT("%s\\%s"),		szPath, "Logfiles");
-	wsprintf(szWavePathName,  TEXT("%s\\%s"),		szPath, "Wavfiles");
-	wsprintf(szIniPathName,   TEXT("%s\\%s.%s"),	szPath, szShortAppName, lpszIniFileExt);
-	wsprintf(szHelpPathName,  TEXT("%s\\%s.%s"),	szPath, szShortAppName, lpszHelpFileExt);
-	wsprintf(szFilterPathName,TEXT("%s\\%s"),		szPath, "filters.ini");
-	wsprintf(szFilterBackup,  TEXT("%s\\%s"),		szPath, "filters.bak");
+	_snprintf_s(szLogPathName,    sizeof(szLogPathName),    _TRUNCATE, TEXT("%s\\%s"),    szPath, "Logfiles");
+	_snprintf_s(szWavePathName,   sizeof(szWavePathName),   _TRUNCATE, TEXT("%s\\%s"),    szPath, "Wavfiles");
+	_snprintf_s(szIniPathName,    sizeof(szIniPathName),    _TRUNCATE, TEXT("%s\\%s.%s"), szPath, szShortAppName, lpszIniFileExt);
+	_snprintf_s(szHelpPathName,   sizeof(szHelpPathName),   _TRUNCATE, TEXT("%s\\%s.%s"), szPath, szShortAppName, lpszHelpFileExt);
+	_snprintf_s(szFilterPathName, sizeof(szFilterPathName), _TRUNCATE, TEXT("%s\\%s"),    szPath, "filters.ini");
+	_snprintf_s(szFilterBackup,   sizeof(szFilterBackup),   _TRUNCATE, TEXT("%s\\%s"),    szPath, "filters.bak");
 
 	if (!FileExists(szWavePathName)) CreateDirectory(szWavePathName, NULL);
 
 	GetPrivateProfileSettings(szShortAppName, szIniPathName, &Profile);
+	// Native menus choose their light/dark renderer when the main window is
+	// created, so initialise the Windows application theme before registering
+	// and constructing that window.
+	PdwThemeInitialize();
+	BuildPdwWindowTitle(szAppName, sizeof(szAppName));
 
 	// After getting user profile settings get all drawing objects(gfx.cpp)
 	if (!(Get_Drawing_Objects())) return(FALSE);
@@ -240,6 +247,21 @@ HWND NEAR InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 	// load accelerators
 	ghAccel = LoadAccelerators(hInstance, MAKEINTRESOURCE( PDWACCEL ));
+
+	// Reject saved geometry that cannot contain the modern command bar, both
+	// monitor panes and status bar. This also repairs profiles written during an
+	// interrupted first-layout/display-change cycle.
+	if (Profile.xSize < 444) Profile.xSize = 593;
+	if (Profile.ySize < 261) Profile.ySize = 442;
+	RECT savedRect = {
+		Profile.xPos, Profile.yPos,
+		Profile.xPos + Profile.xSize, Profile.yPos + Profile.ySize
+	};
+	if (MonitorFromRect(&savedRect, MONITOR_DEFAULTTONULL) == NULL)
+	{
+		Profile.xPos = 0;
+		Profile.yPos = 0;
+	}
 
 	ghWnd = CreateWindow(gszPDWClass, szAppName,
 						 WS_OVERLAPPEDWINDOW,

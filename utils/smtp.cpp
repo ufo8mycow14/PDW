@@ -6,31 +6,61 @@
 
 #include <windows.h>
 #include <stdio.h>
+#include <atomic>
+#include <string>
 #include "..\headers\pdw.h"
+#include "..\headers\output_health.h"
 #include "smtp_int.h"
 #include "smtp.h"
+#include "smtp_message_core.h"
 #include "..\utils\debug.h"
 
 #include "openssl\ssl.h"
 #include "openssl\err.h"
+#include "openssl\x509.h"
+#include <wincrypt.h>
 
-#define MY_BUFF_SIZE 1024
+#define MY_BUFF_SIZE 4096
 
 static SOCKET smtp_socket = INVALID_SOCKET;
+static std::atomic<SOCKET> activeSocket(INVALID_SOCKET);
 static char buf[MY_BUFF_SIZE];
 
-static HANDLE MailThread ;
+static HANDLE MailThread = NULL;
+static HANDLE MailWakeEvent = NULL;
 static THEMAIL mail ;
 static int nMaxLen ;
-static BOOL keepbusy = TRUE ;
+static std::atomic<bool> keepbusy(true);
 static BOOL bWsaStartup ;
+static std::atomic<HWND> responseWindow(NULL);
 
 #define MAX_MAIL		100
-#define MAX_MAIL_LEN	1024
+#define MAX_MAIL_LEN	(MAX_STR_LEN + 1024)
 
 static char szMailBuffer[MAX_MAIL][MAX_MAIL_LEN] ;
 static int  nBufferdMailStart ;
 static int  nBufferdMailEnd ;
+static int  nBufferedMailCount ;
+static unsigned int nDroppedMailCount ;
+static SRWLOCK MailQueueLock = SRWLOCK_INIT;
+static std::atomic<DWORD> lastHealthFailureTick(0);
+
+static void RecordSmtpFailureRateLimited(const char *summary)
+{
+	const DWORD now = GetTickCount();
+	DWORD last = lastHealthFailureTick.load();
+	if (last != 0 && (DWORD)(now-last) < 30000UL)
+		return;
+	if (lastHealthFailureTick.compare_exchange_strong(last, now))
+		OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_FAILURE, summary);
+}
+
+static void RecordSmtpSuccess()
+{
+	lastHealthFailureTick.store(0);
+	OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_SUCCESS,
+		"SMTP server accepted the queued message.");
+}
 
 static byte dtable[256];
 
@@ -38,8 +68,12 @@ extern int nSMTPerrors;
 extern int iSMTPlastError;
 
 //SSL
-SSL_CTX*      m_ctx;
-SSL*          m_ssl;
+SSL_CTX*      m_ctx = NULL;
+SSL*          m_ssl = NULL;
+
+// The hostname is retained per connection so OpenSSL can send SNI and verify
+// the certificate against the same name the user configured.
+static char g_szTlsHostname[256] = "";
 
 
 char *szSmtpCharSets[] = {
@@ -136,11 +170,42 @@ int initOpenSSL()
 	if(m_ctx == NULL)
 		return SSL_PROBLEM;
 
+	if (SSL_CTX_set_min_proto_version(m_ctx, TLS1_2_VERSION) != 1)
+	{
+		SSL_CTX_free(m_ctx);
+		m_ctx = NULL;
+		return SSL_PROBLEM;
+	}
+
+	SSL_CTX_set_verify(m_ctx, SSL_VERIFY_PEER, NULL);
+	SSL_CTX_set_default_verify_paths(m_ctx);
+
+	// The bundled OpenSSL build does not automatically use Windows' trusted
+	// root store. Import it so TLS keeps the same trust decisions as Windows.
+	HCERTSTORE hStore = CertOpenSystemStoreA(0, "ROOT");
+	if (hStore)
+	{
+		X509_STORE *x509Store = SSL_CTX_get_cert_store(m_ctx);
+		PCCERT_CONTEXT certificate = NULL;
+		while ((certificate = CertEnumCertificatesInStore(hStore, certificate)) != NULL)
+		{
+			const unsigned char *encoded = certificate->pbCertEncoded;
+			X509 *x509 = d2i_X509(NULL, &encoded, (long)certificate->cbCertEncoded);
+			if (x509)
+			{
+				if (X509_STORE_add_cert(x509Store, x509) != 1)
+					ERR_clear_error(); // duplicate Windows roots are harmless
+				X509_free(x509);
+			}
+		}
+		CertCloseStore(hStore, 0);
+	}
+
 	return CSMTP_NO_ERROR;
 }
 
 
-#define TIME_IN_SEC		3*60	// how long client will wait for server response in non-blocking mode
+#define TIME_IN_SEC		30	// bounded TLS handshake wait
 
 int openSSLConnect()
 {
@@ -154,15 +219,37 @@ int openSSLConnect()
 	SSL_set_fd (m_ssl, (int)smtp_socket);
 	SSL_set_mode(m_ssl, SSL_MODE_AUTO_RETRY);
 
+	if (g_szTlsHostname[0])
+	{
+		const unsigned long ipv4 = inet_addr(g_szTlsHostname);
+		if (ipv4 != INADDR_NONE)
+		{
+			X509_VERIFY_PARAM *verifyParameters = SSL_get0_param(m_ssl);
+			if (!verifyParameters ||
+				X509_VERIFY_PARAM_set1_ip_asc(verifyParameters, g_szTlsHostname) != 1)
+			{
+				SSL_free(m_ssl);
+				m_ssl = NULL;
+				return SSL_PROBLEM;
+			}
+		}
+		else
+		{
+			if (SSL_set_tlsext_host_name(m_ssl, g_szTlsHostname) != 1 ||
+				SSL_set1_host(m_ssl, g_szTlsHostname) != 1)
+			{
+				SSL_free(m_ssl);
+				m_ssl = NULL;
+				return SSL_PROBLEM;
+			}
+		}
+	}
+
 	int res = 0;
 	fd_set fdwrite;
 	fd_set fdread;
 	int write_blocked = 0;
 	int read_blocked = 0;
-
-	timeval time;
-	time.tv_sec = TIME_IN_SEC;
-	time.tv_usec = 0;
 
 	while(1)
 	{
@@ -176,6 +263,9 @@ int openSSLConnect()
 
 		if(write_blocked || read_blocked)
 		{
+			timeval time;
+			time.tv_sec = TIME_IN_SEC;
+			time.tv_usec = 0;
 			write_blocked = 0;
 			read_blocked = 0;
 			if((res = select(smtp_socket+1,&fdread,&fdwrite,NULL,&time)) == SOCKET_ERROR)
@@ -198,6 +288,8 @@ int openSSLConnect()
 		case SSL_ERROR_NONE:
 			FD_ZERO(&fdwrite);
 			FD_ZERO(&fdread);
+			if (SSL_get_verify_result(m_ssl) != X509_V_OK)
+				return SSL_PROBLEM;
 			return CSMTP_NO_ERROR;
 			break;
 
@@ -236,7 +328,7 @@ void cleanupOpenSSL()
 }
 
 
-#define SEND_RECIEVE_TO 5*60
+#define SEND_RECIEVE_TO 30
 
 int receiveData_SSL(SSL* ssl, char* buf)
 {
@@ -244,12 +336,7 @@ int receiveData_SSL(SSL* ssl, char* buf)
 	int offset = 0;
 	fd_set fdread;
 	fd_set fdwrite;
-	timeval time;
-
 	int read_blocked_on_write = 0;
-
-	time.tv_sec = SEND_RECIEVE_TO;
-	time.tv_usec = 0;
 
 	if(buf == NULL)
 		return RECVBUF_IS_EMPTY;
@@ -268,6 +355,9 @@ int receiveData_SSL(SSL* ssl, char* buf)
 			FD_SET(smtp_socket, &fdwrite);
 		}
 
+		timeval time;
+		time.tv_sec = SEND_RECIEVE_TO;
+		time.tv_usec = 0;
 		if((res = select(smtp_socket+1, &fdread, &fdwrite, NULL, &time)) == SOCKET_ERROR)
 		{
 			FD_ZERO(&fdread);
@@ -359,19 +449,14 @@ int receiveData_SSL(SSL* ssl, char* buf)
 
 int sendData_SSL(SSL* ssl, char *buf)
 {
-	int offset = 0,res,nLeft = strlen(buf);
-	fd_set fdwrite;
-	fd_set fdread;
-	timeval time;
-
-	int write_blocked_on_read = 0;
-
-	time.tv_sec = SEND_RECIEVE_TO; 
-	time.tv_usec = 0;
-
-
 	if(buf == NULL)
 		return SENDBUF_IS_EMPTY;
+
+	int offset = 0,res,nLeft = (int)strlen(buf);
+	fd_set fdwrite;
+	fd_set fdread;
+
+	int write_blocked_on_read = 0;
 
 	while(nLeft > 0)
 	{
@@ -385,6 +470,9 @@ int sendData_SSL(SSL* ssl, char *buf)
 			FD_SET(smtp_socket, &fdread);
 		}
 
+		timeval time;
+		time.tv_sec = SEND_RECIEVE_TO;
+		time.tv_usec = 0;
 		if((res = select(smtp_socket+1,&fdread,&fdwrite,NULL,&time)) == SOCKET_ERROR)
 		{
 			FD_ZERO(&fdwrite);
@@ -439,7 +527,6 @@ int sendData_SSL(SSL* ssl, char *buf)
 		}
 	}
 
-	OutputDebugStringA(buf);
 	FD_ZERO(&fdwrite);
 	FD_ZERO(&fdread);
 
@@ -500,7 +587,8 @@ char *EncodeBase64(char *szIn, char *szOut)
 	}
 	*pOut = '\0' ;
 
-	OUTPUTDEBUGMSG((("EncodeBase64(): In >%s< out >%s< \n"),szIn, szOut));
+	// Authentication values must never be echoed to the debugger or response UI.
+	OUTPUTDEBUGMSG((("EncodeBase64(): encoded credential\n")));
 	return(szOut) ;
 }
 
@@ -509,7 +597,7 @@ char *DecodeBase64(char *szIn, char *szOut)
 	int i, j;
 	char *pIn = szIn, *pOut = szOut ;
 
-	for(i= 0;i<255;i++){
+	for(i= 0;i<256;i++){
 		dtable[i]= 0x80;
 	}
 	for(i= 'A';i<='I';i++){
@@ -550,13 +638,13 @@ char *DecodeBase64(char *szIn, char *szOut)
 				OUTPUTDEBUGMSG((("DecodeBase64(): In >%s< out >%s< \n"),szIn, szOut));
 				return(szOut);
 			}
-			if(dtable[c]&0x80){
+			if(c < 0 || dtable[(unsigned char)c]&0x80){
 				OUTPUTDEBUGMSG((("DecodeBase64(): Illegal character '%c' in input line.\n"),c));
 				i--;
 				continue;
 			}
 			a[i]= (byte)c;
-			b[i]= (byte)dtable[c];
+			b[i]= (byte)dtable[(unsigned char)c];
 		}
 		o[0]= (b[0]<<2)|(b[1]>>4);
 		o[1]= (b[1]<<4)|(b[2]>>2);
@@ -576,29 +664,26 @@ char *DecodeBase64(char *szIn, char *szOut)
 
 void AddResponse(char *buf) 
 {
-// #ifdef _DEBUG
-	HDC		hDC ;
-	SIZE	Size ;
+	if (!buf)
+		return;
 
-	if(mail.hResponse) {
-		hDC = GetDC(mail.hResponse) ;
-		GetTextExtentPoint32(hDC, buf, strlen(buf), &Size);
-		if(Size.cx > nMaxLen) {
-			nMaxLen = Size.cx ;
-			SendMessage(mail.hResponse, LB_SETHORIZONTALEXTENT, Size.cx, 0L) ;
+	HWND hResponse = responseWindow.load();
+	if(hResponse && IsWindow(hResponse))
+	{
+		// The mail worker must not synchronously deadlock the UI during shutdown.
+		// SendMessageTimeout retains the legacy live response list while bounding it.
+		const int estimatedWidth = (int)strlen(buf) * 8;
+		DWORD_PTR ignored = 0;
+		if(estimatedWidth > nMaxLen)
+		{
+			nMaxLen = estimatedWidth;
+			SendMessageTimeoutA(hResponse, LB_SETHORIZONTALEXTENT,
+				estimatedWidth, 0, SMTO_ABORTIFHUNG, 250, &ignored);
 		}
-		SendMessage(mail.hResponse, LB_ADDSTRING, 0, (LPARAM) (LPSTR) buf) ;
+		SendMessageTimeoutA(hResponse, LB_ADDSTRING, 0, (LPARAM)buf,
+			SMTO_ABORTIFHUNG, 250, &ignored);
 		OUTPUTDEBUGMSG((("AddResponse() : >>> %s"),buf));
-
-//		FILE *pResponse = NULL;
-//		if ((pResponse = fopen("SMTP-response.txt", "a")) != NULL)
-//		{
-//			fprintf(pResponse, "%s\n", buf);
-//			fclose(pResponse);
-//			pResponse = NULL;
-//		}
 	}
-// #endif
 }
 
 
@@ -669,8 +754,60 @@ SOCKET clientSocket(char *address,int port)
 		AddResponse("clientSocket() : Could not create socket\n");
 		return(INVALID_SOCKET);
 	}
-	// connect
-	connect(s,(struct sockaddr *) &sa,sizeof(sa));
+	// Bound connection setup so an unreachable server cannot stall shutdown or
+	// every later queued page behind the Windows TCP default timeout.
+	u_long nonBlocking = 1;
+	if (ioctlsocket(s, FIONBIO, &nonBlocking) == SOCKET_ERROR)
+	{
+		closesocket(s);
+		return(INVALID_SOCKET);
+	}
+
+	int connectResult = connect(s,(struct sockaddr *) &sa,sizeof(sa));
+	if (connectResult == SOCKET_ERROR)
+	{
+		const int connectError = WSAGetLastError();
+		if (connectError != WSAEWOULDBLOCK && connectError != WSAEINPROGRESS)
+		{
+			OUTPUTDEBUGMSG((("clientSocket() : connect() failed WSAError=%d\n"), connectError));
+			AddResponse("clientSocket() : connect() failed\n");
+			closesocket(s);
+			return(INVALID_SOCKET);
+		}
+
+		fd_set writable;
+		fd_set exceptional;
+		FD_ZERO(&writable);
+		FD_ZERO(&exceptional);
+		FD_SET(s, &writable);
+		FD_SET(s, &exceptional);
+		timeval timeout;
+		timeout.tv_sec = 10;
+		timeout.tv_usec = 0;
+		const int selected = select((int)s + 1, NULL, &writable, &exceptional, &timeout);
+		int socketError = 0;
+		int socketErrorLength = sizeof(socketError);
+		if (selected <= 0 || FD_ISSET(s, &exceptional) ||
+			getsockopt(s, SOL_SOCKET, SO_ERROR, (char*)&socketError, &socketErrorLength) == SOCKET_ERROR ||
+			socketError != 0)
+		{
+			OUTPUTDEBUGMSG((("clientSocket() : connect() timed out or was refused\n")));
+			AddResponse("clientSocket() : connect() failed or timed out\n");
+			closesocket(s);
+			return(INVALID_SOCKET);
+		}
+	}
+
+	nonBlocking = 0;
+	if (ioctlsocket(s, FIONBIO, &nonBlocking) == SOCKET_ERROR)
+	{
+		closesocket(s);
+		return(INVALID_SOCKET);
+	}
+
+	DWORD ioTimeout = 30000;
+	setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&ioTimeout, sizeof(ioTimeout));
+	setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (const char*)&ioTimeout, sizeof(ioTimeout));
 	return(s);
 }
 
@@ -704,6 +841,15 @@ int sockPuts(SOCKET sock,char *str)
 		return sendData_SSL(m_ssl,str);
 
 	return(sockWrite(sock,str,strlen(str)));
+}
+
+static int sockPutsSecret(SOCKET sock, char *str)
+{
+	if (!str)
+		return SENDBUF_IS_EMPTY;
+	if (m_ssl != NULL)
+		return sendData_SSL(m_ssl, str);
+	return sockWrite(sock, str, strlen(str));
 }
 
 int sockGets(SOCKET sockfd,char *str,size_t count)
@@ -740,14 +886,30 @@ int sockGets(SOCKET sockfd,char *str,size_t count)
 static void smtpDisconnect(SOCKET sfd)
 {
 	cleanupOpenSSL();
-	closesocket(sfd) ;
+	if (sfd != INVALID_SOCKET)
+		closesocket(sfd) ;
+	activeSocket.store(INVALID_SOCKET);
+	smtp_socket = INVALID_SOCKET;
 }
+
+static int smtpResponse(int sfd);
+
+enum SmtpTlsMode
+{
+	SMTP_TLS_NONE,
+	SMTP_TLS_IMPLICIT,
+	SMTP_TLS_STARTTLS
+};
+
+static SmtpTlsMode smtpTlsMode = SMTP_TLS_NONE;
 
 // connect to SMTP server and returns the socket fd
 static SOCKET smtpConnect(char *smtp_server,int port)
 {
 	SOCKET sfd;
-	int res;
+	int res = CSMTP_NO_ERROR;
+	if (!smtp_server || !smtp_server[0])
+		return INVALID_SOCKET;
 	
 	sfd = clientSocket(smtp_server,port);
 	if(sfd == INVALID_SOCKET) {
@@ -760,11 +922,39 @@ static SOCKET smtpConnect(char *smtp_server,int port)
 	}
 	// save it. we'll need it to clean up
 	smtp_socket = sfd;
+	activeSocket.store(sfd);
+	_snprintf_s(g_szTlsHostname, sizeof(g_szTlsHostname), _TRUNCATE, "%s", smtp_server);
 
-	if (Profile.ssl) {
-		if ((res = initOpenSSL()) == CSMTP_NO_ERROR)
-			res = openSSLConnect();
-		OUTPUTDEBUGMSG(("SSL Connect res = %d\n",res));
+	// Preserve the historical implicit-TLS behaviour on custom ports. Standard
+	// submission ports use their conventional mode without adding another UI
+	// choice: 465 is implicit TLS; 25/587 upgrade with STARTTLS.
+	smtpTlsMode = SMTP_TLS_NONE;
+	if (mail.options & MAIL_OPTION_SSL)
+	{
+		smtpTlsMode = (port == 25 || port == 587) ? SMTP_TLS_STARTTLS : SMTP_TLS_IMPLICIT;
+		if (smtpTlsMode == SMTP_TLS_IMPLICIT)
+		{
+			res = initOpenSSL();
+			if (res == CSMTP_NO_ERROR)
+				res = openSSLConnect();
+			OUTPUTDEBUGMSG(("SSL Connect res = %d\n",res));
+			if (res != CSMTP_NO_ERROR)
+			{
+				AddResponse("smtpConnect() : TLS handshake or certificate verification failed\n");
+				smtpDisconnect(sfd);
+				nSMTPerrors++;
+				return INVALID_SOCKET;
+			}
+		}
+	}
+
+	// Consume and validate the server's 220 greeting before sending EHLO. The
+	// legacy implementation read it as the HELO response and shifted every
+	// later reply by one command.
+	if (smtpResponse((int)sfd) != 0)
+	{
+		smtpDisconnect(sfd);
+		return INVALID_SOCKET;
 	}
 
 	return(sfd);
@@ -773,25 +963,55 @@ static SOCKET smtpConnect(char *smtp_server,int port)
 // read SMTP response. returns 0 on success, -1 on failure 
 static int smtpResponse(int sfd)
 {
-	int n, err ;
+	int n = 0, err = 0 ;
 	char buf[MY_BUFF_SIZE], tmp[MY_BUFF_SIZE] ;
 
 	memset(buf,0,sizeof(buf));
 
 	if (m_ssl != NULL)
-		err = receiveData_SSL(m_ssl,buf);
+	{
+		const int receiveResult = receiveData_SSL(m_ssl,buf);
+		if (receiveResult != CSMTP_NO_ERROR)
+		{
+			nSMTPerrors++;
+			return -1;
+		}
+	}
 	else
-		n = sockGets(sfd, buf, sizeof(buf)-1);
+	{
+		// Drain a multiline reply through its final "ddd " line so the next
+		// command cannot consume a stale EHLO capability line.
+		do
+		{
+			memset(buf,0,sizeof(buf));
+			n = sockGets((SOCKET)sfd, buf, sizeof(buf)-1);
+			if (n <= 0)
+			{
+				nSMTPerrors++;
+				return -1;
+			}
+			AddResponse(buf);
+		} while (strlen(buf) >= 4 && buf[3] == '-');
+	}
 //	OUTPUTDEBUGMSG((("smtpResponse() : %s\n"),buf));
-	AddResponse(buf) ;
-	err = atoi(buf) ;
+	if (m_ssl != NULL)
+		AddResponse(buf) ;
+	char *responseLine = buf;
+	for (char *cursor = buf; *cursor; ++cursor)
+	{
+		if (*cursor == '\n' && cursor[1] != '\0')
+			responseLine = cursor + 1;
+	}
+	if (responseLine[0] == '\r' && responseLine[1] == '\0')
+		responseLine = buf;
+	err = atoi(responseLine) ;
 	OUTPUTDEBUGMSG((("smtpResponse(): Err: %d!\n"), err));
 	if(err == 334) {
-		DecodeBase64(buf+4, tmp) ;
-		strcpy(buf+4, tmp) ;
+		DecodeBase64(responseLine+4, tmp) ;
 	}
 
-	if(buf[0] == '1' || buf[0] == '2' || buf[0] == '3' && buf[3] == A_SPACE) {
+	if((responseLine[0] == '1' || responseLine[0] == '2' || responseLine[0] == '3') &&
+		responseLine[3] == A_SPACE) {
 		return (0);
 	}
 	OUTPUTDEBUGMSG((("smtpResponse(): ERROR!\n")));
@@ -801,22 +1021,75 @@ static int smtpResponse(int sfd)
 	return (-1);
 }
 
-// SMTP: HELO
+static void smtpBuildHeloArg(char *out, size_t outLength)
+{
+	if (!out || outLength == 0)
+		return;
+
+	if (mail.helo_domain && mail.helo_domain[0] &&
+		strcmp(mail.helo_domain, "127.0.0.1") != 0)
+	{
+		_snprintf_s(out, outLength, _TRUNCATE, "%s", mail.helo_domain);
+		return;
+	}
+
+	struct sockaddr_in localAddress = {};
+	int localAddressLength = sizeof(localAddress);
+	if (smtp_socket != INVALID_SOCKET &&
+		getsockname(smtp_socket, (struct sockaddr*)&localAddress, &localAddressLength) == 0 &&
+		localAddress.sin_family == AF_INET)
+	{
+		const unsigned char *ip = (const unsigned char*)&localAddress.sin_addr;
+		_snprintf_s(out, outLength, _TRUNCATE, "[%u.%u.%u.%u]", ip[0], ip[1], ip[2], ip[3]);
+		return;
+	}
+
+	_snprintf_s(out, outLength, _TRUNCATE, "[127.0.0.1]");
+}
+
+// SMTP: EHLO/HELO and optional STARTTLS upgrade.
 static int smtpHelo(int sfd)
 {
-	// read off the greeting 
-	//smtpResponse(sfd);
-	_snprintf(buf,sizeof(buf)-1,"HELO %s\r\n", mail.helo_domain);
-//	_snprintf(buf,sizeof(buf)-1,"EHLO %s\r\n", mail.helo_domain);
+	char heloArgument[300] = {};
+	smtpBuildHeloArg(heloArgument, sizeof(heloArgument));
+	_snprintf_s(buf, sizeof(buf), _TRUNCATE, "EHLO %s\r\n", heloArgument);
 	sockPuts(sfd,buf);
-	return (smtpResponse(sfd));
+	if (smtpResponse(sfd) != 0)
+	{
+		// Keep compatibility with older plaintext servers that only understand
+		// HELO. TLS/authenticated sessions require ESMTP and therefore fail cleanly.
+		if (smtpTlsMode != SMTP_TLS_NONE || (mail.options & MAIL_OPTION_AUTH))
+			return -1;
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, "HELO %s\r\n", heloArgument);
+		sockPuts(sfd,buf);
+		return smtpResponse(sfd);
+	}
+
+	if (smtpTlsMode == SMTP_TLS_STARTTLS && m_ssl == NULL)
+	{
+		sockPuts(sfd, "STARTTLS\r\n");
+		if (smtpResponse(sfd) != 0)
+			return -1;
+		if (initOpenSSL() != CSMTP_NO_ERROR || openSSLConnect() != CSMTP_NO_ERROR)
+		{
+			AddResponse("smtpHelo() : STARTTLS handshake or certificate verification failed\n");
+			return -1;
+		}
+
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, "EHLO %s\r\n", heloArgument);
+		sockPuts(sfd,buf);
+		if (smtpResponse(sfd) != 0)
+			return -1;
+	}
+
+	return 0;
 }
 
 
 // SMTP: Authentication
 static int smtpLogin(int sfd)
 {
-	char szTmp[128] ;
+	char szTmp[200] ;
 
 
 	if(mail.options & MAIL_OPTION_AUTH) {
@@ -824,12 +1097,17 @@ static int smtpLogin(int sfd)
 		sockPuts(sfd,buf);
 		if(smtpResponse(sfd)) return(TRUE) ;
 
-		_snprintf(buf,sizeof(buf)-1, "%s\r\n", EncodeBase64(mail.user, szTmp));
-		sockPuts(sfd,buf);
+		if (!mail.user || !mail.password)
+			return TRUE;
+
+		_snprintf_s(buf,sizeof(buf), _TRUNCATE, "%s\r\n", EncodeBase64(mail.user, szTmp));
+		AddResponse("[SMTP authentication username hidden]\n");
+		sockPutsSecret(sfd,buf);
 		if(smtpResponse(sfd)) return(TRUE) ;
 
-		_snprintf(buf,sizeof(buf)-1, "%s\r\n", EncodeBase64(mail.password, szTmp));
-		sockPuts(sfd,buf);
+		_snprintf_s(buf,sizeof(buf), _TRUNCATE, "%s\r\n", EncodeBase64(mail.password, szTmp));
+		AddResponse("[SMTP authentication password hidden]\n");
+		sockPutsSecret(sfd,buf);
 		return(smtpResponse(sfd));
 	}
 	return(FALSE) ;
@@ -837,9 +1115,16 @@ static int smtpLogin(int sfd)
 
 
 // SMTP: MAIL FROM 
+static bool smtpSafeMailbox(const char *mailbox)
+{
+	return mailbox && mailbox[0] && !strchr(mailbox, '\r') && !strchr(mailbox, '\n');
+}
+
 static int smtpMailFrom(int sfd)
 {
-	_snprintf(buf,sizeof(buf)-1,"MAIL FROM: <%s>\r\n",mail.from);
+	if (!smtpSafeMailbox(mail.from))
+		return -1;
+	_snprintf_s(buf,sizeof(buf), _TRUNCATE, "MAIL FROM: <%s>\r\n",mail.from);
 //	OUTPUTDEBUGMSG((("smtpMailFrom() : >>> %s"),buf));
 	sockPuts(sfd,buf);
 	return (smtpResponse(sfd));
@@ -882,34 +1167,36 @@ char *StripSpecial(char *szStr)
 // SMTP: RCPT TO
 static int smtpRcptTo(int sfd)
 {
-	static char szTemp[MAX_MAIL * 5] ;
-	char *pTmp1 = szTemp, *pTmp2 ;
+	char szTemp[(MAX_MAIL * 5) + 1] = {};
+	if (!mail.to)
+		return -1;
+	_snprintf_s(szTemp, sizeof(szTemp), _TRUNCATE, "%s", mail.to);
 
-	strncpy(szTemp, mail.to, (MAX_MAIL * 5) - 1) ;
-	StripSpecial(szTemp) ;
-
-	while(1) {
-		pTmp2 = strchr(pTmp1, ';') ;
-		if(NULL == pTmp2) {
-			pTmp2 = strchr(pTmp1, ',') ;
+	char *context = NULL;
+	char *recipient = strtok_s(szTemp, ";,", &context);
+	bool sentRecipient = false;
+	while(recipient)
+	{
+		while (*recipient == ' ' || *recipient == '\t')
+			++recipient;
+		StripSpecial(recipient);
+		if (recipient[0])
+		{
+			if (!smtpSafeMailbox(recipient))
+				return -1;
+			_snprintf_s(buf, sizeof(buf), _TRUNCATE, "RCPT TO: <%s>\r\n", recipient);
+			sockPuts(sfd,buf);
+			if (smtpResponse(sfd) != 0)
+			{
+				smtpRset(sfd);
+				return (-1);
+			}
+			sentRecipient = true;
 		}
-		if(pTmp2) {
-			*pTmp2 = '\0' ;
-		}
-		_snprintf(buf, sizeof(buf)-1, "RCPT TO: <%s>\r\n", pTmp1);
-		sockPuts(sfd,buf);
-		if (smtpResponse(sfd) != 0) {
-			smtpRset(sfd);
-			return (-1);
-		}
-		if(pTmp2) {
-			pTmp1 = pTmp2 ;
-			pTmp1++ ;
-		}
-		else {
-			break ;
-		}
-	} 
+		recipient = strtok_s(NULL, ";,", &context);
+	}
+	if (!sentRecipient)
+		return -1;
 	return (0);
 	
 }
@@ -930,134 +1217,152 @@ static int smtpEom(int sfd)
 
 // SMTP: mail
 static int smtpMail(int sfd, char *data)
-{	
+{
 	char szBuffer[128], *pTmp ;
-	char szSubject[1024]="";
-	char szBody[1024]="";
-	extern int nSMTPemails;
-
-	for (int i=0; data[i]!=0; i++)
-	{
-		if (data[i] == '»')
-		{
-			strcat(szSubject, " - ");
-			strcat(szBody, "\n");
-		}
-		else
-		{
-			szSubject[strlen(szSubject)] = data[i];
-			szBody[strlen(szBody)] = data[i];
-		}
-	}
+	const pdw::SmtpMessageParts parts =
+		pdw::SmtpSplitLegacyMessage(data, 0xBB, MAX_MAIL_LEN - 1);
+	const std::string safeSubject = pdw::SmtpSanitizeHeader(parts.subject);
 
 	if (mail.options & MAIL_OPTION_SUBJECT)
 	{
-		if (szSubject[0])
+		if (!safeSubject.empty())
 		{
 			memset(buf,0,sizeof(buf));
-			(void) _snprintf(buf,sizeof(buf)-1,"Subject: %s\r\n", szSubject);
-			sockPuts(sfd,buf);
-
-			memset(buf,0,sizeof(buf));
-			strcpy(szBuffer, szSmtpCharSets[((Profile.nMailOptions & 0x1F0000) >> 16) -1]) ;
-			pTmp = strchr(szBuffer, ' ') ;
-			if(pTmp != NULL) {
-				*pTmp = '\0' ;
-			}
-			(void) _snprintf(buf,sizeof(buf)-1,"Content-type: text/plain; charset=\"%s\"\r\n", szBuffer);
+			(void) _snprintf_s(buf,sizeof(buf), _TRUNCATE, "Subject: %s\r\n", safeSubject.c_str());
 			sockPuts(sfd,buf);
 		}
 	}
+
+	int charsetIndex = ((mail.options & 0x1F0000) >> 16) - 1;
+	if (charsetIndex < 0 || charsetIndex >= MAX_SMTP_CHARSETS)
+		charsetIndex = 0;
+	_snprintf_s(szBuffer, sizeof(szBuffer), _TRUNCATE, "%s", szSmtpCharSets[charsetIndex]);
+	pTmp = strchr(szBuffer, ' ') ;
+	if(pTmp != NULL)
+		*pTmp = '\0' ;
+	_snprintf_s(buf,sizeof(buf), _TRUNCATE,
+		"Content-type: text/plain; charset=\"%s\"\r\n", szBuffer);
+	sockPuts(sfd,buf);
 	
 	// headers
 	if(mail.from)
 	{
+		const std::string safeFrom = pdw::SmtpSanitizeHeader(mail.from);
 		memset(buf,0,sizeof(buf));
-		(void) _snprintf(buf,sizeof(buf)-1,"From: %s\r\n",mail.from);
+		(void) _snprintf_s(buf,sizeof(buf), _TRUNCATE, "From: %s\r\n",safeFrom.c_str());
 		sockPuts(sfd,buf);
 	}
 	if(mail.to)
 	{
+		const std::string safeTo = pdw::SmtpSanitizeHeader(mail.to);
 		memset(buf,0,sizeof(buf));
-		(void) _snprintf(buf,sizeof(buf)-1,"To: %s\r\n",mail.to);
+		(void) _snprintf_s(buf,sizeof(buf), _TRUNCATE, "To: %s\r\n",safeTo.c_str());
 		sockPuts(sfd,buf);	
 	}
 	
 	if(mail.cc)
 	{
+		const std::string safeCc = pdw::SmtpSanitizeHeader(mail.cc);
 		memset(buf,0,sizeof(buf));
-		(void) _snprintf(buf,sizeof(buf)-1,"Cc: %s\r\n",mail.cc);
-		sockPuts(sfd,buf);
-	}
-	if(mail.bcc)
-	{
-		memset(buf,0,sizeof(buf));
-		(void) _snprintf(buf,sizeof(buf)-1,"Bcc: %s\r\n",mail.bcc);
+		(void) _snprintf_s(buf,sizeof(buf), _TRUNCATE, "Cc: %s\r\n",safeCc.c_str());
 		sockPuts(sfd,buf);
 	}
 	memset(buf,0,sizeof(buf));
-	_snprintf(buf,sizeof(buf)-1,"X-Mailer: %s\r\n",MAILSEND_VERSION);
+	_snprintf_s(buf,sizeof(buf), _TRUNCATE, "X-Mailer: %s\r\n",MAILSEND_VERSION);
 	sockPuts(sfd,buf);
 	
 	
 	sockPuts(sfd,"\r\n");
 	
-	if ((mail.options & MAIL_OPTION_MSG) && szBody[0])
+	if ((mail.options & MAIL_OPTION_MSG) && !parts.body.empty())
 	{
-		sockPuts(sfd, szBody);
+		std::string escapedBody = pdw::SmtpDotStuff(parts.body);
+		sockPuts(sfd, &escapedBody[0]);
 		sockPuts(sfd,"\r\n");
 	}
-	nSMTPemails++;
 	return (0);
 }
 
 
-// returns 0 on success, -1 on failure
+static bool MailQueuePeek(char *message, size_t messageLength)
+{
+	if (!message || messageLength == 0)
+		return false;
+
+	AcquireSRWLockShared(&MailQueueLock);
+	const bool hasMessage = nBufferedMailCount > 0;
+	if (hasMessage)
+		_snprintf_s(message, messageLength, _TRUNCATE, "%s", szMailBuffer[nBufferdMailEnd]);
+	ReleaseSRWLockShared(&MailQueueLock);
+	return hasMessage;
+}
+
+static void MailQueueCommit()
+{
+	AcquireSRWLockExclusive(&MailQueueLock);
+	if (nBufferedMailCount > 0)
+	{
+		szMailBuffer[nBufferdMailEnd][0] = '\0';
+		nBufferdMailEnd = (nBufferdMailEnd + 1) % MAX_MAIL;
+		--nBufferedMailCount;
+	}
+	ReleaseSRWLockExclusive(&MailQueueLock);
+}
+
+static bool MailQueueAppend(const char *message)
+{
+	if (!message || !message[0])
+		return false;
+
+	AcquireSRWLockExclusive(&MailQueueLock);
+	if (nBufferedMailCount >= MAX_MAIL)
+	{
+		++nDroppedMailCount;
+		ReleaseSRWLockExclusive(&MailQueueLock);
+		return false;
+	}
+	_snprintf_s(szMailBuffer[nBufferdMailStart], MAX_MAIL_LEN, _TRUNCATE, "%s", message);
+	nBufferdMailStart = (nBufferdMailStart + 1) % MAX_MAIL;
+	++nBufferedMailCount;
+	ReleaseSRWLockExclusive(&MailQueueLock);
+	if (MailWakeEvent)
+		SetEvent(MailWakeEvent);
+	return true;
+}
+
+// Returns 1 after one queued message is accepted by the server, or 0 when
+// there is nothing to do / the head message must be retried later.
 int xSendMail(THEMAIL *pMail)
 {
 	SOCKET	sfd;
 	int 	rc = (-1);
-	char *pTmp ;
+	char queuedMessage[MAX_MAIL_LEN] = {};
 	extern int nSMTPsessions;
+	extern int nSMTPemails;
 	
-	if(nBufferdMailStart == nBufferdMailEnd)
-	{
+	if(!MailQueuePeek(queuedMessage, sizeof(queuedMessage)))
 		return(0) ;
-	}
 
-	pTmp = szMailBuffer[nBufferdMailEnd] ;
-	nBufferdMailEnd++ ;
-	if(nBufferdMailEnd >= MAX_MAIL) {
-		nBufferdMailEnd = 0 ;
-	}
-
-	if (pMail->from == (char *) NULL) {
+	if (!pMail || !smtpSafeMailbox(pMail->from)) {
 		OUTPUTDEBUGMSG((("No From address specified")));
 		AddResponse("xSendMail(): No From address specified\n");
+		MailQueueCommit();
+		RecordSmtpFailureRateLimited("SMTP message was discarded because the From address is invalid.");
 		return (0);
 	}
-	if (pMail->smtp_server == (char *) NULL) {
-		pMail->smtp_server= "127.0.0.1" ;
-		OUTPUTDEBUGMSG((("No smtp_server specified using default : %s"), pMail->smtp_server)) ;
+	if (!pMail->smtp_server || !pMail->smtp_server[0]) {
+		AddResponse("xSendMail(): No SMTP server specified\n");
+		MailQueueCommit();
+		RecordSmtpFailureRateLimited("SMTP message was discarded because no server is configured.");
+		return (0);
 	}
-	if (pMail->smtp_port == -1) {
-		pMail->smtp_port=MAILSEND_SMTP_PORT;
-		OUTPUTDEBUGMSG((("No smtp_port specified using default port %d"), pMail->smtp_port));
-	}
-	if (pTmp == (char *) NULL) {
-		pTmp = MAILSEND_DEF_SUB;
-		OUTPUTDEBUGMSG((("No subject specified using default subject %s"), pTmp));
-	}
-	if (pMail->helo_domain == (char *) NULL) {
-		pMail->helo_domain= "127.0.0.1" ;
-		OUTPUTDEBUGMSG((("No domain specified using default %s"), pMail->helo_domain));
-	}
-	
+	const int smtpPort = pMail->smtp_port > 0 ? pMail->smtp_port : MAILSEND_SMTP_PORT;
+
 	// open the network connection
-	sfd = smtpConnect(pMail->smtp_server, pMail->smtp_port);
+	sfd = smtpConnect(pMail->smtp_server, smtpPort);
 	if(sfd == INVALID_SOCKET)
 	{
-		nSMTPerrors++;			// PH: Counts # of Errors
+		RecordSmtpFailureRateLimited("SMTP server connection failed; queued message will be retried.");
 		return(0) ;
 	}
 	else nSMTPsessions++;		// PH: Counts # of sessions
@@ -1067,9 +1372,12 @@ int xSendMail(THEMAIL *pMail)
 			if(!(rc = smtpMailFrom(sfd))) {
 				if(!(rc = smtpRcptTo(sfd))) {
 					if(!(rc = smtpData(sfd))) {
-						if(!(rc = smtpMail(sfd, pTmp))) {
+						if(!(rc = smtpMail(sfd, queuedMessage))) {
 							if(!(rc = smtpEom(sfd))) {
-								rc = smtpQuit(sfd) ;
+								nSMTPemails++;
+								MailQueueCommit();
+								RecordSmtpSuccess();
+								smtpQuit(sfd); // best effort after the server accepted DATA
 							}
 						}
 					}
@@ -1080,7 +1388,9 @@ int xSendMail(THEMAIL *pMail)
 
 	// close the network connection
 	smtpDisconnect(sfd);
-	return(1);
+	if (rc != 0)
+		RecordSmtpFailureRateLimited("SMTP transaction failed; queued message will be retried.");
+	return(rc == 0 ? 1 : 0);
 }
 
 
@@ -1088,58 +1398,80 @@ DWORD WINAPI MailThreadFunc(LPVOID lpData)
 {
 	OUTPUTDEBUGMSG((("MailThreadFunc()")));
 
-	while(keepbusy) {
-		if(!xSendMail((THEMAIL *) lpData)) {
-			Sleep(1000) ;
-		}
+	while(keepbusy.load())
+	{
+		if(xSendMail((THEMAIL *) lpData))
+			continue;
+		WaitForSingleObject(MailWakeEvent, 1000);
 	}
-	OUTPUTDEBUGMSG((("MailThreadFunc() 	ExitThread(0)\n")));
-	ExitThread(0);
+	OUTPUTDEBUGMSG((("MailThreadFunc() exiting\n")));
 	return 0;
 }
 
-void StartMail(int nOptions)
+static bool StopMailWorker()
 {
-	DWORD dummy = 0;
+	if(!MailThread)
+		return true;
 
-//	OUTPUTDEBUGMSG((("StartMail()")));
-	if(nOptions & MAIL_OPTION_ENABLE)
+	keepbusy.store(false);
+	SOCKET socketToInterrupt = activeSocket.load();
+	if(socketToInterrupt != INVALID_SOCKET)
+		shutdown(socketToInterrupt, 2); // SD_BOTH in Winsock2; legacy headers omit the name
+	if(MailWakeEvent)
+		SetEvent(MailWakeEvent);
+
+	const DWORD waitResult = WaitForSingleObject(MailThread, 5000);
+	if(waitResult != WAIT_OBJECT_0)
 	{
-		if(MailThread != 0)
-		{
-			OUTPUTDEBUGMSG((("StartMail() MailThread != 0  Mail is already Started!")));
-			return;
-		}
-		keepbusy = TRUE ;
-		MailThread = CreateThread(0,0,MailThreadFunc,(LPVOID) &mail,0, &dummy);
-		OUTPUTDEBUGMSG((("StartMail() CreateThread\n")));
+		OUTPUTDEBUGMSG((("StopMailWorker(): worker did not stop within five seconds\n")));
+		return false;
 	}
-	else
+
+	CloseHandle(MailThread);
+	MailThread = NULL;
+	if(MailWakeEvent)
 	{
-		if(MailThread == 0)
-		{
-			OUTPUTDEBUGMSG((("StartMail() MailThread == 0  Mail is already Stopped!")));
-			return;
-		}
-		keepbusy = FALSE ;
-		Sleep(500) ;
-		CloseHandle(MailThread);
-		MailThread = 0;
-		OUTPUTDEBUGMSG((("StartMail() CloseHandle(MailThread)\n")));
+		CloseHandle(MailWakeEvent);
+		MailWakeEvent = NULL;
 	}
+	return true;
+}
+
+static bool StartMail(int nOptions)
+{
+	if(!(nOptions & MAIL_OPTION_ENABLE))
+		return StopMailWorker();
+	if(MailThread)
+		return true;
+
+	MailWakeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	if(!MailWakeEvent)
+		return false;
+
+	keepbusy.store(true);
+	DWORD threadId = 0;
+	MailThread = CreateThread(NULL, 0, MailThreadFunc, (LPVOID)&mail, 0, &threadId);
+	if(!MailThread)
+	{
+		keepbusy.store(false);
+		CloseHandle(MailWakeEvent);
+		MailWakeEvent = NULL;
+		return false;
+	}
+	if(nBufferedMailCount > 0)
+		SetEvent(MailWakeEvent);
+	return true;
 }
 
 
 int SendMail(HWND hResponse, bool bMatch, bool bMonitor_only, int iSeparateSMTP, char *sz1, char *sz2, char *sz3, char *sz4, char *sz5, char *sz6, char *sz7, char *szLabel)
 {
-	int	 len = 0 ;
-	char szBuffer[1024] = { 0 } ;
-//	char szSubject[1024]="";
-
 //	OUTPUTDEBUGMSG((("SendMail()")));
-	mail.hResponse = hResponse ;
 	if(hResponse) 
 	{
+		responseWindow.store(hResponse);
+		mail.hResponse = hResponse;
+		nMaxLen = 0;
 		SendMessage(hResponse, LB_RESETCONTENT, 0, 0L) ;
 	}
 	if(mail.options & MAIL_OPTION_ENABLE) 
@@ -1184,39 +1516,6 @@ int SendMail(HWND hResponse, bool bMatch, bool bMonitor_only, int iSeparateSMTP,
 		return(0) ;
 	}
 
-	if(mail.options & MAIL_OPTION_ADDRESS)
-	{
-		len += wsprintf(szBuffer + len, "%s ", sz1) ;
-	}
-	if(mail.options & MAIL_OPTION_TIME)
-	{
-		len += wsprintf(szBuffer + len, "%s ", sz2) ;
-	}
-	if(mail.options & MAIL_OPTION_DATE)
-	{
-		len += wsprintf(szBuffer + len, "%s ", sz3) ;
-	}
-	if(mail.options & MAIL_OPTION_MODE)
-	{
-		len += wsprintf(szBuffer + len, "%s ", sz4) ;
-	}
-	if(mail.options & MAIL_OPTION_TYPE)
-	{
-		len += wsprintf(szBuffer + len, "%s ", sz5) ;
-	}
-	if(mail.options & MAIL_OPTION_BITRATE)
-	{
-		len += wsprintf(szBuffer + len, "%s ", sz6) ;
-	}
-	if(mail.options & MAIL_OPTION_MESSAGE)
-	{
-		len += wsprintf(szBuffer + len, "%s ", sz7) ;
-	}
-	if(mail.options & MAIL_OPTION_LABEL)
-	{
-		len += wsprintf(szBuffer + len, "- %s ", szLabel) ;
-	}
-
 	if(!mail.smtp_port)
 	{
 		OUTPUTDEBUGMSG((("SendMail() Error: MailInit NOT called!")));
@@ -1225,16 +1524,36 @@ int SendMail(HWND hResponse, bool bMatch, bool bMonitor_only, int iSeparateSMTP,
 		return(-1) ;
 	}
 
-	nMaxLen = 0 ;
-	if(szBuffer[0])
-	{
-		OUTPUTDEBUGMSG((("SendMail() Send : >%s<\n"), szBuffer));
-		strncpy(szMailBuffer[nBufferdMailStart], szBuffer, MAX_MAIL_LEN) ;
-		nBufferdMailStart++ ;
+	std::string message;
+	message.reserve(512);
+	const size_t maxMessageLength = MAX_MAIL_LEN - 1;
+	if(mail.options & MAIL_OPTION_ADDRESS)
+		pdw::SmtpAppendField(message, sz1, maxMessageLength);
+	if(mail.options & MAIL_OPTION_TIME)
+		pdw::SmtpAppendField(message, sz2, maxMessageLength);
+	if(mail.options & MAIL_OPTION_DATE)
+		pdw::SmtpAppendField(message, sz3, maxMessageLength);
+	if(mail.options & MAIL_OPTION_MODE)
+		pdw::SmtpAppendField(message, sz4, maxMessageLength);
+	if(mail.options & MAIL_OPTION_TYPE)
+		pdw::SmtpAppendField(message, sz5, maxMessageLength);
+	if(mail.options & MAIL_OPTION_BITRATE)
+		pdw::SmtpAppendField(message, sz6, maxMessageLength);
+	if(mail.options & MAIL_OPTION_MESSAGE)
+		pdw::SmtpAppendField(message, sz7, maxMessageLength);
+	if(mail.options & MAIL_OPTION_LABEL)
+		pdw::SmtpAppendField(message, szLabel, maxMessageLength, "- ");
 
-		if(nBufferdMailStart >= MAX_MAIL)
+	if(!message.empty())
+	{
+		OUTPUTDEBUGMSG((("SendMail() queued %u bytes\n"), (unsigned)message.size()));
+		if(!MailQueueAppend(message.c_str()))
 		{
-			nBufferdMailStart = 0 ;
+			nSMTPerrors++;
+			AddResponse("SendMail(): SMTP queue is full; message was not queued\n");
+			OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_DROPPED,
+				"SMTP queue is full; newest message was not queued.");
+			return -1;
 		}
 	}
 //	OUTPUTDEBUGMSG((("SendMail() nBufferdMailStart %d nBufferdMailEnd %d\n"), nBufferdMailStart, nBufferdMailEnd));
@@ -1244,6 +1563,18 @@ int SendMail(HWND hResponse, bool bMatch, bool bMonitor_only, int iSeparateSMTP,
 
 int MailInit(char *szMailHost, char *szMailHeloDomain, char *szMailFrom, char *szMailTo, char *szMailUser, char *szMailPassword, int iMailPort, int nOptions)
 {
+	// Configuration pointers belong to Profile. Join the worker before changing
+	// them so a concurrent connect/authentication cannot dereference half-updated
+	// or null values during Apply/exit.
+	if(!StopMailWorker())
+	{
+		OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_FAILURE,
+			"SMTP worker did not stop while applying configuration.");
+		return -1;
+	}
+
+	OutputHealthSetEnabled(OUTPUT_HEALTH_SMTP, (nOptions & MAIL_OPTION_ENABLE) != 0);
+
 	memset(&mail, 0, sizeof(mail)) ;
 	mail.from = szMailFrom ;
 	mail.to = szMailTo ;
@@ -1253,10 +1584,18 @@ int MailInit(char *szMailHost, char *szMailHeloDomain, char *szMailFrom, char *s
 	mail.helo_domain = szMailHeloDomain ;
 	mail.user = szMailUser ;
 	mail.password = szMailPassword ;
-//	mail.smtp_port = -1 ;
 	mail.smtp_port = iMailPort ;
-	mail.helo_domain = NULL ;
 	mail.options = nOptions ;
-	StartMail(nOptions) ;
+	responseWindow.store(NULL);
+	if(!StartMail(nOptions))
+	{
+		OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_FAILURE,
+			"SMTP background worker could not start.");
+		return -1;
+	}
+	if ((nOptions & MAIL_OPTION_ENABLE) &&
+		(!szMailHost || !szMailHost[0] || !szMailFrom || !smtpSafeMailbox(szMailFrom) || iMailPort <= 0))
+		OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_FAILURE,
+			"Enabled SMTP settings are incomplete or invalid.");
 	return(0) ;
 }

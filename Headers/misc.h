@@ -19,7 +19,9 @@ extern unsigned long int iSecondsElapsed;
 extern char Current_MSG[9][MAX_STR_LEN];	// PH: Buffer for all message items
 extern unsigned char message_buffer[MAX_STR_LEN+1];
 extern unsigned char mobitex_buffer[MAX_STR_LEN+1];
+extern BYTE message_color[MAX_STR_LEN+1];
 extern BYTE messageitems_colors[7];			// buffer for message items colors
+extern int iMessageIndex;
 
 // Extra Globals used by display_show_char().
 extern char *dsc_pchar;
@@ -33,6 +35,7 @@ int  short_nOnes(char k);
 void build_show_line(PaneStruct *pane, char cin, int option);
 void display_line(PaneStruct *pane);
 void display_show_strV2(PaneStruct *pane, char strin[]);
+void ShowAssembledFlexCopy(const unsigned char* text, const BYTE* colors, size_t length);
 
 void AddAssignment(int assignedframe, int groupbit, int capcode);
 void ConvertGroupcall(int groupbit, char *vtype, int capcode);

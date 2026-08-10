@@ -11,6 +11,28 @@
 #define FILTER_FILE_LEN     128	// PH: was 256
 
 #define MAX_STR_LEN			5120
+#define PDW_WINDOW_TITLE_LEN 63
+#define AUDIO_CUSTOM_RATE_COUNT 4
+#define RTL_TCP_HOST_LEN 255
+#define RTL_RECEIVER_ID_LEN 63
+#define PUBLISH_PATH_LEN 511
+#define PUBLISH_URL_LEN 1023
+#define PUBLISH_ALIAS_LEN 127
+#define DATA_OUTPUT_ALIAS_LEN 127
+#define MQTT_BROKER_URL_LEN 511
+#define MQTT_TOPIC_LEN 255
+#define MQTT_USERNAME_LEN 127
+#define SQLITE_OUTPUT_PATH_LEN 511
+#define SQL_OUTPUT_TABLE_LEN 63
+#define MYSQL_ODBC_DSN_LEN 255
+#define MYSQL_ODBC_USERNAME_LEN 127
+#define TELNET_BIND_ADDRESS_LEN 63
+
+#define AUDIO_SOURCE_LOCAL   0
+#define AUDIO_SOURCE_RTL_TCP 1
+#define AUDIO_SOURCE_RTL_SDR 2
+
+#define PDW_TIMER 101
 
 enum FILTER_TYPE {	UNUSED_FILTER  = 0,
 					FLEX_FILTER    = 1,
@@ -45,6 +67,19 @@ typedef struct
 #define MAX_FILE_LEN  256
 
 #define MAIL_TEXT_LEN  100
+
+#define FTP_SERVER_LEN       255
+#define FTP_USERNAME_LEN     255
+#define FTP_REMOTE_DIR_LEN   511
+#define FTP_SSH_HOST_KEY_LEN 127
+#define FTP_MAX_FILES         64
+#define FTP_MIN_INTERVAL      10
+#define FTP_MAX_INTERVAL   86400
+
+#define FTP_PROTOCOL_FTP            0
+#define FTP_PROTOCOL_FTPS_EXPLICIT  1
+#define FTP_PROTOCOL_FTPS_IMPLICIT  2
+#define FTP_PROTOCOL_SFTP           3
 
 #define WINDOW_SIZE  0	// PH : Used in SetWindowPaneSize(int panes)
 #define PANE_SIZES   1	// PH : Used in SetWindowPaneSize(int panes)
@@ -89,11 +124,13 @@ typedef struct
 #pragma warning(disable : 4786)
 #include <vector>
 #pragma warning(default : 4786)
+#include <string>
 #include <algorithm>
 
 using namespace std;
 
 typedef vector<FILTER> FILTERLIST;
+typedef vector<string> FTPFILELIST;
 
 typedef struct
 {
@@ -101,6 +138,8 @@ typedef struct
 	int yPos;						// application window's vertical position
 	int xSize;						// application window's horizontal size
 	int ySize;						// application window's vertical size
+	char windowTitle[PDW_WINDOW_TITLE_LEN+1]; // optional name for this PDW instance
+	int uiTheme;					// 0 follows Windows, 1 light, 2 dark
 	unsigned int confirmExit;		// confirm exit flag
 	unsigned int showtone;			// show tone-only messages flag
 	unsigned int shownumeric;		// show numeric messages flag
@@ -128,7 +167,7 @@ typedef struct
 	int  LabelNewline;				// Labels on new line
 	char ColLogfile[10];			// Flag for columns to be logged in logfile
 	char ColFilterfile[10];			// Flag for columns to be logged in filterfile
-	int  Linefeed;					// Flag for converting ¯ to linefeed
+	int  Linefeed;					// Flag for converting Â¯ to linefeed
 	int  Separator;					// Flag for separating messages (empty line)
 	int  MonthNumber;				// Flag for using monthnumber in logfilenames
 	int  DateFormat;				// Flag for date format
@@ -143,8 +182,11 @@ typedef struct
 
 	int  FlexTIME;					// Flag for FlexTIME as systemtime
 	int  FlexGroupMode;				// Flag for FlexGroupMode
+	int  flexFragmentReassemblyEnabled; // additive FLEX alpha copy; legacy fragments remain
 
 	int  SMTP;						// SMTP-email
+	int  appriseEnabled;			// Apprise push notifications for filtered messages
+	int  appriseIncludeMessageText; // explicit lock-screen privacy opt-in
 
 	bool Trayed;					// TRUE if trayed
 
@@ -188,6 +230,66 @@ typedef struct
 	int	 iMailPort ;
 	int	 nMailOptions ;
 
+	int  ftpEnabled;
+	int  ftpProtocol;
+	char ftpServer[FTP_SERVER_LEN+1];
+	int  ftpPort;
+	char ftpUsername[FTP_USERNAME_LEN+1];
+	char ftpRemoteDirectory[FTP_REMOTE_DIR_LEN+1];
+	char ftpSshHostKeySha256[FTP_SSH_HOST_KEY_LEN+1];
+	int  ftpPassive;
+	unsigned int ftpIntervalSeconds;
+	FTPFILELIST ftpFiles;
+
+	int publishingEnabled;
+	int publishingPermissionAcknowledged;
+	int publishingPaused;
+	int publishingFilteredOnly;
+	int publishingStaticEnabled;
+	int publishingWebhookEnabled;
+	int publishingMaskAddress;
+	int publishingIncludeMessage;
+	unsigned int publishingMinimumIntervalSeconds;
+	char publishingOutputPath[PUBLISH_PATH_LEN+1];
+	char publishingWebhookUrl[PUBLISH_URL_LEN+1];
+	char publishingSourceAlias[PUBLISH_ALIAS_LEN+1];
+
+	// Optional modern outputs. These are deliberately separate from the legacy
+	// SMTP, Apprise, FTP, and web-publishing switches so an adapter can fail or
+	// be disabled without changing any established PDW behaviour.
+	int dataOutputsEnabled;
+	int dataOutputsPermissionAcknowledged;
+	int dataOutputsFilteredOnly;
+	int dataOutputsMaskAddress;
+	int dataOutputsIncludeMessage;
+	char dataOutputsSourceAlias[DATA_OUTPUT_ALIAS_LEN+1];
+
+	int mqttEnabled;
+	int mqttAllowInsecure;
+	char mqttBrokerUrl[MQTT_BROKER_URL_LEN+1];
+	char mqttTopic[MQTT_TOPIC_LEN+1];
+	char mqttUsername[MQTT_USERNAME_LEN+1];
+
+	int sqliteOutputEnabled;
+	char sqliteOutputPath[SQLITE_OUTPUT_PATH_LEN+1];
+	char sqliteOutputTable[SQL_OUTPUT_TABLE_LEN+1];
+
+	int mysqlOdbcEnabled;
+	char mysqlOdbcDsn[MYSQL_ODBC_DSN_LEN+1];
+	char mysqlOdbcUsername[MYSQL_ODBC_USERNAME_LEN+1];
+	char mysqlOdbcTable[SQL_OUTPUT_TABLE_LEN+1];
+
+	int telnetOutputEnabled;
+	int telnetAllowRemote;
+	char telnetBindAddress[TELNET_BIND_ADDRESS_LEN+1];
+	int telnetPort;
+
+	int windowsToastEnabled;
+	int windowsToastIncludeMessage;
+
+	int outputHealthAlertsEnabled;
+	unsigned int outputHealthFailureThreshold;
+
 	COLORREF color_background;
 	COLORREF color_address;
 	COLORREF color_timestamp;
@@ -220,9 +322,21 @@ typedef struct
 	int audioChannels;
 	int audioSampleRate;
 	int audioConfig;
-	int audioThreshold[4];
-	int audioResync[4];
-	int audioCentering[4];
+	int audioSource;
+	char rtlTcpHost[RTL_TCP_HOST_LEN+1];
+	int rtlTcpPort;
+	unsigned int rtlFrequencyHz;
+	unsigned int rtlSampleRate;
+	unsigned int rtlAudioSampleRate;
+	int rtlGainTenthsDb;
+	int rtlFrequencyCorrectionPpm;
+	int rtlBandwidthHz;
+	int rtlAutomaticGain;
+	int rtlDeviceIndex;
+	char rtlReceiverId[RTL_RECEIVER_ID_LEN+1];
+	int audioThreshold[AUDIO_CUSTOM_RATE_COUNT];
+	int audioResync[AUDIO_CUSTOM_RATE_COUNT];
+	int audioCentering[AUDIO_CUSTOM_RATE_COUNT];
 
 	BOOL monitor_paging;
 	BOOL monitor_acars;
@@ -334,12 +448,13 @@ extern PaneStruct *select_pane;
 
 extern char *label_colors[9]; // PH: Colors for filter labels
 extern char *wave_files[11];
-extern char *pdw_version;
+extern const char *pdw_version;
 
 extern char aNumeric[17];
 
 extern int g_sps;
 extern int g_sps2;
+extern int level;
 
 extern bool bUpdateFilters;			// PH: Does FILTERS.INI need to be updated?
 
@@ -360,6 +475,7 @@ void display_cfstatus(int cy=-1, int fr=-1);
 void setupecc();
 void frame_flex(char gin);
 void flex_reset(void);
+void flex_fragment_reassembly_reset(void);
 int  nOnes(int k);
 int  bit10(int gin);
 int  ecd();
@@ -436,6 +552,7 @@ void WriteStatFileDaily(FILE *fp);
 void CreateDateFilename(char *ext, SYSTEMTIME *yesterday);
 void GetFileName(const char*, char*, int);
 void SetWindowPaneSize(int param);
+void BuildPdwWindowTitle(char *buffer, size_t bufferSize);
 void SetNewWindowText(char* text);
 void SystemTrayWindow(bool bHideWindow);
 void SystemTrayIcon(bool bRemoveIcon);

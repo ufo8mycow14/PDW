@@ -1,0 +1,2 @@
+# address|mode|type|bitrate|payload
+0765432|POCSAG-1|NUMERIC|1200|12345

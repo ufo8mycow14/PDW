@@ -1,0 +1,13 @@
+schema=1
+protocol=POCSAG
+origin=synthetic
+captured_traffic=false
+redistribution=GPL-3.0
+generator=deterministic-pocsag-bch31-21-v1
+sample_boundary=raw-symbols
+baud=1200
+polarity=normal
+address=0765432
+function=1
+payload_numeric=12345
+notes=Clean BCH(31,21) codewords with even parity; no recording or received pager content was used.

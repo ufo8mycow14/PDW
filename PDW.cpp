@@ -39,7 +39,7 @@
 // 11/06/2003 PH:  Added switch '/callmax' for optimized Callmax-pages
 // 26/06/2003 AVE: Added html.cpp & html.h for HTML-logfiles
 // 28/06/2003 PH:  Added  IRC-logfiles via switch '/irc'
-// 01/09/2003 PH:  Linefeed character will be replaced by '»'
+// 01/09/2003 PH:  Linefeed character will be replaced by 'Â»'
 // 02/09/2003 PH:  Added extra column "type" for FLEX/POCSAG
 // 03/09/2003 PH:  Changed GetTimeFormat/Date, now always leading zeros are displayed
 // 07/09/2033 PH:  Removed Flush-Time. All logfiles will be flushed immediately
@@ -52,7 +52,7 @@
 // 11/10/2003 AVE: Added FTP-support (FTP.DLL)
 // 12/10/2003 AVE: Filters will now be read from "filters.ini" via ReadFilters() (up to 32.000!)
 // 30/10/2003 PH:  When exiting PDW, a backup of FILTERS.INI will be made, named FILTERS.BAK
-// 03/11/2003 PH:  FTP-password is now encrypted (in PDW.INI)
+// 03/11/2003 PH:  Legacy FTP-password was encrypted (in PDW.INI)
 // 11/11/2003 PH:  changed WM_KEYDOWN and added VK_SHIFT for scrolling in Pane2
 // 12/11/2003 PH:  Added "Reload Filters", for use with PDW-Filter
 // 13/11/2003 PH:  Added ClearScreenDlgProc
@@ -295,6 +295,7 @@
 #include <shlobj.h>
 
 #include "headers\resource.h"
+#include "headers\config_backup.h"
 #include "headers\PDW.h"
 #include "headers\slicer.h"
 #include "headers\toolbar.h"
@@ -310,21 +311,30 @@
 #include "headers\language.h"
 #include "headers\mobitex.h"
 #include "headers\ermes.h"
+#include "headers\ftp.h"
+#include "headers\data_outputs.h"
+#include "headers\notification.h"
+#include "headers\output_health.h"
+#include "headers\publishing.h"
+#include "headers\settings_center.h"
+#include "headers\status_bar.h"
+#include "headers\ui_theme.h"
+#include "headers\version.h"
 #include "utils\rs232.h"
 #include "utils\debug.h"
 #include "utils\ostype.h"
 #include "utils\smtp.h"
+#include "utils\ini_preservation_core.h"
 
 #include "headers\helper_funcs.h"	// Extra functies van Andreas
 
 #define MIN_X_WIN_SIZE		444		// Smallest main win X size can be (was 444)
 #define MIN_Y_WIN_SIZE		261		// Smallest main win Y size can be (was 261)
 
-#define TOOLBAR_SIZE		49		// Space for Toolbar/Top of Pane1 (was 52)
+#define TOOLBAR_SIZE		PDW_COMMAND_BAR_HEIGHT
 #define WIN_DIVIDER_SIZE	19		// Pane1/Pane2 seperator size (was 56)
 #define PANE1_SIZE			1000	// Pane1 default scrollback size
 #define PANE2_SIZE			200		// Pane2 default scrollback size
-#define PDW_TIMER			101		// Timer ID
 #define SCROLL_TIMER		102
 #define SECOND_TIMER		103		// Timer ID
 #define MINUTE_TIMER		104		// Timer ID
@@ -352,6 +362,7 @@ bool bWin9x;
 int  nDriverLoaded	= DRIVER_NOT_LOADED;// VxD/comport loaded?
 bool bEditFilter	= false;		// Set before/after calling edit dialog
 bool bPauseFlag		= false;		// Decides if message output is paused.
+HWND hStatusBar		= NULL;
 bool bUpdateFilters	= false;		// PH: Needs FILTERS.INI to be updated?
 
 double dRX_Quality;
@@ -421,7 +432,23 @@ time_t tStarted;	// Contains the time when PDW was started
 // If copy upper/lower pane or just copy is successful then this flag is set to TRUE.
 bool bOK_to_save=false;
 
-char *pdw_version = "PDW v3.2b01";		// Current version info
+const char *pdw_version = PDW_DISPLAY_VERSION;	// Current version info
+
+void BuildPdwWindowTitle(char *buffer, size_t bufferSize)
+{
+	if (buffer == NULL || bufferSize == 0) return;
+
+	if (Profile.windowTitle[0])
+	{
+		snprintf(buffer, bufferSize, "%s - %s", Profile.windowTitle, pdw_version);
+	}
+	else
+	{
+		snprintf(buffer, bufferSize, "%s", pdw_version);
+	}
+
+	buffer[bufferSize-1] = '\0';
+}
 
 // RAH: record and playback stuff
 OPENFILENAME openplayback;
@@ -477,6 +504,10 @@ void AutoRecording();	// PH: temp/test
 
 int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLine, int nCmdShow)
 {
+	// Delay only automatic sign-in launches. Starting PDW manually remains immediate.
+	if (lpszCmdLine != NULL && strstr(lpszCmdLine, "/startup") != NULL)
+		Sleep(5000);
+
 	// RAH: setup common file dialog data
 	ZeroMemory(&openplayback, sizeof(openplayback));
 	ZeroMemory(&openrecording,sizeof(openrecording));
@@ -495,7 +526,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.LabelNewline		= 1;	// Flag for labels on new line
 	Profile.ColLogfile[0]		= '\0';	// Flag for columns in logfile
 	Profile.ColFilterfile[0]	= '\0';	// Flag for columns in filterfiles
-	Profile.Linefeed			= 1;	// Flag for converting » to linefeed
+	Profile.Linefeed			= 1;	// Flag for converting Â» to linefeed
 	Profile.Separator			= 1;	// Flag for separating messages (empty line)
 	Profile.MonthNumber			= 1;	// Flag for using monthnumber in logfilenames
 	Profile.DateFormat			= 0;	// Flag for date format
@@ -506,14 +537,67 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.SystemTray	        = 0;	// Flag for enabeling the system tray
 	Profile.SystemTrayRestore	= 0;	// Flag for enabeling auto restore from tray
 	Profile.SMTP = 0;					// Flag for SMTP-email
+	Profile.appriseEnabled = 0;
+	Profile.appriseIncludeMessageText = 0;
+	Profile.ftpEnabled = 0;
+	Profile.ftpProtocol = FTP_PROTOCOL_FTP;
+	Profile.ftpServer[0] = '\0';
+	Profile.ftpPort = 21;
+	Profile.ftpUsername[0] = '\0';
+	Profile.ftpRemoteDirectory[0] = '\0';
+	Profile.ftpSshHostKeySha256[0] = '\0';
+	Profile.ftpPassive = 1;
+	Profile.ftpIntervalSeconds = 60;
+	Profile.ftpFiles.clear();
+	Profile.publishingEnabled = 0;
+	Profile.publishingPermissionAcknowledged = 0;
+	Profile.publishingPaused = 0;
+	Profile.publishingFilteredOnly = 1;
+	Profile.publishingStaticEnabled = 1;
+	Profile.publishingWebhookEnabled = 0;
+	Profile.publishingMaskAddress = 0;
+	Profile.publishingIncludeMessage = 1;
+	Profile.publishingMinimumIntervalSeconds = 0;
+	strcpy(Profile.publishingOutputPath, "Published");
+	Profile.publishingWebhookUrl[0] = '\0';
+	strcpy(Profile.publishingSourceAlias, "PDW");
+	Profile.dataOutputsEnabled = 0;
+	Profile.dataOutputsPermissionAcknowledged = 0;
+	Profile.dataOutputsFilteredOnly = 1;
+	Profile.dataOutputsMaskAddress = 1;
+	Profile.dataOutputsIncludeMessage = 0;
+	strcpy(Profile.dataOutputsSourceAlias, "PDW");
+	Profile.mqttEnabled = 0;
+	Profile.mqttAllowInsecure = 0;
+	strcpy(Profile.mqttBrokerUrl, "mqtts://localhost:8883");
+	strcpy(Profile.mqttTopic, "pdw/messages");
+	Profile.mqttUsername[0] = '\0';
+	Profile.sqliteOutputEnabled = 0;
+	strcpy(Profile.sqliteOutputPath, "pdw-messages.sqlite3");
+	strcpy(Profile.sqliteOutputTable, "pdw_messages");
+	Profile.mysqlOdbcEnabled = 0;
+	Profile.mysqlOdbcDsn[0] = '\0';
+	Profile.mysqlOdbcUsername[0] = '\0';
+	strcpy(Profile.mysqlOdbcTable, "pdw_messages");
+	Profile.telnetOutputEnabled = 0;
+	Profile.telnetAllowRemote = 0;
+	strcpy(Profile.telnetBindAddress, "127.0.0.1");
+	Profile.telnetPort = 8024;
+	Profile.windowsToastEnabled = 0;
+	Profile.windowsToastIncludeMessage = 0;
+	Profile.outputHealthAlertsEnabled = 1;
+	Profile.outputHealthFailureThreshold = 3;
 
 	Profile.FlexTIME			= 0;	// Flag for FlexTIME as systemtime
 	Profile.FlexGroupMode		= 0;
+	Profile.flexFragmentReassemblyEnabled = 0;
 
 	Profile.xPos  = 0;
 	Profile.yPos  = 0;
 	Profile.xSize = 593;
 	Profile.ySize = 442;
+	Profile.windowTitle[0] = '\0';
+	Profile.uiTheme = PDW_THEME_SYSTEM;
 
 	Profile.showtone		= 1;
 	Profile.shownumeric		= 1;
@@ -630,9 +714,21 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.audioDevice			= 0;
 	Profile.audioSampleRate		= 44100;
 	Profile.audioConfig			= 5;		// Audio input configuration.
-	Profile.audioThreshold[4]	= 0;
-	Profile.audioResync[4]		= 0;
-	Profile.audioCentering[4]	= 0;
+	Profile.audioSource			= AUDIO_SOURCE_LOCAL;
+	strcpy(Profile.rtlTcpHost, "127.0.0.1");
+	Profile.rtlTcpPort			= 1234;
+	Profile.rtlFrequencyHz		= 148000000;
+	Profile.rtlSampleRate		= 1024000;
+	Profile.rtlAudioSampleRate	= 48000;
+	Profile.rtlGainTenthsDb		= 0;
+	Profile.rtlFrequencyCorrectionPpm = 0;
+	Profile.rtlBandwidthHz		= 12000;
+	Profile.rtlAutomaticGain	= 1;
+	Profile.rtlDeviceIndex		= 0;
+	strcpy(Profile.rtlReceiverId, "rtl-sdr-standard");
+	memset(Profile.audioThreshold, 0, sizeof(Profile.audioThreshold));
+	memset(Profile.audioResync, 0, sizeof(Profile.audioResync));
+	memset(Profile.audioCentering, 0, sizeof(Profile.audioCentering));
 	SetAudioConfig(Profile.audioConfig); // Set default audio config
 
 	Profile.minimize_flg	= 0;	// Keep track of minimized state (user could exit while minimized)
@@ -668,6 +764,16 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 		return (FALSE);
 	}
 
+	OutputHealthInitialize(ghWnd);
+	OutputHealthConfigure(Profile.outputHealthAlertsEnabled,
+		Profile.outputHealthFailureThreshold);
+	OutputHealthSetEnabled(OUTPUT_HEALTH_SMTP,
+		(Profile.nMailOptions & MAIL_OPTION_ENABLE) != 0);
+	FtpInitialize();
+	NotificationManagerInitialize();
+	PublishingManagerInitialize();
+	DataOutputManagerInitialize();
+
 	if (hToolbar) TB_AutoSize(hToolbar);	// keep toolbar correct size!
 
 	acars.read_data();		// Load Acars data base files.
@@ -678,7 +784,8 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 
 	SetWindowPaneSize(WINDOW_SIZE);	// PH: Set Max_X_Client / iMaxWidth / NewLinePoint
 
-	sprintf(szWindowText[0], " %s", pdw_version);	// PH: Set version info in szWindowText buffer
+	BuildPdwWindowTitle(szWindowText[0], sizeof(szWindowText[0]));
+	SetNewWindowText("");
 
 	Get_Date_Time();
 	sprintf(szDebugStarted, "%s %s", szCurrentDate, szCurrentTime);
@@ -697,7 +804,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	}
 	else if (Profile.audioEnabled && !bCapturing)
 	{
-		if (Start_Capturing())
+		if (Start_Capturing() || Profile.audioSource != AUDIO_SOURCE_LOCAL)
 		{
 			SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL); // start timer.
 		}
@@ -712,6 +819,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 
 	while (GetMessage(&msg, NULL, 0, 0))
 	{
+		if (SettingsCenterIsDialogMessage(&msg)) continue;
 		if (!TranslateAccelerator(ghWnd, ghAccel, &msg))
 		{
 			TranslateMessage(&msg);
@@ -748,15 +856,15 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	time_t lTime;
 	struct tm *recTm; 
 
-	int g_xNew, g_yNew, g_scrollSize;
+	int g_xNew, g_yNew, g_scrollSize, statusHeight;
 	unsigned int g_min_col, g_max_col, g_min_row, g_max_row, g_index;
 	
 	extern bool bMode_IDLE;			// Set if no signal
 	extern bool bEmpty_Frame;		// Set if FLEX-Frame=EMTPY / ERMES-Batch=0
 
 	char szFile[MAX_PATH];
-	char filters_reload[64];		// PH: Buffer for reloading filters
-	char filters_temp[64];			// PH: Buffer for reloading filters
+	char filters_reload[128];		// PH: Buffer for reloading filters
+	char filters_temp[128];			// PH: Buffer for reloading filters
 
 	bool pane1=false;
 
@@ -766,6 +874,8 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	switch (uMsg)
 	{
 		case WM_TIMER: // Decode POCSAG/FLEX with comport or sound card.
+		if (wParam == SECOND_TIMER) FtpSchedulerTick();
+		if (wParam == PDW_TIMER) SignalSourceService();
 
 		if (!bPauseFlag)
 		{
@@ -873,6 +983,9 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		break;
 
 		case WM_NOTIFY:	// If we receive this message, need to get toolbar tooltip text
+		{
+		LRESULT themeDraw = PdwThemeHandleToolbarCustomDraw(lParam);
+		if (themeDraw) return themeDraw;
 
 		switch (((LPNMHDR)lParam)->code)
 		{
@@ -886,6 +999,15 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		}
 		DrawTitleBarGfx(hWnd);		// Draw pane1/pane2 title bars
 		break;
+		}
+
+		case WM_MEASUREITEM:
+			if (PdwThemeHandleMenuMeasure(lParam)) return TRUE;
+			break;
+
+		case WM_DRAWITEM:
+			if (PdwThemeHandleMenuDraw(lParam)) return TRUE;
+			break;
 		
 		case WM_CREATE:
 
@@ -913,6 +1035,8 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			Free_Common_Objects();	// Free any objects we got!
 			return(-1);
 		}
+		hStatusBar = PdwStatusBarCreate(hWnd, IDW_STATUS_BAR);
+		PdwThemeApplyToMainWindow(hWnd, hToolbar);
 
 		hfont = CreateFontIndirect(&Profile.fontInfo);
 
@@ -1135,7 +1259,13 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                
 				case IDM_VOLUME: // Run the PDW volume control (Note: runs windows mixer)
 
-					ShellExecute(ghWnd, NULL, "Sndvol32.exe","", "",SW_SHOWNORMAL);
+					// Current Windows uses SndVol.exe. Retain the legacy executable as
+					// a fallback for older systems that still provide Sndvol32.exe.
+					if ((INT_PTR) ShellExecute(ghWnd, NULL, "SndVol.exe", NULL, NULL,
+						SW_SHOWNORMAL) <= 32)
+					{
+						ShellExecute(ghWnd, NULL, "Sndvol32.exe", NULL, NULL, SW_SHOWNORMAL);
+					}
 
 				break;
 
@@ -1179,9 +1309,9 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 // HWi 
 				case IDM_RECORD:	// RAH
 
-				if (bCapturing)
+				if (bCapturing || SignalDiagnosticIsRecording())
 				{
-					MessageBox(ghWnd, "This option can't be used when using the soundcard!", "PDW Recording", MB_ICONWARNING);
+					SignalDiagnosticToggleRecording(hWnd);
 					break;
 				}
 
@@ -1222,8 +1352,9 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				{
 					if (GetEditSaveName(hWnd))
 					{
-						if (Need_Ext(Profile.edit_save_file))
-						strcat(Profile.edit_save_file,".txt");
+						if (Need_Ext(Profile.edit_save_file) &&
+							strlen(Profile.edit_save_file) + 4 < sizeof(Profile.edit_save_file))
+							strcat(Profile.edit_save_file,".txt");
 						SaveClipToDisk(Profile.edit_save_file);
 					}
 				}
@@ -1267,7 +1398,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 				case IDT_TOOLBAR_BTN1:
 				case IDM_COPY_SELECTION:
-				if (select_on)
+				if (select_on && selected)
 				{
 					select_on = 0;
 					selected  = 0;
@@ -1458,6 +1589,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					SetNewWindowText(" - PAUSED...");
 					bPauseFlag=true;
 				}
+				ToolbarRefreshState();
 				break;
 
 				case IDT_TOOLBAR_BTN8:
@@ -1468,7 +1600,61 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 				case IDM_MAIL:
 					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(MAIL_DLGBOX),
-												 hWnd, (DLGPROC) MailDlgProc, 0L);
+										 hWnd, (DLGPROC) MailDlgProc, 0L);
+				break;
+
+				case IDM_SETTINGS:
+					ShowSettingsCenter(hWnd, -1);
+				break;
+
+				case IDM_SETTINGS_SIGNAL_PAGE:
+					ShowSettingsCenter(hWnd, PDW_SETTINGS_SIGNAL);
+				break;
+
+				case IDM_CONFIG_BACKUP:
+					ShowConfigurationBackupDialog(hWnd);
+				break;
+
+				case IDM_THEME_SYSTEM:
+					PdwThemeSetMode(PDW_THEME_SYSTEM, hWnd);
+				break;
+
+				case IDM_THEME_LIGHT:
+					PdwThemeSetMode(PDW_THEME_LIGHT, hWnd);
+				break;
+
+				case IDM_THEME_DARK:
+					PdwThemeSetMode(PDW_THEME_DARK, hWnd);
+				break;
+
+				case IDM_FTP:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(FTP_DLGBOX),
+										 hWnd, (DLGPROC) FtpDlgProc, 0L);
+				break;
+
+				case IDM_APPRISE:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(APPRISE_DLGBOX),
+									 hWnd, (DLGPROC) AppriseDlgProc, 0L);
+				break;
+
+				case IDM_SIGNAL_SOURCES:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(SIGNAL_SOURCE_DLGBOX),
+									 hWnd, (DLGPROC) SignalSourceDlgProc, 0L);
+				break;
+
+				case IDM_PUBLISHING:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(PUBLISHING_DLGBOX),
+									 hWnd, (DLGPROC) PublishingDlgProc, 0L);
+				break;
+
+				case IDM_DATA_OUTPUTS:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(DATA_OUTPUTS_DLGBOX),
+									 hWnd, (DLGPROC) DataOutputsDlgProc, 0L);
+				break;
+
+				case IDM_OUTPUT_HEALTH:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(OUTPUT_HEALTH_DLGBOX),
+									 hWnd, (DLGPROC) OutputHealthDlgProc, 0L);
 				break;
 
 				case IDM_RELOAD:
@@ -1517,7 +1703,21 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 				case IDM_ABOUT:
 					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(ABOUTDLGBOX),
-												 hWnd, (DLGPROC) AboutDlgProc, 0L);
+										 hWnd, (DLGPROC) AboutDlgProc, 0L);
+				break;
+
+				case IDM_KEYBOARD_SHORTCUTS:
+					MessageBoxA(hWnd,
+						"Ctrl+,    Open or focus Settings\n"
+						"Ctrl+F    Manage filters\n"
+						"Ctrl+C    Copy selected decoded text\n"
+						"Ctrl+D    Clear monitor\n"
+						"Alt+Shift+R    Record signal\n"
+						"Alt+Shift+P    Play recording\n"
+						"F11       Switch focused pane\n"
+						"F12       Diagnostics\n"
+						"F1        User guide",
+						"PDW Keyboard Shortcuts", MB_OK | MB_ICONINFORMATION);
 				break;
 
 				case IDM_DEBUG:
@@ -1555,6 +1755,8 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				break;
 			}
 			set_menu_items();
+			ToolbarRefreshState();
+			PdwStatusBarRefresh(hStatusBar);
 		}
 		break;
 
@@ -1563,6 +1765,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		ShowContextMenu(HMENU_MAIN, ghWnd);
 
 		break ;
+
+		case WM_SETTINGCHANGE:
+			PdwThemeSystemSettingChanged(hWnd);
+			PdwStatusBarRefresh(hStatusBar);
+		break;
 
 		case WM_NCMOUSEMOVE:
 
@@ -1630,11 +1837,14 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		break;
 
-		case WM_MOVE:	
+		case WM_MOVE:
 		{
-			GetWindowRect(hWnd, &g_rect);
-			Profile.xPos = (INT) g_rect.left;
-			Profile.yPos = (INT) g_rect.top;
+			if (!IsIconic(hWnd) && !bTrayed)
+			{
+				GetWindowRect(hWnd, &g_rect);
+				Profile.xPos = (INT) g_rect.left;
+				Profile.yPos = (INT) g_rect.top;
+			}
 		}
 		break;
 
@@ -1660,13 +1870,47 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		case WM_GETMINMAXINFO:
 
-		if (bTrayed || lParam < 1000) break; // FIX: Don't handle WM_GETMINMAXINFO messages if trayed
+		if (bTrayed || !lParam) break; // Don't handle tracking limits while trayed
 
 		lpMMI=(LPMINMAXINFO)lParam;
 		lpMMI->ptMinTrackSize.x = GetSystemMetrics(SM_CXFULLSCREEN) / 2; // Window's Minimum X-size
 		lpMMI->ptMinTrackSize.y = GetSystemMetrics(SM_CYFULLSCREEN) / 3; // Window's Minimum Y-size
 
 		break;
+
+		case WM_DPICHANGED:
+		{
+			if (lParam)
+			{
+				RECT* suggested = reinterpret_cast<RECT*>(lParam);
+				SetWindowPos(hWnd, NULL, suggested->left, suggested->top,
+					suggested->right - suggested->left,
+					suggested->bottom - suggested->top,
+					SWP_NOZORDER | SWP_NOACTIVATE);
+			}
+			if (!bTrayed && cyChar && Pane1.hWnd && Pane2.hWnd)
+			{
+				RECT client;
+				GetClientRect(hWnd, &client);
+				SendMessage(hWnd, WM_SIZE,
+					IsZoomed(hWnd) ? SIZE_MAXIMIZED : SIZE_RESTORED,
+					MAKELPARAM(client.right, client.bottom));
+			}
+			return 0;
+		}
+
+		case WM_DISPLAYCHANGE:
+		{
+			if (!bTrayed && cyChar && Pane1.hWnd && Pane2.hWnd)
+			{
+				RECT client;
+				GetClientRect(hWnd, &client);
+				SendMessage(hWnd, WM_SIZE,
+					IsZoomed(hWnd) ? SIZE_MAXIMIZED : SIZE_RESTORED,
+					MAKELPARAM(client.right, client.bottom));
+			}
+			return 0;
+		}
 
 		case WM_SYSCOMMAND:
 
@@ -1683,6 +1927,9 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		case WM_SIZE:
 
 		if (bTrayed) break;		// FIX: Don't handle WM_SIZE messages if trayed
+		// Common Controls v6 can resize the toolbar while WM_CREATE is still
+		// running. Defer pane layout until the display font and both panes exist.
+		if (!cyChar || !Pane1.hWnd || !Pane2.hWnd) break;
 
 		if (wParam != SIZE_MINIMIZED)
 		{
@@ -1746,7 +1993,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			GetClientRect(hWnd, &g_rect);
 			g_xNew = g_rect.right - g_rect.left;   // Width of client area
 			g_yNew = g_rect.bottom - g_rect.top;   // Height of client area
-			g_yNew -= TOOLBAR_SIZE+WIN_DIVIDER_SIZE; // Allow space for tool bar etc
+			// Fix the command bar first. Pane placement below uses the same shared
+			// height and therefore cannot overlap icon labels during a relayout.
+			TB_AutoSize(hToolbar);
+			statusHeight = PdwStatusBarHeight(hWnd);
+			g_yNew -= TOOLBAR_SIZE+WIN_DIVIDER_SIZE+statusHeight; // Allow space for command and status bars
 
 			// The following code sets pane1 to n% percent of main win client area.
 			pane1Pos    = TOOLBAR_SIZE+1;
@@ -1773,65 +2024,93 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			SendMessage(Pane1.hWnd, WM_VSCROLL, SB_BOTTOM, 0L);
 			SendMessage(Pane2.hWnd, WM_VSCROLL, SB_BOTTOM, 0L);
 
-			TB_AutoSize(hToolbar);	// keep toolbar correct size!
+			GetClientRect(hWnd, &g_rect);
+			PdwStatusBarResize(hStatusBar, g_rect.right - g_rect.left,
+				g_rect.bottom - g_rect.top);
+			RedrawWindow(hWnd, NULL, NULL,
+				RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 		}
 		break;
 
 		case WM_DESTROY:
-
-		KillTimer(ghWnd, PDW_TIMER);
-		KillTimer(ghWnd, MINUTE_TIMER);
-		KillTimer(ghWnd, SECOND_TIMER);
-
-		if (pLogFile)    fclose(pLogFile);
-		if (pFilterFile) fclose(pFilterFile);
-		if (pStatFile)   fclose(pStatFile);
-
-		if (Profile.minimize_flg)	// Make sure PDW doesn't open minimized next time.
 		{
-			Profile.xPos = 0;
-			Profile.yPos = 0;
+			KillTimer(ghWnd, PDW_TIMER);
+			KillTimer(ghWnd, MINUTE_TIMER);
+			KillTimer(ghWnd, SECOND_TIMER);
+			if (SettingsCenterWindow()) DestroyWindow(SettingsCenterWindow());
 
-			if (Profile.maximize_flg)
+			// Stop every producer before queues, decoder buffers, or drawing state are released.
+			if (nDriverLoaded) UnloadDriver();
+			if (bCapturing) Stop_Capturing();
+			if (bPlayback) Stop_Playback();
+			if (bRecording) Stop_Recording();
+
+			// Stop background destinations while their configuration and shared state still exist.
+			DataOutputManagerShutdown();
+			PublishingManagerShutdown();
+			NotificationManagerShutdown();
+			FtpShutdown();
+			MailInit(NULL, NULL, NULL, NULL, NULL, NULL, 0, 0);
+			OutputHealthShutdown();
+
+			if (pLogFile)    { fclose(pLogFile);    pLogFile = NULL; }
+			if (pFilterFile) { fclose(pFilterFile); pFilterFile = NULL; }
+			if (pStatFile)   { fclose(pStatFile);   pStatFile = NULL; }
+
+			if (Profile.minimize_flg)	// Make sure PDW doesn't open minimized next time.
 			{
-				Profile.xSize = 593;
-				Profile.ySize = 442;
+				Profile.xPos = 0;
+				Profile.yPos = 0;
+
+				if (Profile.maximize_flg)
+				{
+					Profile.xSize = 593;
+					Profile.ySize = 442;
+				}
 			}
+			if (!ConfigurationRestoreCompleted()) WriteSettings();
+
+			if (Profile.SystemTray) SystemTrayIcon(true);	// Remove PDW-icon from systemtray
+			if (!ConfigurationRestoreCompleted() && bUpdateFilters)
+				WriteFilters(&Profile, 0);	// Save FILTERS.INI
+
+			// A misbehaving third-party serial driver may ignore cancellation. In that rare
+			// case leave process-owned decoder/UI memory intact for the OS to reclaim rather
+			// than freeing it under a still-returning worker.
+			if (!nDriverLoaded)
+			{
+				PdwThemeShutdown();
+				Free_Common_Objects();
+				free_lang_tables();
+				acars.free_data();
+			}
+
+//			if (em.symbol_fp) fclose(em.symbol_fp);	// ermes debug data file.
+			if (pd_raw_fp) { fclose(pd_raw_fp); pd_raw_fp = NULL; }	// pocsag/flex debug data file.
+
+			PostQuitMessage(0);
+			break;
 		}
-		WriteSettings();
 
-		if (Profile.SystemTray) SystemTrayIcon(true);	// Remove PDW-icon from systemtray
-		if (bUpdateFilters) WriteFilters(&Profile, 0);	// Save FILTERS.INI
-
-		// Free all drawing objects(gfx.cpp)
-		// Free all tool bar images.
-		// Free all message buffers.
-		Free_Common_Objects();
-		free_lang_tables();	// Free language tables.
-		acars.free_data();	// Free acars database info.
-
-		if (nDriverLoaded)	// HWi
+		case OUTPUT_HEALTH_ALERT_MESSAGE:
 		{
-			UnloadDriver();
+			if (Profile.outputHealthAlertsEnabled && OutputHealthGetPendingAlertCount())
+			{
+				FLASHWINFO flashInfo = {};
+				flashInfo.cbSize = sizeof(flashInfo);
+				flashInfo.hwnd = hWnd;
+				flashInfo.dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG;
+				flashInfo.uCount = 3;
+				flashInfo.dwTimeout = 0;
+				FlashWindowEx(&flashInfo);
+				MessageBeep(MB_ICONWARNING);
+			}
+			break;
 		}
-
-		// HWi, stop Mail thread.....
-		MailInit(NULL, NULL, NULL, NULL, NULL, NULL, 0, 0);
-
-		if (bCapturing)	Stop_Capturing();		// Reset and close audio device.
-		if (bPlayback)	Stop_Playback();		// RAH: stop playback
-		if (bRecording) Stop_Recording();		// HWi Added, seems to be missing
-
-//		if (em.symbol_fp) fclose(em.symbol_fp);	// ermes debug data file.
-		if (pd_raw_fp)    fclose(pd_raw_fp);	// pocsag/flex debug data file.
-
-		PostQuitMessage(0);
-
-		break;
 
 		case WM_CLOSE:
 
-		if (Profile.confirmExit)
+		if (Profile.confirmExit && !ConfigurationRestoreCompleted())
 		{
 			if (MessageBox(ghWnd, "Exit PDW - Sure?", "PDW Exit",
 				           MB_ICONQUESTION | MB_OKCANCEL) == IDCANCEL) break;
@@ -2447,9 +2726,21 @@ void CopyToClipboard(PaneStruct *pane, UINT min_col, UINT max_col, UINT min_row,
 		return;
 	}
 
-	num_lines = (max_col - min_col + 1);
+	if (max_col > (UINT)LINE_SIZE) max_col = (UINT)LINE_SIZE;
+	if (min_col > max_col) min_col = max_col;
+	const UINT rowsAvailable = pane->buff_lines > (UINT)pane->iVscrollPos ?
+		pane->buff_lines - (UINT)pane->iVscrollPos : 0;
+	if (rowsAvailable == 0)
+	{
+		CloseClipboard();
+		return;
+	}
+	if (max_row >= rowsAvailable) max_row = rowsAvailable - 1;
+	if (min_row > max_row) min_row = max_row;
+	num_lines = (max_row - min_row + 1);
 
-	if (!(hClipBuffer = GlobalAlloc(GMEM_DDESHARE, num_lines * (LINE_SIZE+3))))
+	if (!(hClipBuffer = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE,
+		num_lines * (LINE_SIZE+3) + 1)))
 	{
 		MessageBox(ghWnd,"Could not get Clipboard Memory!", "PDW Clipboard",MB_ICONWARNING);
 		CloseClipboard();
@@ -2574,7 +2865,7 @@ void PanePaint(PaneStruct *pane)
 
 DWORD GetColorRGB(BYTE color)
 {
-	DWORD rgb;
+	DWORD rgb = Profile.color_message;
 
 	switch (color)
 	{
@@ -2786,7 +3077,9 @@ VOID NEAR GoModalDialogBoxParam(HINSTANCE hInstance, LPCSTR lpszTemplate, HWND h
 	DLGPROC  lpProcInstance;
 
 	lpProcInstance = (DLGPROC) MakeProcInstance((FARPROC) lpDlgProc,hInstance);
+	PdwThemeBeginDialogHook();
 	DialogBoxParam(hInstance, lpszTemplate, hWnd, lpProcInstance, lParam);
+	PdwThemeEndDialogHook();
 	FreeProcInstance((FARPROC) lpProcInstance);
 
 	return;
@@ -3166,7 +3459,8 @@ BOOL FAR PASCAL LogFileDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 					SetFocus(GetDlgItem(hDlg, IDC_LOGFILE));
 					return (FALSE);
 				}
-				else if (Need_Ext(szFileLog)) strcat(szFileLog,".log");
+				else if (Need_Ext(szFileLog) && strlen(szFileLog) + 4 < sizeof(szFileLog))
+					strcat(szFileLog,".log");
 
 				if (stricmp(szFileLog, Profile.filterfile) == 0)
 				{
@@ -3274,10 +3568,10 @@ BOOL FAR PASCAL CustomAudioDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 		SendDlgItemMessage(hDlg, IDC_RESYNC1600,    CB_SETCURSEL, (WPARAM) Profile.audioResync[INDEX1600], 0L);
 		SendDlgItemMessage(hDlg, IDC_RESYNC2400,    CB_SETCURSEL, (WPARAM) Profile.audioResync[INDEX2400], 0L);
 
-		SendDlgItemMessage(hDlg, IDC_CENTERING512,  CB_SETCURSEL, (WPARAM) Profile.audioResync[INDEX512],  0L);
-		SendDlgItemMessage(hDlg, IDC_CENTERING1200, CB_SETCURSEL, (WPARAM) Profile.audioResync[INDEX1200], 0L);
-		SendDlgItemMessage(hDlg, IDC_CENTERING1600, CB_SETCURSEL, (WPARAM) Profile.audioResync[INDEX1600], 0L);
-		SendDlgItemMessage(hDlg, IDC_CENTERING2400, CB_SETCURSEL, (WPARAM) Profile.audioResync[INDEX2400], 0L);
+		SendDlgItemMessage(hDlg, IDC_CENTERING512,  CB_SETCURSEL, (WPARAM) Profile.audioCentering[INDEX512],  0L);
+		SendDlgItemMessage(hDlg, IDC_CENTERING1200, CB_SETCURSEL, (WPARAM) Profile.audioCentering[INDEX1200], 0L);
+		SendDlgItemMessage(hDlg, IDC_CENTERING1600, CB_SETCURSEL, (WPARAM) Profile.audioCentering[INDEX1600], 0L);
+		SendDlgItemMessage(hDlg, IDC_CENTERING2400, CB_SETCURSEL, (WPARAM) Profile.audioCentering[INDEX2400], 0L);
 
 		return (TRUE);
 
@@ -3689,7 +3983,10 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 						return (FALSE);
 					}
 					sscanf(temp, "%x", &Profile.comPortAddr);
-					Profile.comPortIRQ = irqs[value];
+					int irqSelection = (int)SendDlgItemMessage(hDlg, IDC_COMIRQ,
+						CB_GETCURSEL, 0, 0L);
+					if (irqSelection < 0 || irqSelection > 8) irqSelection = 0;
+					Profile.comPortIRQ = irqs[irqSelection];
 				}
 			}
 			else	// OS => 2000
@@ -3727,7 +4024,6 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			if (Profile.comPortRS232) Profile.comPortRS232 += SendDlgItemMessage(hDlg, IDC_RS232MODE, CB_GETCURSEL, 0, 0L);
 			Profile.audioEnabled   = IsDlgButtonChecked(hDlg, IDC_AUDIOENABLE);
 			Profile.audioDevice    = SendDlgItemMessage(hDlg, IDC_AUDIODEVICES, CB_GETCURSEL, 0, 0L);
-
 			if (Profile.audioDevice != old_device)
 			{
 				if (bCapturing)
@@ -5001,7 +5297,7 @@ LRESULT FAR PASCAL MOBITEXColorWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		SetTextColor(hDC, tmp_biterrors);
 		TextOut(hDC, 0, 0, "Q4E", 3);
 		SetTextColor(hDC, tmp_message);
-		TextOut(hDC, 0, 0, "#VX·&1$H? Z", 11);
+		TextOut(hDC, 0, 0, "#VXÂ·&1$H? Z", 11);
 
 		// Next line
 		MoveToEx(hDC, 0, tmp_cyChar*3, &lpPoint);
@@ -5853,7 +6149,10 @@ BOOL FAR PASCAL GeneralOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARA
 			{
 				if (SHGetPathFromIDList(pidl, tmp_path))
 				{
-					if (tmp_path[strlen(tmp_path)-1] != '\\') strcat(tmp_path, "\\");
+					const size_t pathLength = strlen(tmp_path);
+					if (pathLength > 0 && pathLength + 2 <= sizeof(tmp_path) &&
+						tmp_path[pathLength-1] != '\\')
+						strcat(tmp_path, "\\");
 					SetDlgItemText(hDlg, IDC_LOGFILEPATH, tmp_path);
 				}
 
@@ -5925,7 +6224,10 @@ BOOL FAR PASCAL GeneralOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARA
 						return (FALSE);
 					}
 				}
-				Profile.BlockDuplicate += SendDlgItemMessage(hDlg, IDC_BLOCKDUPOPTION, CB_GETCURSEL, 0, 0L);
+				int duplicateOption = (int)SendDlgItemMessage(hDlg, IDC_BLOCKDUPOPTION,
+					CB_GETCURSEL, 0, 0L);
+				if (duplicateOption == CB_ERR) duplicateOption = 0;
+				Profile.BlockDuplicate += duplicateOption;
 				Profile.BlockDuplicate += IsDlgButtonChecked(hDlg, IDC_BLOCKEDTXT) ? 4 : 0;
 				Profile.BlockDuplicate += GetDlgItemInt(hDlg, IDC_BLOCKDUPTIMER, NULL, FALSE) << 4;
 			}
@@ -5952,7 +6254,7 @@ BOOL FAR PASCAL GeneralOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARA
 
 BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	int i, j, cursel, nextsel, lastsel, state, mode=0;
+	int i, j, cursel, nextsel, lastsel=0, state, mode=0;
 	char tbuf[100];
 //								 PAGING		 MOBITEX	 ACARS
 	char columns[8][3][10] = {	"-",		"-",		"-",
@@ -5984,6 +6286,7 @@ BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 		CheckDlgButton(hDlg, IDC_FGM_LOGGING,        Profile.FlexGroupMode & FLEXGROUPMODE_LOGGING);
 		CheckDlgButton(hDlg, IDC_FGM_COMBINE,        Profile.FlexGroupMode & FLEXGROUPMODE_COMBINE);
 		CheckDlgButton(hDlg, IDC_FGM_HIDEGROUPCODES, Profile.FlexGroupMode & FLEXGROUPMODE_HIDEGROUPCODES);
+		CheckDlgButton(hDlg, IDC_FLEX_REASSEMBLY,    Profile.flexFragmentReassemblyEnabled);
 
 		if (Profile.monitor_paging)
 		{
@@ -5995,6 +6298,7 @@ BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_LOGGING),        Profile.FlexGroupMode ? true : false);
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_COMBINE),        Profile.FlexGroupMode ? true : false);
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_HIDEGROUPCODES), Profile.FlexGroupMode ? true : false);
+			EnableWindow(GetDlgItem(hDlg, IDC_FLEX_REASSEMBLY),    Profile.FlexGroupMode ? false : true);
 		}
 
 		return (TRUE);
@@ -6055,6 +6359,7 @@ BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_LOGGING),        state ? true : false);
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_COMBINE),        state ? true : false);
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_HIDEGROUPCODES), state ? true : false);
+			EnableWindow(GetDlgItem(hDlg, IDC_FLEX_REASSEMBLY),    state ? false : true);
 
 			break;
 
@@ -6103,6 +6408,11 @@ BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 				Profile.FlexGroupMode += IsDlgButtonChecked(hDlg, IDC_FGM_LOGGING) ? FLEXGROUPMODE_LOGGING : 0;
 				Profile.FlexGroupMode += IsDlgButtonChecked(hDlg, IDC_FGM_COMBINE) ? FLEXGROUPMODE_COMBINE : 0;
 				Profile.FlexGroupMode += IsDlgButtonChecked(hDlg, IDC_FGM_HIDEGROUPCODES) ? FLEXGROUPMODE_HIDEGROUPCODES : 0;
+			}
+			Profile.flexFragmentReassemblyEnabled = IsDlgButtonChecked(hDlg, IDC_FLEX_REASSEMBLY);
+			if (!Profile.flexFragmentReassemblyEnabled || Profile.FlexGroupMode)
+			{
+				flex_fragment_reassembly_reset();
 			}
 
 			WriteSettings();
@@ -6362,11 +6672,14 @@ void BuildFilterString(char *temp_str, FILTER filter)
 	strcat(temp_str, " ");
 	strcat(temp_str, filter.capcode[0] ? filter.capcode : "         ");
 
-	if ((filter.type == MOBITEX_FILTER) && filter.capcode[strlen(filter.capcode)-1] == 'X')
+	const size_t filterCapcodeLength = strlen(filter.capcode);
+	if ((filter.type == MOBITEX_FILTER) && filterCapcodeLength >= 1 &&
+		filter.capcode[filterCapcodeLength-1] == 'X')
 	{
 		temp_str[strlen(temp_str)-2] = '\0';
 	}
-	else if ((filter.type == POCSAG_FILTER) && filter.capcode[strlen(filter.capcode)-2] == '-')
+	else if ((filter.type == POCSAG_FILTER) && filterCapcodeLength >= 2 &&
+		filter.capcode[filterCapcodeLength-2] == '-')
 	{
 		temp_str[strlen(temp_str)-2] = '\0';
 	}
@@ -6399,7 +6712,8 @@ void BuildFilterString(char *temp_str, FILTER filter)
 		}
 		else
 		{
-			strcat(temp_str, filter.wave_number == -1 ? "NoSound" : wave_names[filter.wave_number]);
+			strcat(temp_str, (filter.wave_number < 0 || filter.wave_number > 10) ?
+				"NoSound" : wave_names[filter.wave_number]);
 		}
 	}
 
@@ -6428,6 +6742,7 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 	static HFONT hf ;
 
 	RECT rect;
+	MONITORINFO monitorInfo;
 	DWORD  dwStyle;
 	HBRUSH hb ;
 	UINT   idCtl;				// control identifier 
@@ -6492,10 +6807,26 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		hFilterDlg = hDlg;
 
-		// Get the screen sizes
-		x = GetSystemMetrics(SM_CXMAXIMIZED) ;
-		y = GetSystemMetrics(SM_CYMAXIMIZED) ;
-		MoveWindow(hDlg, 76, 69, x-84, y-77, TRUE) ;
+		// Keep the filter manager inside the active monitor's working area.
+		// Cap it on large displays so it remains focused instead of becoming an
+		// edge-to-edge wall of empty space.
+		monitorInfo.cbSize = sizeof(monitorInfo);
+		GetMonitorInfo(MonitorFromWindow(hDlg, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+		{
+			int workWidth = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+			int workHeight = monitorInfo.rcWork.bottom - monitorInfo.rcWork.top;
+			UINT dpi = GetDpiForWindow(hDlg);
+			int maxWidth = MulDiv(1600, dpi ? dpi : 96, 96);
+			int maxHeight = MulDiv(900, dpi ? dpi : 96, 96);
+			x = min(maxWidth, max(480, workWidth - 48));
+			y = min(maxHeight, max(360, workHeight - 48));
+			x = min(x, workWidth);
+			y = min(y, workHeight);
+			MoveWindow(hDlg,
+				monitorInfo.rcWork.left + (workWidth - x) / 2,
+				monitorInfo.rcWork.top + (workHeight - y) / 2,
+				x, y, TRUE);
+		}
 
 		// Get the size of the Filter Window
 		GetClientRect(hDlg, &rect) ;
@@ -7266,7 +7597,8 @@ BOOL FAR PASCAL FilterOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 				}
 				else
 				{
-					if (Need_Ext(szFileFilter)) strcat(szFileFilter,".flt");
+					if (Need_Ext(szFileFilter) && strlen(szFileFilter) + 4 < sizeof(szFileFilter))
+						strcat(szFileFilter,".flt");
 					if (!FileExists(szLogPathName)) CreateDirectory(szLogPathName, NULL);
 				}
 
@@ -7381,7 +7713,7 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 									  "Light Cyan","Blue",     "Magenta", "Sea Green", "Pink",
 									  "Ice Blue",  "Turqoise", "Don't Change"};
 
-	static int capcode_len[7] = { 0, Profile.FlexGroupMode ? 7 : 9, 7, 0, 7, 6, 7 };
+	int capcode_len[7] = { 0, Profile.FlexGroupMode ? 7 : 9, 7, 0, 7, 6, 7 };
 
 	int i, index=-1, str_len, pos, idcControl=IDC_SEPFILTERFILE1;
 	int capcode=0, text=0, captxt=0, label=0;
@@ -7822,7 +8154,7 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 
 		if (filter.type == MOBITEX_FILTER)
 		{
-			switch (filter.capcode[strlen(filter.capcode)-2])
+			switch (strlen(filter.capcode) >= 2 ? filter.capcode[strlen(filter.capcode)-2] : 0)
 			{
 				case 'R' :
 				CheckDlgButton(hDlg, IDC_FILTERRXTXMAN, BST_UNCHECKED);
@@ -7845,7 +8177,7 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 			SendDlgItemMessage(hDlg, IDC_FILTERFNU, CB_ADDSTRING, 0, (LPARAM)(LPCTSTR) "3");
 			SendDlgItemMessage(hDlg, IDC_FILTERFNU, CB_ADDSTRING, 0, (LPARAM)(LPCTSTR) "4");
 
-			if (filter.capcode[strlen(filter.capcode)-2] == '-')	// Contains function number
+			if (strlen(filter.capcode) >= 2 && filter.capcode[strlen(filter.capcode)-2] == '-')	// Contains function number
 			{
 				 SendDlgItemMessage(hDlg, IDC_FILTERFNU, CB_SETCURSEL, (WPARAM) atoi(&filter.capcode[8]), 0L);
 			}
@@ -8263,7 +8595,8 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 						// Convert 9-digit short addresses to 7-digits
 						if ((strlen(filter.capcode) == 9) && memcmp(filter.capcode, "00", 2) == 0)
 						{
-							if (CompareCapcodes(filter.capcode, "002101249") < 0) memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode));
+							if (CompareCapcodes(filter.capcode, "002101249") < 0)
+								memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode)-1);
 //							if (atoi(filter.capcode) < 2101249) memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode));
 						}
 					}
@@ -8508,7 +8841,9 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 								{
 									if (strcmp(tmp_sepfile[j], "Don't change"))
 									{
-										if (Need_Ext(tmp_sepfile[j]) && tmp_sepfile[j][0]) strcat(tmp_sepfile[j],".txt");
+										if (Need_Ext(tmp_sepfile[j]) && tmp_sepfile[j][0] &&
+											strlen(tmp_sepfile[j]) + 4 <= FILTER_FILE_LEN)
+											strcat(tmp_sepfile[j],".txt");
 										strcpy(Profile.filters[index].sep_filterfile[j], tmp_sepfile[j]);
 									}
 								}
@@ -8709,7 +9044,13 @@ BOOL FAR PASCAL FilterCheckDuplicateDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam,
 		}
 		else
 		{
-			if ((strstr(szFilter1, Profile.filters[index1].label) == 0)   ||
+			if (index1 < 0 || index2 < 0 ||
+				index1 >= (int)Profile.filters.size() ||
+				index2 >= (int)Profile.filters.size())
+			{
+				bDuplicate=false;
+			}
+			else if ((strstr(szFilter1, Profile.filters[index1].label) == 0)   ||
 				(strstr(szFilter2, Profile.filters[index2].label) == 0)   ||
 				(strstr(szFilter1, Profile.filters[index1].capcode) == 0) ||
 				(strstr(szFilter2, Profile.filters[index2].capcode) == 0))
@@ -9316,7 +9657,8 @@ BOOL FAR PASCAL MonStatDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 				}
 				else
 				{
-					if (Need_Ext(szStatFile)) strcat(szStatFile,".st");
+					if (Need_Ext(szStatFile) && strlen(szStatFile) + 3 < sizeof(szStatFile))
+						strcat(szStatFile,".st");
 
 					if ((pFileLog = fopen(szStatFile, "a")) == NULL)
 					{
@@ -9364,7 +9706,7 @@ UINT CALLBACK CenterOpenDlgBox(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 
 BOOL CenterWindow(HWND hWnd)
 {
-	RECT rRect, rParentRect;
+	RECT rRect, rParentRect, rWorkArea;
 	HWND hParentWnd;
 	int  wParent, hParent, xNew, yNew, w, h;
 
@@ -9382,19 +9724,25 @@ BOOL CenterWindow(HWND hWnd)
 	xNew = wParent/2 - w/2 + rParentRect.left;
 	yNew = hParent/2 - h/2 + rParentRect.top;
 
-	xNew = max(xNew, 0);
-	yNew = max(yNew, 0);
-
-	// Get the limits of the 'workarea' (exclude tray area for WIN95)
-	if (!SystemParametersInfo(SPI_GETWORKAREA, sizeof(RECT), &rParentRect, 0))
+	// Keep dialogs on the same monitor as their owner. The older global work
+	// area calculation could move secondary-monitor dialogs to the primary
+	// screen and could produce negative coordinates for an oversized dialog.
+	MONITORINFO monitorInfo = {};
+	monitorInfo.cbSize = sizeof(monitorInfo);
+	const HMONITOR monitor = MonitorFromWindow(hParentWnd, MONITOR_DEFAULTTONEAREST);
+	if (monitor && GetMonitorInfo(monitor, &monitorInfo))
 	{
-		rParentRect.left   = rParentRect.top = 0;
-		rParentRect.right  = GetSystemMetrics(SM_CXSCREEN);
-		rParentRect.bottom = GetSystemMetrics(SM_CYSCREEN);
+		rWorkArea = monitorInfo.rcWork;
+	}
+	else if (!SystemParametersInfo(SPI_GETWORKAREA, sizeof(RECT), &rWorkArea, 0))
+	{
+		rWorkArea.left   = rWorkArea.top = 0;
+		rWorkArea.right  = GetSystemMetrics(SM_CXSCREEN);
+		rWorkArea.bottom = GetSystemMetrics(SM_CYSCREEN);
 	}
 
-	xNew = min(xNew, rParentRect.right  - w);
-	yNew = min(yNew, rParentRect.bottom - h);
+	xNew = max(rWorkArea.left, min(xNew, max(rWorkArea.left, rWorkArea.right - w)));
+	yNew = max(rWorkArea.top, min(yNew, max(rWorkArea.top, rWorkArea.bottom - h)));
 
 	return(SetWindowPos(hWnd, NULL, xNew, yNew, 0, 0, SWP_NOSIZE | SWP_NOZORDER));
 } // end of CenterWindow
@@ -9402,7 +9750,7 @@ BOOL CenterWindow(HWND hWnd)
 
 BOOL ErrorMessageBox(LPCTSTR lpszText, LPCTSTR lpszTitle, LPCTSTR lpszFile, INT Line)
 {
-	#define ERROR_BUFFER_SIZE 512
+	#define ERROR_BUFFER_SIZE 2048
 
 	static TCHAR Format[] =
 	TEXT("%s\n\n"                                 )
@@ -9425,7 +9773,13 @@ BOOL ErrorMessageBox(LPCTSTR lpszText, LPCTSTR lpszTitle, LPCTSTR lpszFile, INT 
 
 	//-- allocate the message box buffer
 	hMessageBoxBuffer  = LocalAlloc(LMEM_FIXED, ERROR_BUFFER_SIZE);
+	if (!hMessageBoxBuffer) return (FALSE);
 	lpMessageBoxBuffer = LocalLock(hMessageBoxBuffer);
+	if (!lpMessageBoxBuffer)
+	{
+		LocalFree(hMessageBoxBuffer);
+		return (FALSE);
+	}
 
 	//-- get the system error and system error message
 	dwGetLastError = GetLastError();
@@ -9457,12 +9811,18 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 {
 	TCHAR ValBuf[16];
 	TCHAR color_str[13];
+	TCHAR ftpFile[MAX_PATH];
+	TCHAR ftpFileKey[32];
 	int red, green, blue;
 
 	pProfile->xPos  = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("xPos"), 0, lpszIniPathName);
 	pProfile->yPos  = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("yPos"), 0, lpszIniPathName);
 	pProfile->xSize = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("xSize"), Profile.xSize, lpszIniPathName);
 	pProfile->ySize = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("ySize"), Profile.ySize, lpszIniPathName);
+	GetPrivateProfileString(lpszAppTitle, TEXT("WindowTitle"), "", pProfile->windowTitle, sizeof(pProfile->windowTitle), lpszIniPathName);
+	pProfile->uiTheme = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Theme"), Profile.uiTheme, lpszIniPathName);
+	if (pProfile->uiTheme < PDW_THEME_SYSTEM || pProfile->uiTheme > PDW_THEME_DARK)
+		pProfile->uiTheme = PDW_THEME_SYSTEM;
 
 	pProfile->maximize_flg		= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Maximize"), Profile.maximize_flg, lpszIniPathName);
 	Profile.maximize_tmp		= Profile.maximize_flg;
@@ -9593,6 +9953,18 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->audioDevice				= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("AudioDevice"), pProfile->audioDevice, lpszIniPathName);
 	pProfile->audioSampleRate			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("AudioSampleRate"), pProfile->audioSampleRate, lpszIniPathName);
 	pProfile->audioConfig				= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("AudioConfiguration"), pProfile->audioConfig, lpszIniPathName);
+	pProfile->audioSource				= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("AudioSource"), pProfile->audioSource, lpszIniPathName);
+	GetPrivateProfileString(lpszAppTitle, TEXT("RtlTcpHost"), "127.0.0.1", pProfile->rtlTcpHost, sizeof(pProfile->rtlTcpHost), lpszIniPathName);
+	pProfile->rtlTcpPort				= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlTcpPort"), pProfile->rtlTcpPort, lpszIniPathName);
+	pProfile->rtlFrequencyHz			= (unsigned int) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlFrequencyHz"), pProfile->rtlFrequencyHz, lpszIniPathName);
+	pProfile->rtlSampleRate			= (unsigned int) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlSampleRate"), pProfile->rtlSampleRate, lpszIniPathName);
+	pProfile->rtlAudioSampleRate		= (unsigned int) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlAudioSampleRate"), pProfile->rtlAudioSampleRate, lpszIniPathName);
+	pProfile->rtlGainTenthsDb			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlGainTenthsDb"), pProfile->rtlGainTenthsDb, lpszIniPathName);
+	pProfile->rtlFrequencyCorrectionPpm = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlFrequencyCorrectionPpm"), pProfile->rtlFrequencyCorrectionPpm, lpszIniPathName);
+	pProfile->rtlBandwidthHz			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlBandwidthHz"), pProfile->rtlBandwidthHz, lpszIniPathName);
+	pProfile->rtlAutomaticGain			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlAutomaticGain"), pProfile->rtlAutomaticGain, lpszIniPathName);
+	pProfile->rtlDeviceIndex			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlDeviceIndex"), pProfile->rtlDeviceIndex, lpszIniPathName);
+	GetPrivateProfileString(lpszAppTitle, TEXT("RtlReceiverId"), "rtl-sdr-standard", pProfile->rtlReceiverId, sizeof(pProfile->rtlReceiverId), lpszIniPathName);
 	pProfile->audioThreshold[INDEX512]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Threshold512"), pProfile->audioThreshold[INDEX512], lpszIniPathName);
 	pProfile->audioThreshold[INDEX1200]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Threshold1200"), pProfile->audioThreshold[INDEX1200], lpszIniPathName);
 	pProfile->audioThreshold[INDEX1600]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Threshold1600"), pProfile->audioThreshold[INDEX1600], lpszIniPathName);
@@ -9605,6 +9977,27 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->audioCentering[INDEX1200]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Centering1200"), pProfile->audioCentering[INDEX1200], lpszIniPathName);
 	pProfile->audioCentering[INDEX1600]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Centering1600"), pProfile->audioCentering[INDEX1600], lpszIniPathName);
 	pProfile->audioCentering[INDEX2400]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Centering2400"), pProfile->audioCentering[INDEX2400], lpszIniPathName);
+	if (pProfile->audioConfig < 0 || pProfile->audioConfig > 13)
+		pProfile->audioConfig = 5;
+	if (pProfile->audioSource < AUDIO_SOURCE_LOCAL || pProfile->audioSource > AUDIO_SOURCE_RTL_SDR)
+		pProfile->audioSource = AUDIO_SOURCE_LOCAL;
+	if (pProfile->rtlTcpPort < 1 || pProfile->rtlTcpPort > 65535) pProfile->rtlTcpPort = 1234;
+	if (pProfile->rtlFrequencyHz < 100000 || pProfile->rtlFrequencyHz > 2000000000u) pProfile->rtlFrequencyHz = 148000000;
+	if (pProfile->rtlSampleRate < 240000 || pProfile->rtlSampleRate > 3200000) pProfile->rtlSampleRate = 1024000;
+	if (pProfile->rtlAudioSampleRate < 8000 || pProfile->rtlAudioSampleRate > 192000 ||
+		pProfile->rtlAudioSampleRate > pProfile->rtlSampleRate) pProfile->rtlAudioSampleRate = 48000;
+	if (pProfile->rtlDeviceIndex < 0) pProfile->rtlDeviceIndex = 0;
+	if (pProfile->rtlBandwidthHz < 5000 || pProfile->rtlBandwidthHz > 25000) pProfile->rtlBandwidthHz = 12000;
+	if (!pProfile->rtlReceiverId[0]) strcpy(pProfile->rtlReceiverId, "rtl-sdr-standard");
+	for (int audioIndex = 0; audioIndex < AUDIO_CUSTOM_RATE_COUNT; audioIndex++)
+	{
+		if (pProfile->audioThreshold[audioIndex] < 0) pProfile->audioThreshold[audioIndex] = 0;
+		if (pProfile->audioThreshold[audioIndex] > 9) pProfile->audioThreshold[audioIndex] = 9;
+		if (pProfile->audioResync[audioIndex] < 0) pProfile->audioResync[audioIndex] = 0;
+		if (pProfile->audioResync[audioIndex] > 9) pProfile->audioResync[audioIndex] = 9;
+		if (pProfile->audioCentering[audioIndex] < 0) pProfile->audioCentering[audioIndex] = 0;
+		if (pProfile->audioCentering[audioIndex] > 9) pProfile->audioCentering[audioIndex] = 9;
+	}
 
 	SetAudioConfig(pProfile->audioConfig);	// set audio input configuration
 
@@ -9620,6 +10013,12 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->ScreenColumns[4]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("ScreenCol5"), 5, lpszIniPathName);
 	pProfile->ScreenColumns[5]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("ScreenCol6"), 6, lpszIniPathName);
 	pProfile->ScreenColumns[6]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("ScreenCol7"), 7, lpszIniPathName);
+	for (int screenColumn = 0; screenColumn < 7; ++screenColumn)
+	{
+		if (pProfile->ScreenColumns[screenColumn] < 0 ||
+			pProfile->ScreenColumns[screenColumn] > 7)
+			pProfile->ScreenColumns[screenColumn] = 0;
+	}
 
 	pProfile->stat_file_enabled = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("StatFileEnabled"), pProfile->stat_file_enabled, lpszIniPathName);
 
@@ -9641,6 +10040,8 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->BlockDuplicate= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("BlockDuplicate"), pProfile->BlockDuplicate, lpszIniPathName);
 	pProfile->FlexTIME		= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("FlexTIME"), pProfile->FlexTIME, lpszIniPathName);
 	pProfile->FlexGroupMode	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("FlexGroupMode"), pProfile->FlexGroupMode, lpszIniPathName);
+	pProfile->flexFragmentReassemblyEnabled = (INT) GetPrivateProfileInt(lpszAppTitle,
+		TEXT("FlexFragmentReassembly"), pProfile->flexFragmentReassemblyEnabled, lpszIniPathName);
 	pProfile->SystemTray	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("SystemTray"), pProfile->SystemTray, lpszIniPathName);
 	pProfile->SystemTrayRestore = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("SystemTrayRestore"), pProfile->SystemTrayRestore, lpszIniPathName);
 
@@ -9659,6 +10060,98 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	
 	MailInit(Profile.szMailHost, Profile.szMailHeloDomain, Profile.szMailFrom, Profile.szMailTo, Profile.szMailUser, Profile.szMailPassword, Profile.iMailPort, Profile.nMailOptions);
 
+	/***** Get Apprise settings. Endpoint and credentials stay in Credential Manager. *****/
+
+	pProfile->appriseEnabled = (INT) GetPrivateProfileInt("Apprise", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->appriseIncludeMessageText = (INT) GetPrivateProfileInt("Apprise", TEXT("IncludeMessageText"), 0, lpszIniPathName);
+
+	/***** Get FTP upload settings *****/
+
+	pProfile->ftpEnabled = (INT) GetPrivateProfileInt("FTP", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->ftpProtocol = (INT) GetPrivateProfileInt("FTP", TEXT("Protocol"), FTP_PROTOCOL_FTP, lpszIniPathName);
+	if (pProfile->ftpProtocol < FTP_PROTOCOL_FTP || pProfile->ftpProtocol > FTP_PROTOCOL_SFTP)
+		pProfile->ftpProtocol = FTP_PROTOCOL_FTP;
+	int ftpDefaultPort = pProfile->ftpProtocol == FTP_PROTOCOL_SFTP ? 22 :
+		(pProfile->ftpProtocol == FTP_PROTOCOL_FTPS_IMPLICIT ? 990 : 21);
+	GetPrivateProfileString("FTP", TEXT("Server"), "", pProfile->ftpServer, sizeof(pProfile->ftpServer), lpszIniPathName);
+	pProfile->ftpPort = (INT) GetPrivateProfileInt("FTP", TEXT("Port"), ftpDefaultPort, lpszIniPathName);
+	GetPrivateProfileString("FTP", TEXT("Username"), "", pProfile->ftpUsername, sizeof(pProfile->ftpUsername), lpszIniPathName);
+	GetPrivateProfileString("FTP", TEXT("RemoteDirectory"), "", pProfile->ftpRemoteDirectory, sizeof(pProfile->ftpRemoteDirectory), lpszIniPathName);
+	GetPrivateProfileString("FTP", TEXT("SshHostKeySha256"), "", pProfile->ftpSshHostKeySha256, sizeof(pProfile->ftpSshHostKeySha256), lpszIniPathName);
+	pProfile->ftpPassive = (INT) GetPrivateProfileInt("FTP", TEXT("Passive"), 1, lpszIniPathName);
+	pProfile->ftpIntervalSeconds = (unsigned int) GetPrivateProfileInt("FTP", TEXT("IntervalSeconds"), 60, lpszIniPathName);
+
+	if (pProfile->ftpPort < 1 || pProfile->ftpPort > 65535) pProfile->ftpPort = ftpDefaultPort;
+	if (pProfile->ftpIntervalSeconds < FTP_MIN_INTERVAL || pProfile->ftpIntervalSeconds > FTP_MAX_INTERVAL)
+		pProfile->ftpIntervalSeconds = 60;
+
+	pProfile->ftpFiles.clear();
+	int ftpFileCount = (INT) GetPrivateProfileInt("FTP", TEXT("FileCount"), 0, lpszIniPathName);
+	if (ftpFileCount < 0) ftpFileCount = 0;
+	if (ftpFileCount > FTP_MAX_FILES) ftpFileCount = FTP_MAX_FILES;
+	for (int ftpIndex = 0; ftpIndex < ftpFileCount; ftpIndex++)
+	{
+		snprintf(ftpFileKey, sizeof(ftpFileKey), "File%d", ftpIndex+1);
+		ftpFileKey[sizeof(ftpFileKey)-1] = '\0';
+		if (GetPrivateProfileString("FTP", ftpFileKey, "", ftpFile, sizeof(ftpFile), lpszIniPathName) && ftpFile[0])
+			pProfile->ftpFiles.push_back(ftpFile);
+	}
+
+	/***** Get opt-in publishing settings. Secrets stay in Credential Manager. *****/
+	pProfile->publishingEnabled = (INT) GetPrivateProfileInt("Publishing", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->publishingPermissionAcknowledged = (INT) GetPrivateProfileInt("Publishing", TEXT("PermissionAcknowledged"), 0, lpszIniPathName);
+	pProfile->publishingPaused = (INT) GetPrivateProfileInt("Publishing", TEXT("Paused"), 0, lpszIniPathName);
+	pProfile->publishingFilteredOnly = (INT) GetPrivateProfileInt("Publishing", TEXT("FilteredOnly"), 1, lpszIniPathName);
+	pProfile->publishingStaticEnabled = (INT) GetPrivateProfileInt("Publishing", TEXT("StaticEnabled"), 1, lpszIniPathName);
+	pProfile->publishingWebhookEnabled = (INT) GetPrivateProfileInt("Publishing", TEXT("WebhookEnabled"), 0, lpszIniPathName);
+	pProfile->publishingMaskAddress = (INT) GetPrivateProfileInt("Publishing", TEXT("MaskAddress"), 0, lpszIniPathName);
+	pProfile->publishingIncludeMessage = (INT) GetPrivateProfileInt("Publishing", TEXT("IncludeMessage"), 1, lpszIniPathName);
+	pProfile->publishingMinimumIntervalSeconds = (unsigned int) GetPrivateProfileInt("Publishing", TEXT("MinimumIntervalSeconds"), 0, lpszIniPathName);
+	GetPrivateProfileString("Publishing", TEXT("OutputPath"), "Published", pProfile->publishingOutputPath, sizeof(pProfile->publishingOutputPath), lpszIniPathName);
+	GetPrivateProfileString("Publishing", TEXT("WebhookUrl"), "", pProfile->publishingWebhookUrl, sizeof(pProfile->publishingWebhookUrl), lpszIniPathName);
+	GetPrivateProfileString("Publishing", TEXT("SourceAlias"), "PDW", pProfile->publishingSourceAlias, sizeof(pProfile->publishingSourceAlias), lpszIniPathName);
+	if (pProfile->publishingMinimumIntervalSeconds > 86400) pProfile->publishingMinimumIntervalSeconds = 0;
+	if (pProfile->publishingEnabled && !pProfile->publishingPermissionAcknowledged)
+		pProfile->publishingEnabled = 0;
+
+	/***** Get optional data-output settings. Passwords stay in Credential Manager. *****/
+	pProfile->dataOutputsEnabled = (INT) GetPrivateProfileInt("DataOutputs", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->dataOutputsPermissionAcknowledged = (INT) GetPrivateProfileInt("DataOutputs", TEXT("PermissionAcknowledged"), 0, lpszIniPathName);
+	pProfile->dataOutputsFilteredOnly = (INT) GetPrivateProfileInt("DataOutputs", TEXT("FilteredOnly"), 1, lpszIniPathName);
+	pProfile->dataOutputsMaskAddress = (INT) GetPrivateProfileInt("DataOutputs", TEXT("MaskAddress"), 1, lpszIniPathName);
+	pProfile->dataOutputsIncludeMessage = (INT) GetPrivateProfileInt("DataOutputs", TEXT("IncludeMessage"), 0, lpszIniPathName);
+	GetPrivateProfileString("DataOutputs", TEXT("SourceAlias"), "PDW", pProfile->dataOutputsSourceAlias, sizeof(pProfile->dataOutputsSourceAlias), lpszIniPathName);
+
+	pProfile->mqttEnabled = (INT) GetPrivateProfileInt("MQTT", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->mqttAllowInsecure = (INT) GetPrivateProfileInt("MQTT", TEXT("AllowInsecure"), 0, lpszIniPathName);
+	GetPrivateProfileString("MQTT", TEXT("BrokerUrl"), "mqtts://localhost:8883", pProfile->mqttBrokerUrl, sizeof(pProfile->mqttBrokerUrl), lpszIniPathName);
+	GetPrivateProfileString("MQTT", TEXT("Topic"), "pdw/messages", pProfile->mqttTopic, sizeof(pProfile->mqttTopic), lpszIniPathName);
+	GetPrivateProfileString("MQTT", TEXT("Username"), "", pProfile->mqttUsername, sizeof(pProfile->mqttUsername), lpszIniPathName);
+
+	pProfile->sqliteOutputEnabled = (INT) GetPrivateProfileInt("SQLiteOutput", TEXT("Enable"), 0, lpszIniPathName);
+	GetPrivateProfileString("SQLiteOutput", TEXT("Path"), "pdw-messages.sqlite3", pProfile->sqliteOutputPath, sizeof(pProfile->sqliteOutputPath), lpszIniPathName);
+	GetPrivateProfileString("SQLiteOutput", TEXT("Table"), "pdw_messages", pProfile->sqliteOutputTable, sizeof(pProfile->sqliteOutputTable), lpszIniPathName);
+
+	pProfile->mysqlOdbcEnabled = (INT) GetPrivateProfileInt("MySQLOdbc", TEXT("Enable"), 0, lpszIniPathName);
+	GetPrivateProfileString("MySQLOdbc", TEXT("Dsn"), "", pProfile->mysqlOdbcDsn, sizeof(pProfile->mysqlOdbcDsn), lpszIniPathName);
+	GetPrivateProfileString("MySQLOdbc", TEXT("Username"), "", pProfile->mysqlOdbcUsername, sizeof(pProfile->mysqlOdbcUsername), lpszIniPathName);
+	GetPrivateProfileString("MySQLOdbc", TEXT("Table"), "pdw_messages", pProfile->mysqlOdbcTable, sizeof(pProfile->mysqlOdbcTable), lpszIniPathName);
+
+	pProfile->telnetOutputEnabled = (INT) GetPrivateProfileInt("TelnetOutput", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->telnetAllowRemote = (INT) GetPrivateProfileInt("TelnetOutput", TEXT("AllowRemote"), 0, lpszIniPathName);
+	GetPrivateProfileString("TelnetOutput", TEXT("BindAddress"), "127.0.0.1", pProfile->telnetBindAddress, sizeof(pProfile->telnetBindAddress), lpszIniPathName);
+	pProfile->telnetPort = (INT) GetPrivateProfileInt("TelnetOutput", TEXT("Port"), 8024, lpszIniPathName);
+	if (pProfile->telnetPort < 1 || pProfile->telnetPort > 65535) pProfile->telnetPort = 8024;
+
+	pProfile->windowsToastEnabled = (INT) GetPrivateProfileInt("WindowsToast", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->windowsToastIncludeMessage = (INT) GetPrivateProfileInt("WindowsToast", TEXT("IncludeMessage"), 0, lpszIniPathName);
+	pProfile->outputHealthAlertsEnabled = (INT) GetPrivateProfileInt("OutputHealth", TEXT("AlertsEnabled"), 1, lpszIniPathName);
+	pProfile->outputHealthFailureThreshold = (unsigned int) GetPrivateProfileInt("OutputHealth", TEXT("FailureThreshold"), 3, lpszIniPathName);
+	if (pProfile->outputHealthFailureThreshold < 1 || pProfile->outputHealthFailureThreshold > 20)
+		pProfile->outputHealthFailureThreshold = 3;
+	if (pProfile->dataOutputsEnabled && !pProfile->dataOutputsPermissionAcknowledged)
+		pProfile->dataOutputsEnabled = 0;
+
 	/***** Get Filter settings *****/
 
 	pProfile->filterfile_enabled = (INT) GetPrivateProfileInt("Filter", TEXT("FilterFileEnabled"), pProfile->filterfile_enabled, lpszIniPathName);
@@ -9668,6 +10161,8 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	GetPrivateProfileString("Filter", TEXT("FilterCmdFile"), "", pProfile->filter_cmd, MAX_FILE_LEN, lpszIniPathName);
 	GetPrivateProfileString("Filter", TEXT("FilterCmdArgs"), "", pProfile->filter_cmd_args, MAX_FILE_LEN, lpszIniPathName);
 	pProfile->filter_default_type = (INT) GetPrivateProfileInt("Filter", TEXT("FilterDefaultType"), pProfile->filter_default_type, lpszIniPathName);
+	if (pProfile->filter_default_type < 0 || pProfile->filter_default_type > 5)
+		pProfile->filter_default_type = 0;
 
 	if (ReadFilters(szFilterPathName, &Profile, false) == false)
 	{
@@ -9693,6 +10188,21 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 	int  i=0, pos, nLines=0, iFilterCount=0, iFilter=0;
 
 	FILTER filter;
+	auto copyQuotedField = [&szLine](int& position, char* destination,
+		size_t destinationSize) -> bool
+	{
+		if (!destination || destinationSize == 0 || position < 0) return false;
+		const size_t lineLength = strlen(szLine);
+		if ((size_t)position >= lineLength || szLine[position] != '"') return false;
+		const char* closingQuote = strchr(&szLine[position+1], '"');
+		if (!closingQuote) return false;
+		const size_t fieldLength = (size_t)(closingQuote - &szLine[position+1]);
+		const size_t copyLength = (std::min)(fieldLength, destinationSize-1);
+		memcpy(destination, &szLine[position+1], copyLength);
+		destination[copyLength] = '\0';
+		position = (int)(closingQuote - szLine);
+		return true;
+	};
 
 	#define FILTER_TYPE			1
 	#define FILTER_CAPCODE		2
@@ -9714,7 +10224,9 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 		while (fgets(szLine, sizeof(szLine), pFile) != NULL)
 		{
-			szLine[strlen(szLine)-1] = '\0';	// Remove linebreaks
+			size_t lineLength = strlen(szLine);
+			while (lineLength > 0 && (szLine[lineLength-1] == '\r' || szLine[lineLength-1] == '\n'))
+				szLine[--lineLength] = '\0';
 
 			if (nLines == 0)
 			{
@@ -9748,11 +10260,14 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 				if (strncmp(szLine, "Filter", 6) == 0)
 				{
-					pos = strchr(szLine, '=') - szLine+1;	// Find first item
+					char* equals = strchr(szLine, '=');
+					if (!equals) { bError = true; pos = 0; }
+					else pos = (int)(equals - szLine + 1);	// Find first item
 				}
 				else pos=0;
 
-				if (!isdigit(szLine[pos]) || szLine[pos+1] != ',')
+				if (bError || pos < 0 || (size_t)(pos+1) >= strlen(szLine) ||
+					!isdigit((unsigned char)szLine[pos]) || szLine[pos+1] != ',')
 				{
 					bError=true;
 				}
@@ -9780,45 +10295,32 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 							case FILTER_CAPCODE:		// Get capcode
 
-							if (szLine[pos+1] != '"')
+							if (!copyQuotedField(pos, filter.capcode, sizeof(filter.capcode)))
 							{
-								strncpy(filter.capcode, &szLine[pos+1], strlen(szLine));
-								filter.capcode[strchr(filter.capcode, '"') - filter.capcode] = 0;
-								pos += strlen(filter.capcode) + 1;	// + 1 to start at last "
-
-								// Convert 9-digit short addresses to 7-digits
-								if ((strlen(filter.capcode) == 9) && memcmp(filter.capcode, "00", 2) == 0)
-								{
-									if (CompareCapcodes(filter.capcode, "002101249") < 0) memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode));
-//									if (atoi(filter.capcode) < 2101249) memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode));
-//									memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode));
-								}
+								bError = true;
+								break;
 							}
-							else filter.capcode[0] = 0;
+
+							// Convert 9-digit short addresses to 7-digits
+							if ((strlen(filter.capcode) == 9) && memcmp(filter.capcode, "00", 2) == 0)
+							{
+								if (CompareCapcodes(filter.capcode, "002101249") < 0)
+									memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode)-1);
+							}
 
 							break;
 
 							case FILTER_LABEL:			// Get label
 
-							if (szLine[pos+1] != '"')
-							{
-								strncpy(filter.label, &szLine[pos+1], strlen(szLine));
-								filter.label[strchr(filter.label, '"') - filter.label] = 0;
-								pos += strlen(filter.label) + 1;	// + 1 to start at last "
-							}
-							else filter.label[0] = 0;
+							if (!copyQuotedField(pos, filter.label, sizeof(filter.label)))
+								bError = true;
 
 							break;
 
 							case FILTER_TEXT:			// Get text
 
-							if (szLine[pos+1] != '"')
-							{
-								strncpy(filter.text, &szLine[pos+1], strlen(szLine));
-								filter.text[strchr(filter.text, '"') - filter.text] = 0;
-								pos += strlen(filter.text) + 1;	// + 1 to start at last "
-							}
-							else filter.text[0] = 0;
+							if (!copyQuotedField(pos, filter.text, sizeof(filter.text)))
+								bError = true;
 
 							break;
 
@@ -9833,10 +10335,16 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 							case FILTER_WAVE:		// Get wave_number
 
-							while (szLine[pos] != ',') szTEMP[i++] = szLine[pos++];
+							while (szLine[pos] && szLine[pos] != ',')
+							{
+								if (i < (int)sizeof(szTEMP)-1) szTEMP[i++] = szLine[pos];
+								pos++;
+							}
 
 							szTEMP[i] = 0;
 							filter.wave_number = atoi(szTEMP);
+							if (filter.wave_number < -1 || filter.wave_number > 10)
+								filter.wave_number = -1;
 
 							break;
 
@@ -9848,19 +10356,29 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 							case FILTER_LABEL_COLOR:	// Get label_enabled / color
 
-							while (szLine[pos] != ',') szTEMP[i++] = szLine[pos++];
+							while (szLine[pos] && szLine[pos] != ',')
+							{
+								if (i < (int)sizeof(szTEMP)-1) szTEMP[i++] = szLine[pos];
+								pos++;
+							}
 
 							szTEMP[i] = 0;
 							iTEMP = atoi(szTEMP);
 
 							filter.label_enabled = iTEMP ? 1 : 0;
 							filter.label_color   = iTEMP ? iTEMP-1 : 0;
+							if (filter.label_color < 0 || filter.label_color > 16)
+								filter.label_color = 0;
 
 							break;
 
 							case FILTER_SEP:		// Get sep_filterfile_en / smtp / match_exact_msg
 
-							while (szLine[pos] != ',') szTEMP[i++] = szLine[pos++];
+							while (szLine[pos] && szLine[pos] != ',')
+							{
+								if (i < (int)sizeof(szTEMP)-1) szTEMP[i++] = szLine[pos];
+								pos++;
+							}
 
 							szTEMP[i] = 0;
 							iTEMP = atoi(szTEMP);
@@ -9873,30 +10391,47 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 							
 							case FILTER_SEPFILES:	// Get separate filterfile(s)
 
-							if (szLine[pos+1] != '"')
+							if (!copyQuotedField(pos, szSepfiles, sizeof(szSepfiles)))
 							{
-								strncpy(szSepfiles, &szLine[pos+1], strlen(szLine));
-								szSepfiles[strchr(szSepfiles, '"') - szSepfiles] = 0;
-								pos += strlen(szSepfiles);
-								token = strtok(szSepfiles, ";");
-
-								do
+								bError = true;
+								break;
+							}
+							if (szSepfiles[0])
+							{
+								char* separatorContext = NULL;
+								token = strtok_s(szSepfiles, ";", &separatorContext);
+								while (token && filter.sep_filterfiles < 3)
 								{
-									strcpy(filter.sep_filterfile[filter.sep_filterfiles++], token);
+									strncpy(filter.sep_filterfile[filter.sep_filterfiles], token,
+										sizeof(filter.sep_filterfile[0])-1);
+									filter.sep_filterfile[filter.sep_filterfiles][sizeof(filter.sep_filterfile[0])-1] = '\0';
+									filter.sep_filterfiles++;
+									token = strtok_s(NULL, ";", &separatorContext);
 								}
-								while (token = strtok(NULL, ";"));
 							}
 							break;
 
 							case FILTER_HITCOUNTER:	// Get hitcounter
 
-							if (token = strtok(&szLine[pos], ",")) filter.hitcounter = atoi(token);
-							if (token = strtok(NULL, ",")) strcpy(filter.lasthit_date, token);
-							if (token = strtok(NULL, ",")) strcpy(filter.lasthit_time, token);
+							{
+								char* hitContext = NULL;
+								if (token = strtok_s(&szLine[pos], ",", &hitContext)) filter.hitcounter = atoi(token);
+								if (token = strtok_s(NULL, ",", &hitContext))
+								{
+									strncpy(filter.lasthit_date, token, sizeof(filter.lasthit_date)-1);
+									filter.lasthit_date[sizeof(filter.lasthit_date)-1] = '\0';
+								}
+								if (token = strtok_s(NULL, ",", &hitContext))
+								{
+									strncpy(filter.lasthit_time, token, sizeof(filter.lasthit_time)-1);
+									filter.lasthit_time[sizeof(filter.lasthit_time)-1] = '\0';
+								}
+							}
 
 							break;
 						}
 	
+						if (bError) break;
 						token = strchr(&szLine[pos], ',');
 
 						if (token)
@@ -9905,11 +10440,18 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 						}
 						else break;
 					}
-					Profile.filters.insert(Profile.filters.begin() + iFilter, filter);
-					iFilter++;
+					if (!bError)
+					{
+						Profile.filters.insert(Profile.filters.begin() + iFilter, filter);
+						iFilter++;
+					}
 				}
 			}
-			if (bError) return(false);
+			if (bError)
+			{
+				fclose(pFile);
+				return(false);
+			}
 			else nLines++;
 		}
 		fclose(pFile);
@@ -9938,12 +10480,11 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 void WriteSettings()
 {
-	if (GetFileAttributes(szIniPathName) & FILE_ATTRIBUTE_READONLY)
-	{
-		SetFileAttributes(szIniPathName, FILE_ATTRIBUTE_NORMAL);
-	}
-
-	FILE* pFile = fopen(szIniPathName, "w+");
+	char settingsSnapshotPath[MAX_PATH] = {};
+	FILE* pFile = NULL;
+	if (GetTempFileNameA(szPath, "PDS", 0, settingsSnapshotPath))
+		pFile = fopen(settingsSnapshotPath, "w+b");
+	if (!pFile && settingsSnapshotPath[0]) DeleteFileA(settingsSnapshotPath);
 
 	if (pFile)
 	{
@@ -9952,6 +10493,8 @@ void WriteSettings()
 		fprintf(pFile, "yPos=%i\n",						Profile.yPos);
 		fprintf(pFile, "xSize=%i\n",					Profile.xSize);
 		fprintf(pFile, "ySize=%i\n",					Profile.ySize);
+		fprintf(pFile, "WindowTitle=%s\n",			Profile.windowTitle);
+		fprintf(pFile, "Theme=%i\n",					Profile.uiTheme);
 		fprintf(pFile, "Maximize=%i\n",					Profile.maximize_flg);
 		fprintf(pFile, "LangIndex=%i\n",				Profile.lang_mi_index);
 		fprintf(pFile, "ConfirmExit=%i\n",				Profile.confirmExit);
@@ -10057,6 +10600,18 @@ void WriteSettings()
 		fprintf(pFile, "AudioDevice=%i\n",				Profile.audioDevice);
 		fprintf(pFile, "AudioSampleRate=%i\n",			Profile.audioSampleRate);
 		fprintf(pFile, "AudioConfiguration=%i\n",		Profile.audioConfig);
+		fprintf(pFile, "AudioSource=%i\n",			Profile.audioSource);
+		fprintf(pFile, "RtlTcpHost=%s\n",			Profile.rtlTcpHost);
+		fprintf(pFile, "RtlTcpPort=%i\n",			Profile.rtlTcpPort);
+		fprintf(pFile, "RtlFrequencyHz=%u\n",		Profile.rtlFrequencyHz);
+		fprintf(pFile, "RtlSampleRate=%u\n",			Profile.rtlSampleRate);
+		fprintf(pFile, "RtlAudioSampleRate=%u\n",		Profile.rtlAudioSampleRate);
+		fprintf(pFile, "RtlGainTenthsDb=%i\n",		Profile.rtlGainTenthsDb);
+		fprintf(pFile, "RtlFrequencyCorrectionPpm=%i\n", Profile.rtlFrequencyCorrectionPpm);
+		fprintf(pFile, "RtlBandwidthHz=%i\n",			Profile.rtlBandwidthHz);
+		fprintf(pFile, "RtlAutomaticGain=%i\n",		Profile.rtlAutomaticGain);
+		fprintf(pFile, "RtlDeviceIndex=%i\n",			Profile.rtlDeviceIndex);
+		fprintf(pFile, "RtlReceiverId=%s\n",			Profile.rtlReceiverId);
 		fprintf(pFile, "Threshold512=%i\n",				Profile.audioThreshold[INDEX512]);
 		fprintf(pFile, "Threshold1200=%i\n",			Profile.audioThreshold[INDEX1200]);
 		fprintf(pFile, "Threshold1600=%i\n",			Profile.audioThreshold[INDEX1600]);
@@ -10099,6 +10654,7 @@ void WriteSettings()
 		fprintf(pFile, "BlockDuplicate=%i\n",			Profile.BlockDuplicate);
 		fprintf(pFile, "FlexTIME=%i\n",					Profile.FlexTIME);
 		fprintf(pFile, "FlexGroupMode=%i\n",			Profile.FlexGroupMode);
+		fprintf(pFile, "FlexFragmentReassembly=%i\n",	Profile.flexFragmentReassemblyEnabled);
 		fprintf(pFile, "SystemTray=%i\n",				Profile.SystemTray);
 		fprintf(pFile, "SystemTrayRestore=%i\n",		Profile.SystemTrayRestore);
 
@@ -10114,6 +10670,78 @@ void WriteSettings()
 		fprintf(pFile, "Options=%i\n",					Profile.nMailOptions);
 		fprintf(pFile, "SSL=%i\n",                      Profile.ssl);
 
+		fprintf(pFile, "\n[Apprise]\n");
+		fprintf(pFile, "Enable=%i\n",                  Profile.appriseEnabled);
+		fprintf(pFile, "IncludeMessageText=%i\n",      Profile.appriseIncludeMessageText);
+
+		fprintf(pFile, "\n[FTP]\n");
+		fprintf(pFile, "Enable=%i\n",                   Profile.ftpEnabled);
+		fprintf(pFile, "Protocol=%i\n",                 Profile.ftpProtocol);
+		fprintf(pFile, "Server=%s\n",                   Profile.ftpServer);
+		fprintf(pFile, "Port=%i\n",                     Profile.ftpPort);
+		fprintf(pFile, "Username=%s\n",                 Profile.ftpUsername);
+		fprintf(pFile, "RemoteDirectory=%s\n",          Profile.ftpRemoteDirectory);
+		fprintf(pFile, "SshHostKeySha256=%s\n",         Profile.ftpSshHostKeySha256);
+		fprintf(pFile, "Passive=%i\n",                  Profile.ftpPassive);
+		fprintf(pFile, "IntervalSeconds=%u\n",          Profile.ftpIntervalSeconds);
+		fprintf(pFile, "FileCount=%u\n",                (unsigned int) Profile.ftpFiles.size());
+		for (size_t ftpIndex = 0; ftpIndex < Profile.ftpFiles.size(); ftpIndex++)
+			fprintf(pFile, "File%u=%s\n", (unsigned int) ftpIndex+1, Profile.ftpFiles[ftpIndex].c_str());
+
+		fprintf(pFile, "\n[Publishing]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.publishingEnabled);
+		fprintf(pFile, "PermissionAcknowledged=%i\n", Profile.publishingPermissionAcknowledged);
+		fprintf(pFile, "Paused=%i\n", Profile.publishingPaused);
+		fprintf(pFile, "FilteredOnly=%i\n", Profile.publishingFilteredOnly);
+		fprintf(pFile, "StaticEnabled=%i\n", Profile.publishingStaticEnabled);
+		fprintf(pFile, "WebhookEnabled=%i\n", Profile.publishingWebhookEnabled);
+		fprintf(pFile, "MaskAddress=%i\n", Profile.publishingMaskAddress);
+		fprintf(pFile, "IncludeMessage=%i\n", Profile.publishingIncludeMessage);
+		fprintf(pFile, "MinimumIntervalSeconds=%u\n", Profile.publishingMinimumIntervalSeconds);
+		fprintf(pFile, "OutputPath=%s\n", Profile.publishingOutputPath);
+		fprintf(pFile, "WebhookUrl=%s\n", Profile.publishingWebhookUrl);
+		fprintf(pFile, "SourceAlias=%s\n", Profile.publishingSourceAlias);
+
+		fprintf(pFile, "\n[DataOutputs]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.dataOutputsEnabled);
+		fprintf(pFile, "PermissionAcknowledged=%i\n", Profile.dataOutputsPermissionAcknowledged);
+		fprintf(pFile, "FilteredOnly=%i\n", Profile.dataOutputsFilteredOnly);
+		fprintf(pFile, "MaskAddress=%i\n", Profile.dataOutputsMaskAddress);
+		fprintf(pFile, "IncludeMessage=%i\n", Profile.dataOutputsIncludeMessage);
+		fprintf(pFile, "SourceAlias=%s\n", Profile.dataOutputsSourceAlias);
+
+		fprintf(pFile, "\n[MQTT]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.mqttEnabled);
+		fprintf(pFile, "AllowInsecure=%i\n", Profile.mqttAllowInsecure);
+		fprintf(pFile, "BrokerUrl=%s\n", Profile.mqttBrokerUrl);
+		fprintf(pFile, "Topic=%s\n", Profile.mqttTopic);
+		fprintf(pFile, "Username=%s\n", Profile.mqttUsername);
+
+		fprintf(pFile, "\n[SQLiteOutput]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.sqliteOutputEnabled);
+		fprintf(pFile, "Path=%s\n", Profile.sqliteOutputPath);
+		fprintf(pFile, "Table=%s\n", Profile.sqliteOutputTable);
+
+		fprintf(pFile, "\n[MySQLOdbc]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.mysqlOdbcEnabled);
+		fprintf(pFile, "Dsn=%s\n", Profile.mysqlOdbcDsn);
+		fprintf(pFile, "Username=%s\n", Profile.mysqlOdbcUsername);
+		fprintf(pFile, "Table=%s\n", Profile.mysqlOdbcTable);
+
+		fprintf(pFile, "\n[TelnetOutput]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.telnetOutputEnabled);
+		fprintf(pFile, "AllowRemote=%i\n", Profile.telnetAllowRemote);
+		fprintf(pFile, "BindAddress=%s\n", Profile.telnetBindAddress);
+		fprintf(pFile, "Port=%i\n", Profile.telnetPort);
+
+		fprintf(pFile, "\n[WindowsToast]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.windowsToastEnabled);
+		fprintf(pFile, "IncludeMessage=%i\n", Profile.windowsToastIncludeMessage);
+
+		fprintf(pFile, "\n[OutputHealth]\n");
+		fprintf(pFile, "AlertsEnabled=%i\n", Profile.outputHealthAlertsEnabled);
+		fprintf(pFile, "FailureThreshold=%u\n", Profile.outputHealthFailureThreshold);
+
 		fprintf(pFile, "\n[Filter]\n");
 		fprintf(pFile, "FilterFileEnabled=%i\n",		Profile.filterfile_enabled);
 		fprintf(pFile, "FilterFile=%s\n",				Profile.filterfile);
@@ -10124,8 +10752,29 @@ void WriteSettings()
 		fwrite(szTEMP, strlen(szTEMP), 1, pFile);
 		fprintf(pFile, "FilterDefaultType=%i\n",		Profile.filter_default_type);
 
+		std::string generatedSettings;
+		if (fflush(pFile) == 0 && _fseeki64(pFile, 0, SEEK_END) == 0)
+		{
+			const __int64 length = _ftelli64(pFile);
+			if (length > 0 && length <= 16 * 1024 * 1024 && _fseeki64(pFile, 0, SEEK_SET) == 0)
+			{
+				generatedSettings.assign(static_cast<size_t>(length), '\0');
+				if (fread(&generatedSettings[0], 1, generatedSettings.size(), pFile) != generatedSettings.size())
+					generatedSettings.clear();
+			}
+		}
 		fclose(pFile);
-		pFile=NULL;
+		pFile = NULL;
+		DeleteFileA(settingsSnapshotPath);
+
+		std::string error;
+		if (generatedSettings.empty() ||
+			!pdw::ini::WriteMergedSettingsFile(szIniPathName, generatedSettings, error))
+		{
+			std::string debug = "PDW settings save was not applied: " +
+				(error.empty() ? "temporary settings generation failed." : error) + "\n";
+			OutputDebugStringA(debug.c_str());
+		}
 	}
 } // end of WritePrivateProfileSettings
 
@@ -10135,7 +10784,7 @@ void WriteFilters(PPROFILE pProfile, int backup)
 	char szLine[256];
 	char szFilename[MAX_PATH];
 	char szPathname[MAX_PATH];
-	char ext[10];
+	char ext[10] = "";
 
 	if (GetFileAttributes(szFilterPathName) & FILE_ATTRIBUTE_READONLY)
 	{
@@ -10286,15 +10935,18 @@ bool LoadDriver(void)	// HWi
 		slicer_in.irq = Profile.comPortIRQ;
 //		Use comport number instead of comport address
 		slicer_in.com_port = Profile.comPort;
-		hDriver = (HANDLE) rs232_connect(&slicer_in, &slicer_out);
+		const int rs232Result = rs232_connect(&slicer_in, &slicer_out);
 
-		if (hDriver != RS232_SUCCESS)
+		if (rs232Result != RS232_SUCCESS)
 		{
-			MessageBox(ghWnd,"Unable to open the selected Comport", "PDW Driver", MB_ICONWARNING);
+			MessageBox(ghWnd,
+				"Unable to open the selected COM port.\n\nIt may already be in use by another program, or it is not available.",
+				"COM Port", MB_ICONWARNING);
 //			OUTPUTDEBUGMSG((("Error: rs232_connect() = %d\n"), hDriver));		
 			nDriverLoaded = DRIVER_NOT_LOADED;
 			return(false);
 		}
+		hDriver = NULL;
 		nDriverLoaded = DRIVER_COM_LOADED;	    // HWi must be only TRUE when all is OK
 	}
 
@@ -10352,7 +11004,14 @@ void UnloadDriver(void)	//HWi made this a function to clean up the code
 		}
 		else 
 		{
-			rs232_disconnect();		// HWi 
+			const int disconnectResult = rs232_disconnect();		// HWi
+			if (disconnectResult != RS232_SUCCESS &&
+				disconnectResult != RS232_NO_CONNECTION)
+			{
+				// Keep the loaded state so a second worker cannot be started while the
+				// existing serial thread is still winding down.
+				return;
+			}
 		}
 		nDriverLoaded=DRIVER_NOT_LOADED;
 	}
@@ -10625,7 +11284,7 @@ void OnMouseWheel(WPARAM wParam, int x, int y, RECT g_rect)
 		p.y = y;
 
 		hScrollWND   = WindowFromPoint(p);
-		bScrollingUp = (HIWORD(wParam) == 120);
+		bScrollingUp = ((short)HIWORD(wParam) > 0);
 
 		if (Profile.ScrollSpeed)
 		{
@@ -10971,7 +11630,7 @@ void ResetHitcounters(bool bAll)
 	int index=-1, i=0;
 
 	char filename[MAX_PATH];
-	char ext[10];
+	char ext[10] = "";
 				
 	if (MessageBox(ghWnd, "Are you sure?", "Reset Hitcounters", MB_ICONQUESTION | MB_OKCANCEL) == IDCANCEL) return;
 
@@ -11033,6 +11692,8 @@ void SetWindowPaneSize(int param)
 		iMaxWidth-= GetSystemMetrics(SM_CXVSCROLL);			// PH: Subtract scrollbar width	
 		iMaxWidth-= (cxChar*2);								// PH: Subtract 1 character+1px
 		NewLinePoint = (iMaxWidth/cxChar);					// PH: We have the max. chars
+		if (NewLinePoint > LINE_SIZE-1) NewLinePoint = LINE_SIZE-1;
+		if (NewLinePoint < 1) NewLinePoint = 1;
 	}
 }
 
@@ -11110,7 +11771,7 @@ void SystemTrayIcon(bool bRemoveIcon)
 	nid.hIcon            = LoadIcon(ghInstance, MAKEINTRESOURCE(PDWICON));
 	nid.uCallbackMessage = SYSTEMTRAY_ICON_MESSAGE;
 
-	strcpy(nid.szTip, pdw_version);
+	BuildPdwWindowTitle(nid.szTip, sizeof(nid.szTip));
 
 	if (bRemoveIcon)	// PH: Remove PDW-icon from systemtray
 	{
@@ -11130,17 +11791,25 @@ void SetNewWindowText(char *text)
 {
 //	extern bool bMode_IDLE;			// Set if no signal
 
-	strcpy(szTEMP, szWindowText[0]);
+	szTEMP[0] = '\0';
+	auto appendWindowText = [](char* destination, size_t destinationSize, const char* value)
+	{
+		if (!value || !value[0]) return;
+		const size_t used = strlen(destination);
+		if (used < destinationSize-1)
+			strncat(destination, value, destinationSize-1-used);
+	};
+	appendWindowText(szTEMP, sizeof(szTEMP), szWindowText[0]);
 
-	if (text[0]) strcat(szTEMP, text);
+	if (text && text[0]) appendWindowText(szTEMP, sizeof(szTEMP), text);
 	else
 	{
 		for (int i=1; i<6; i++)
 		{
 			if (szWindowText[i][0])
 			{
-				strcat(szTEMP, " - ");
-				strcat(szTEMP, szWindowText[i]);
+				appendWindowText(szTEMP, sizeof(szTEMP), " - ");
+				appendWindowText(szTEMP, sizeof(szTEMP), szWindowText[i]);
 			}
 		}
 		strcpy(szWindowText[5], "");
@@ -11258,6 +11927,8 @@ void SelectByDoubleClick(HWND hWnd, PaneStruct *pane, int iPosition, int StartRo
 	char *pchar;
 	
 	pchar = pane->buff_char;
+	if (!pchar || iPosition < 0 || iPosition >= LINE_SIZE) return;
+	if (line_no < 0 || line_no >= (int)pane->buff_lines) return;
 
 	if (pchar[offset + iPosition] > 32)	// If user clicked on a character bigger than ASCII(32)
 	{
@@ -11272,8 +11943,10 @@ void SelectByDoubleClick(HWND hWnd, PaneStruct *pane, int iPosition, int StartRo
 			iSelectionEndCol   = iPosition;
 		}
 
-		while (pchar[offset + iSelectionStartCol-1] > 32) iSelectionStartCol--;
-		while (pchar[offset + iSelectionEndCol+1] > 32)   iSelectionEndCol++;
+		while (iSelectionStartCol > 0 && pchar[offset + iSelectionStartCol-1] > 32)
+			iSelectionStartCol--;
+		while (iSelectionEndCol < LINE_SIZE-1 && pchar[offset + iSelectionEndCol+1] > 32)
+			iSelectionEndCol++;
 
 		LastSelection=MAKELONG(iSelectionStartCol, iSelectionEndCol);
 
@@ -11300,17 +11973,20 @@ void GoogleMaps(int iPosition)
 	int line_no = Pane1.iVscrollPos + iSelectionStartRow;
 	int offset  = line_no * (LINE_SIZE+1);
 	pchar = Pane1.buff_char;
+	if (!pchar || line_no < 0 || line_no >= (int)Pane1.buff_lines) return;
+	if (iSelectionStartCol < 0 || iSelectionStartCol >= LINE_SIZE) return;
 
 	if (Profile.monitor_mobitex && iPosition == iItemPositions[MSG_MESSAGE])
 	{
-		for (i=0, xx = iSelectionStartCol; xx <= (iSelectionStartCol+18); i++, xx++)
+		for (i=0, xx = iSelectionStartCol;
+			xx <= (iSelectionStartCol+18) && xx < LINE_SIZE; i++, xx++)
 		{
 			if (pchar[offset + xx]) szTMP[i] = pchar[offset + xx];
 			else break;
 		}
 		szTMP[i] = '\0';
 
-		if ((szTMP[0] == '+') && (strlen(szTMP) == 18))		// + 4 ] v ^ v # c ·"
+		if ((szTMP[0] == '+') && (strlen(szTMP) == 18))		// + 4 ] v ^ v # c Â·"
 		{
 			for (i=2; i<13; i+=2)
 			{
