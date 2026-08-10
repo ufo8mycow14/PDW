@@ -125,7 +125,7 @@ Verified executable metadata:
 - filename: `PDW v4.5.0 Beta.exe`;
 - file version: `4.5.0.0`;
 - product version: `4.5.0 Beta`;
-- SHA-256: `C4611179B90081E213B1432AB3C72F55BF613720EA23F3B9AE722A70E446806D`.
+- SHA-256: `E2602F6498401AB20AA5D1724F8F3CAD46ABAF78ADE93CFFFBF94B2D09757D8C`.
 
 A real startup smoke test created a main window titled **PDW v4.5.0 Beta**.
 The app remained running until the exact smoke-test process was stopped. The
@@ -213,11 +213,11 @@ filters, recordings, queues, logs, or monitoring data.
 The current local UI build was merged into the operator's preserved Desktop
 test installation on 10 August 2026. The root and
 `Application` executable copies both have SHA-256
-`C4611179B90081E213B1432AB3C72F55BF613720EA23F3B9AE722A70E446806D`.
+`E2602F6498401AB20AA5D1724F8F3CAD46ABAF78ADE93CFFFBF94B2D09757D8C`.
 Static documentation, receiver support, help, notices, and WAV assets were
 refreshed. Existing `PDW.INI`, `filters.ini`, receiver additions, recordings,
 logs, queues, and monitoring data were deliberately preserved.
-The installation's existing 287-path static-file manifest was recalculated
+The installation's 291-path static-file manifest was recalculated
 after the merge and verified with zero hash mismatches; private runtime extras
 were not added to that manifest.
 
