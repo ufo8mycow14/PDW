@@ -6,10 +6,30 @@
 
 struct DecodedMessageNotificationContext
 {
+	DecodedMessageNotificationContext()
+		: filterMatched(false), monitorOnly(false), filtered(false), rejected(false),
+		  blockedDuplicate(false), groupCall(false), fragmented(false), assembled(false),
+		  groupFinal(false), selectedForEmail(0), filterIndex(-1), groupBit(-1),
+		  cycle(-1), frame(-1), address(""),
+		  time(""), date(""), mode(""), messageType(""), bitrate(""), message(""),
+		  filterLabel("")
+	{
+	}
+
 	bool filterMatched;
 	bool monitorOnly;
 	bool filtered;
+	bool rejected;
+	bool blockedDuplicate;
+	bool groupCall;
+	bool fragmented;
+	bool assembled;
+	bool groupFinal;
 	int selectedForEmail;
+	int filterIndex;
+	int groupBit;
+	int cycle;
+	int frame;
 	const char *address;
 	const char *time;
 	const char *date;

@@ -71,7 +71,7 @@ int iBlockNumber, nCharacters=0;
 unsigned int ESN_manufacturerscode, ESN_modelnumber, ESN_IDnumber;
 bool bBadDestination=false, bBadSender=false, bBadHeader;
 bool bFirstMPAK=true, bPrimaryBlock;
-char szDestination[10], szSender[10], szType[10], szMPAK[32];
+char szDestination[10], szSender[10], szType[10], szMPAK[64];
 char szNeighbourList[MAX_STR_LEN], szBaseIdName[128]="";
 char szLastBaseID[8], szTmpIdName[128];
 
@@ -405,7 +405,7 @@ void MOBITEX::barfrog()
 			}									// don't want to see this type of MPAK
 			else if ((LINK_CONTROL_INFO.FrameID != FRAMETYPE_MRM) && (LINK_CONTROL_INFO.FrameID != FRAMETYPE_RES))
 			{
-				sprintf(szDestination, "%i", LINK_CONTROL_INFO.Destination);	// If no MRM or RES frame,
+				_snprintf_s(szDestination, sizeof(szDestination), _TRUNCATE, "%u", LINK_CONTROL_INFO.Destination);	// If no MRM or RES frame,
 				strcpy(szSender , "NETWORK");							// get destination from frame header
 
 				if (LINK_CONTROL_INFO.FrameID == FRAMETYPE_SVP)	// SWEEP frames
@@ -433,13 +433,13 @@ void MOBITEX::barfrog()
 				strcpy(mb_msg_buf, "<RES> ");
 				nCharacters=strlen(mb_msg_buf);
 				memset(mb_msg_col, COLOR_MISC, nCharacters);
-				sprintf(szDestination, "%07i", LINK_CONTROL_INFO.Destination);	// Get RX-MAN
+				_snprintf_s(szDestination, sizeof(szDestination), _TRUNCATE, "%07u", LINK_CONTROL_INFO.Destination);	// Get RX-MAN
 
 				for (int i=0; i<10; i++)
 				{
-					if (aPreviousMAN[RX][i] = LINK_CONTROL_INFO.Destination)
+					if (aPreviousMAN[RX][i] == LINK_CONTROL_INFO.Destination)
 					{
-						sprintf(szSender, "%07i", aPreviousMAN[TX][i]);	// Get TX-MAN
+						_snprintf_s(szSender, sizeof(szSender), _TRUNCATE, "%07u", aPreviousMAN[TX][i]);	// Get TX-MAN
 						break;
 					}
 					strcpy(szSender, "UNKNOWN");	// If Sender not found, show "UNKNOWN"
@@ -510,6 +510,7 @@ void MOBITEX::barfrog()
 				if ((iBlockNumber == 2) && !block[1])	// If we are in the second block in
 				{										// which the second byte should be 0
 					SWEEP.channels = block[0];			// The first byte tells the number of neighours
+					if (SWEEP.channels > 15) SWEEP.channels = 15;
 				}
 
 				if (GetNeighbourChannels())	// true if the channellist has been received correctly
@@ -524,7 +525,7 @@ void MOBITEX::barfrog()
 				{
 					if (block[6] == 1)
 					{
-						sprintf(mb_msg_buf, "TxPower=%idB RssiProcedure=%s RssiPeriod=%ims TimeToNext=%i MaxRepetitionFactor=%i»BaseStatus=%i ScanTime=%.1fsec BadBase=%idBµV GoodBase=%idBµV BetterBase=%idBµV",
+						sprintf(mb_msg_buf, "TxPower=%idB RssiProcedure=%s RssiPeriod=%ims TimeToNext=%i MaxRepetitionFactor=%iÂ»BaseStatus=%i ScanTime=%.1fsec BadBase=%idBÂµV GoodBase=%idBÂµV BetterBase=%idBÂµV",
 											block[7],		// TX-POWER
 											block[8] ? "ContinousMode" : "FrameMode",	// RSSI_PROC
 											block[9]*20,	// RSSI_PERIOD
@@ -538,7 +539,7 @@ void MOBITEX::barfrog()
 					}
 					else if (block[6] == 6)
 					{
-						sprintf(mb_msg_buf, "CycleTime=%isec TimeToNext=%isec RssiPeriod=%i ?=%i EvaluateOthers=%iRSSIperiods»BaseStatus=%i Cycle=%i",
+						sprintf(mb_msg_buf, "CycleTime=%isec TimeToNext=%isec RssiPeriod=%i ?=%i EvaluateOthers=%iRSSIperiodsÂ»BaseStatus=%i Cycle=%i",
 											block[7]/4,		// Cycle Time
 											block[8]/4,		// TimeToNext
 											block[9],		// RSSI_PERIOD
@@ -560,9 +561,9 @@ void MOBITEX::barfrog()
 
 			if (bPrimaryBlock)	// Is this the first (primary) block?
 			{
-				sprintf(szType, "<SVP%i>", SWEEP.type);
-				sprintf(szDestination, "       ");
-				sprintf(szSender,     " %s  ", LINK_CONTROL_INFO.BaseID);
+				_snprintf_s(szType,        sizeof(szType),        _TRUNCATE, "<SVP%i>", SWEEP.type);
+				_snprintf_s(szDestination, sizeof(szDestination), _TRUNCATE, "       ");
+				_snprintf_s(szSender,      sizeof(szSender),      _TRUNCATE, " %s  ", LINK_CONTROL_INFO.BaseID);
 			}
 			break;
 
@@ -815,6 +816,7 @@ void MOBITEX::frame_sync(int bit)
 				bBadDestination=false;
 				bBadSender=false;
 				iBlockNumber=0;
+				szMPAK[0]=0;
 				nCharacters=0;
 				nu = 0;
 				mb_bs(-1);
@@ -1042,15 +1044,19 @@ char *MOBITEX::GetBaseID(char *szBaseID, char *szBaseIdName)
 	{
 		while (fgets(szLine, sizeof(szLine), pFile) != NULL)
 		{
-			szLine[strlen(szLine)-1] = '\0';
+			size_t lineLength = strlen(szLine);
+			while (lineLength > 0 && (szLine[lineLength-1] == '\r' || szLine[lineLength-1] == '\n'))
+			{
+				szLine[--lineLength] = '\0';
+			}
 
-			if (szLine[0] == '#' || !szLine[3])	// If comment or line is too short
+			if (szLine[0] == '#' || !szLine[3] || !szLine[4])	// If comment or line is too short
 			{
 				continue;	// Skip comment
 			}
 			if (strncmp((char*)szBaseID, &szLine[0], 4) == 0)	// Find BaseID
 			{
-				for (int j=5; szLine[j]!=0; j++)		// Found BaseID
+				for (int j=5; szLine[j]!=0 && (pBase - szBaseIdName) < 127; j++)		// Found BaseID
 				{
 					*pBase++ = szLine[j];				// Add Base Name
  				}
@@ -1269,7 +1275,7 @@ bool MOBITEX::GetNeighbourChannels()
 		count=0;
 	}
 
-	for (int i = !block[1] ? 2 : 0; i<18; i+=2, count++)
+	for (int i = !block[1] ? 2 : 0; i<18 && count < 32; i+=2, count++)
 	{
 		neighbours[count] = ((block[i] << 8) | block[i+1]);
 
@@ -1286,8 +1292,8 @@ bool MOBITEX::GetNeighbourChannels()
 
 	if (count == (SWEEP.channels*2))
 	{
-		if (szBaseIdName[0]) sprintf(szNeighbourList, "[LIST OF NEIGHBOUR CHANNELS BaseID:%s - %s]»", LINK_CONTROL_INFO.BaseID, szBaseIdName);
-		else sprintf(szNeighbourList, "[LIST OF NEIGHBOUR CHANNELS BaseID:%s]»", LINK_CONTROL_INFO.BaseID);
+		if (szBaseIdName[0]) sprintf(szNeighbourList, "[LIST OF NEIGHBOUR CHANNELS BaseID:%s - %s]Â»", LINK_CONTROL_INFO.BaseID, szBaseIdName);
+		else sprintf(szNeighbourList, "[LIST OF NEIGHBOUR CHANNELS BaseID:%s]Â»", LINK_CONTROL_INFO.BaseID);
 
 		for (count=0; count/2 < SWEEP.channels; count+=2)
 		{
@@ -1295,26 +1301,26 @@ bool MOBITEX::GetNeighbourChannels()
 			{
 				case 0 :	// 800 MHz
 					
-				sprintf(szChannel, "Neighbour-%02i : %.5f MHz / %.5f MHz»", (count+2)/2, (double)819+((neighbours[count+1] & 0x7FFF)*0.00625), (double)819+((neighbours[count] & 0x7FFF)*0.00625));
+				sprintf(szChannel, "Neighbour-%02i : %.5f MHz / %.5f MHzÂ»", (count+2)/2, (double)819+((neighbours[count+1] & 0x7FFF)*0.00625), (double)819+((neighbours[count] & 0x7FFF)*0.00625));
 
 				break;
 
 //				case 3 :	// ? MHz
 //					
-//				sprintf(szChannel, "Neighbour-%02i : %.4f MHz / %.4f MHz»", (count+2)/2, (double)890+((neighbours[count+1] & 0x7FFF)*0.0125), (double)890+((neighbours[count] & 0x7FFF)*0.0125));
+//				sprintf(szChannel, "Neighbour-%02i : %.4f MHz / %.4f MHzÂ»", (count+2)/2, (double)890+((neighbours[count+1] & 0x7FFF)*0.0125), (double)890+((neighbours[count] & 0x7FFF)*0.0125));
 //
 //				break;
 
 				case 4 :	// 900 MHz
 					
-				sprintf(szChannel, "Neighbour-%02i : %.4f MHz / %.4f MHz»", (count+2)/2, (double)890+((neighbours[count+1] & 0x7FFF)*0.0125), (double)890+((neighbours[count] & 0x7FFF)*0.0125));
+				sprintf(szChannel, "Neighbour-%02i : %.4f MHz / %.4f MHzÂ»", (count+2)/2, (double)890+((neighbours[count+1] & 0x7FFF)*0.0125), (double)890+((neighbours[count] & 0x7FFF)*0.0125));
 
 				break;
 
 				case 3 :	// ? MHz
 				case 5 :	// 400 MHz
 					
-				sprintf(szChannel, "Neighbour-%02i : %.4f MHz / %.4f MHz»", (count+2)/2, (double)380+((neighbours[count+1] & 0x7FFF)*0.0125), (double)380+((neighbours[count] & 0x7FFF)*0.0125));
+				sprintf(szChannel, "Neighbour-%02i : %.4f MHz / %.4f MHzÂ»", (count+2)/2, (double)380+((neighbours[count+1] & 0x7FFF)*0.0125), (double)380+((neighbours[count] & 0x7FFF)*0.0125));
 
 				break;
 
@@ -1355,10 +1361,12 @@ bool MOBITEX::GetSlaveChannels()
 	static int count, neighbours[32];
 	char szChannel[64];
 
+	if (block[7] > 15) block[7] = 15;
+
 	memset(neighbours, 0, sizeof(neighbours));
 	count=0;
 
-	for (int i=8; i<18; i+=2, count++)
+	for (int i=8; i<18 && count < 32; i+=2, count++)
 	{
 		neighbours[count] = (((block[i] & 0x1F) << 8) | block[i+1]);
 
@@ -1376,8 +1384,8 @@ bool MOBITEX::GetSlaveChannels()
 
 	if (count == (block[7] * 2))
 	{
-		if (szBaseIdName[0]) sprintf(szNeighbourList, "[LIST OF SLAVE CHANNELS for BaseID:%s - %s]»", LINK_CONTROL_INFO.BaseID, szBaseIdName);
-		else sprintf(szNeighbourList, "[LIST OF SLAVE CHANNELS for BaseID:%s]»", LINK_CONTROL_INFO.BaseID);
+		if (szBaseIdName[0]) sprintf(szNeighbourList, "[LIST OF SLAVE CHANNELS for BaseID:%s - %s]Â»", LINK_CONTROL_INFO.BaseID, szBaseIdName);
+		else sprintf(szNeighbourList, "[LIST OF SLAVE CHANNELS for BaseID:%s]Â»", LINK_CONTROL_INFO.BaseID);
 
 		for (count=0; count/2 < block[7]; count+=2)
 		{
@@ -1385,19 +1393,19 @@ bool MOBITEX::GetSlaveChannels()
 			{
 				case 0 :	// 800 MHz
 					
-				sprintf(szChannel, "Slave-%02i : %.5f MHz / %.5f MHz»", (count+2)/2, (double)819+((neighbours[count+1] & 0x7FFF)*0.00625), (double)819+((neighbours[count] & 0x7FFF)*0.00625));
+				sprintf(szChannel, "Slave-%02i : %.5f MHz / %.5f MHzÂ»", (count+2)/2, (double)819+((neighbours[count+1] & 0x7FFF)*0.00625), (double)819+((neighbours[count] & 0x7FFF)*0.00625));
 
 				break;
 
 				case 4 :	// 900 MHz
 					
-				sprintf(szChannel, "Slave-%02i : %.4f MHz / %.4f MHz»", (count+2)/2, (double)890+((neighbours[count+1] & 0x7FFF)*0.0125), (double)890+((neighbours[count] & 0x7FFF)*0.0125));
+				sprintf(szChannel, "Slave-%02i : %.4f MHz / %.4f MHzÂ»", (count+2)/2, (double)890+((neighbours[count+1] & 0x7FFF)*0.0125), (double)890+((neighbours[count] & 0x7FFF)*0.0125));
 
 				break;
 
 				case 5 :	// 400 MHz
 					
-				sprintf(szChannel, "Slave-%02i : %.4f MHz / %.4f MHz»", (count+2)/2, (double)380+((neighbours[count+1] & 0x7FFF)*0.0125), (double)380+((neighbours[count] & 0x7FFF)*0.0125));
+				sprintf(szChannel, "Slave-%02i : %.4f MHz / %.4f MHzÂ»", (count+2)/2, (double)380+((neighbours[count+1] & 0x7FFF)*0.0125), (double)380+((neighbours[count] & 0x7FFF)*0.0125));
 
 				break;
 
@@ -1499,34 +1507,34 @@ void MOBITEX::frame1200(int bit)
 				case 0x01:	// MRM  Paketdata
 					if (!frametag)
 						frametag = "MRM";
-				case 0x02:	// ACK  Bekräftelse
+				case 0x02:	// ACK  BekrÃ¤ftelse
 					if (!frametag)
 						frametag = "ACK";
-				case 0x03:	// NACK Negativ Bekräftelse
+				case 0x03:	// NACK Negativ BekrÃ¤ftelse
 					if (!frametag)
 						frametag = "NACK";
-				case 0x04:	// REB  Begärand omsändning
+				case 0x04:	// REB  BegÃ¤rand omsÃ¤ndning
 					if (!frametag)
 						frametag = "REB";
-				case 0x05:	// RES  Omsändning
+				case 0x05:	// RES  OmsÃ¤ndning
 					if (!frametag)
 						frametag = "RES";
-				case 0x06:	// ABD  Accessbegäran Data
+				case 0x06:	// ABD  AccessbegÃ¤ran Data
 					if (!frametag)
 						frametag = "ABD";
-				case 0x07:	// ABT  Accessbegäran Tal
+				case 0x07:	// ABT  AccessbegÃ¤ran Tal
 					if (!frametag)
 						frametag = "ABT";
-				case 0x08:	// ABL  Accessbegäran Larm
+				case 0x08:	// ABL  AccessbegÃ¤ran Larm
 					if (!frametag)
 						frametag = "ABL";
-				case 0x09:	// ATD  Accesstillstånd Data
+				case 0x09:	// ATD  AccesstillstÃ¥nd Data
 					if (!frametag)
 						frametag = "ATD";
-				case 0x0a:	// ATT  Accesstillstånd Tal
+				case 0x0a:	// ATT  AccesstillstÃ¥nd Tal
 					if (!frametag)
 						frametag = "ATT";
-				case 0x0b:	// ATL  Accesstillstånd Larm  
+				case 0x0b:	// ATL  AccesstillstÃ¥nd Larm
 					if (!frametag)
 						frametag = "ATL";
 				case 0x0c:	// BKD  Byt Kanal Data
@@ -1544,10 +1552,10 @@ void MOBITEX::frame1200(int bit)
 				case 0x10:	// TST  Tyst
 					if (!frametag)
 						frametag = "TST";
-				case 0x11:	// AKT  Aktivitetsfråga
+				case 0x11:	// AKT  AktivitetsfrÃ¥ga
 					if (!frametag)
 						frametag = "AKT";
-				case 0x12:	// NAT  Negativt Accesstillstånd Tal
+				case 0x12:	// NAT  Negativt AccesstillstÃ¥nd Tal
 					if (!frametag)
 						frametag = "NAT";
 				case 0x13:	// BBT  Byt Bas Tal

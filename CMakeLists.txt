@@ -308,6 +308,20 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME publishing-core COMMAND PDWPublishingCoreTests)
 
+	add_executable(PDWSmtpMessageCoreTests
+		tests/smtp_message_core_tests.cpp
+		utils/smtp_message_core.cpp
+	)
+	target_include_directories(PDWSmtpMessageCoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWSmtpMessageCoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME smtp-message-core COMMAND PDWSmtpMessageCoreTests)
+
 	add_executable(PDWWasapiDeviceSmoke EXCLUDE_FROM_ALL
 		tests/wasapi_device_smoke.cpp
 		utils/audio_signal_core.cpp

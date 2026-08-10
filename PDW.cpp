@@ -822,8 +822,8 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	extern bool bEmpty_Frame;		// Set if FLEX-Frame=EMTPY / ERMES-Batch=0
 
 	char szFile[MAX_PATH];
-	char filters_reload[64];		// PH: Buffer for reloading filters
-	char filters_temp[64];			// PH: Buffer for reloading filters
+	char filters_reload[128];		// PH: Buffer for reloading filters
+	char filters_temp[128];			// PH: Buffer for reloading filters
 
 	bool pane1=false;
 
@@ -1295,8 +1295,9 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				{
 					if (GetEditSaveName(hWnd))
 					{
-						if (Need_Ext(Profile.edit_save_file))
-						strcat(Profile.edit_save_file,".txt");
+						if (Need_Ext(Profile.edit_save_file) &&
+							strlen(Profile.edit_save_file) + 4 < sizeof(Profile.edit_save_file))
+							strcat(Profile.edit_save_file,".txt");
 						SaveClipToDisk(Profile.edit_save_file);
 					}
 				}
@@ -1340,7 +1341,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 				case IDT_TOOLBAR_BTN1:
 				case IDM_COPY_SELECTION:
-				if (select_on)
+				if (select_on && selected)
 				{
 					select_on = 0;
 					selected  = 0;
@@ -1744,11 +1745,14 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		break;
 
-		case WM_MOVE:	
+		case WM_MOVE:
 		{
-			GetWindowRect(hWnd, &g_rect);
-			Profile.xPos = (INT) g_rect.left;
-			Profile.yPos = (INT) g_rect.top;
+			if (!IsIconic(hWnd) && !bTrayed)
+			{
+				GetWindowRect(hWnd, &g_rect);
+				Profile.xPos = (INT) g_rect.left;
+				Profile.yPos = (INT) g_rect.top;
+			}
 		}
 		break;
 
@@ -1895,60 +1899,60 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		break;
 
 		case WM_DESTROY:
-
-		KillTimer(ghWnd, PDW_TIMER);
-		KillTimer(ghWnd, MINUTE_TIMER);
-		KillTimer(ghWnd, SECOND_TIMER);
-		PublishingManagerShutdown();
-		NotificationManagerShutdown();
-		FtpShutdown();
-		PdwThemeShutdown();
-
-		if (pLogFile)    fclose(pLogFile);
-		if (pFilterFile) fclose(pFilterFile);
-		if (pStatFile)   fclose(pStatFile);
-
-		if (Profile.minimize_flg)	// Make sure PDW doesn't open minimized next time.
 		{
-			Profile.xPos = 0;
-			Profile.yPos = 0;
+			KillTimer(ghWnd, PDW_TIMER);
+			KillTimer(ghWnd, MINUTE_TIMER);
+			KillTimer(ghWnd, SECOND_TIMER);
 
-			if (Profile.maximize_flg)
+			// Stop every producer before queues, decoder buffers, or drawing state are released.
+			if (nDriverLoaded) UnloadDriver();
+			if (bCapturing) Stop_Capturing();
+			if (bPlayback) Stop_Playback();
+			if (bRecording) Stop_Recording();
+
+			// Stop background destinations while their configuration and shared state still exist.
+			PublishingManagerShutdown();
+			NotificationManagerShutdown();
+			FtpShutdown();
+			MailInit(NULL, NULL, NULL, NULL, NULL, NULL, 0, 0);
+
+			if (pLogFile)    { fclose(pLogFile);    pLogFile = NULL; }
+			if (pFilterFile) { fclose(pFilterFile); pFilterFile = NULL; }
+			if (pStatFile)   { fclose(pStatFile);   pStatFile = NULL; }
+
+			if (Profile.minimize_flg)	// Make sure PDW doesn't open minimized next time.
 			{
-				Profile.xSize = 593;
-				Profile.ySize = 442;
+				Profile.xPos = 0;
+				Profile.yPos = 0;
+
+				if (Profile.maximize_flg)
+				{
+					Profile.xSize = 593;
+					Profile.ySize = 442;
+				}
 			}
+			WriteSettings();
+
+			if (Profile.SystemTray) SystemTrayIcon(true);	// Remove PDW-icon from systemtray
+			if (bUpdateFilters) WriteFilters(&Profile, 0);	// Save FILTERS.INI
+
+			// A misbehaving third-party serial driver may ignore cancellation. In that rare
+			// case leave process-owned decoder/UI memory intact for the OS to reclaim rather
+			// than freeing it under a still-returning worker.
+			if (!nDriverLoaded)
+			{
+				PdwThemeShutdown();
+				Free_Common_Objects();
+				free_lang_tables();
+				acars.free_data();
+			}
+
+//			if (em.symbol_fp) fclose(em.symbol_fp);	// ermes debug data file.
+			if (pd_raw_fp) { fclose(pd_raw_fp); pd_raw_fp = NULL; }	// pocsag/flex debug data file.
+
+			PostQuitMessage(0);
+			break;
 		}
-		WriteSettings();
-
-		if (Profile.SystemTray) SystemTrayIcon(true);	// Remove PDW-icon from systemtray
-		if (bUpdateFilters) WriteFilters(&Profile, 0);	// Save FILTERS.INI
-
-		// Free all drawing objects(gfx.cpp)
-		// Free all tool bar images.
-		// Free all message buffers.
-		Free_Common_Objects();
-		free_lang_tables();	// Free language tables.
-		acars.free_data();	// Free acars database info.
-
-		if (nDriverLoaded)	// HWi
-		{
-			UnloadDriver();
-		}
-
-		// HWi, stop Mail thread.....
-		MailInit(NULL, NULL, NULL, NULL, NULL, NULL, 0, 0);
-
-		if (bCapturing)	Stop_Capturing();		// Reset and close audio device.
-		if (bPlayback)	Stop_Playback();		// RAH: stop playback
-		if (bRecording) Stop_Recording();		// HWi Added, seems to be missing
-
-//		if (em.symbol_fp) fclose(em.symbol_fp);	// ermes debug data file.
-		if (pd_raw_fp)    fclose(pd_raw_fp);	// pocsag/flex debug data file.
-
-		PostQuitMessage(0);
-
-		break;
 
 		case WM_CLOSE:
 
@@ -2568,9 +2572,21 @@ void CopyToClipboard(PaneStruct *pane, UINT min_col, UINT max_col, UINT min_row,
 		return;
 	}
 
-	num_lines = (max_col - min_col + 1);
+	if (max_col > (UINT)LINE_SIZE) max_col = (UINT)LINE_SIZE;
+	if (min_col > max_col) min_col = max_col;
+	const UINT rowsAvailable = pane->buff_lines > (UINT)pane->iVscrollPos ?
+		pane->buff_lines - (UINT)pane->iVscrollPos : 0;
+	if (rowsAvailable == 0)
+	{
+		CloseClipboard();
+		return;
+	}
+	if (max_row >= rowsAvailable) max_row = rowsAvailable - 1;
+	if (min_row > max_row) min_row = max_row;
+	num_lines = (max_row - min_row + 1);
 
-	if (!(hClipBuffer = GlobalAlloc(GMEM_DDESHARE, num_lines * (LINE_SIZE+3))))
+	if (!(hClipBuffer = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE,
+		num_lines * (LINE_SIZE+3) + 1)))
 	{
 		MessageBox(ghWnd,"Could not get Clipboard Memory!", "PDW Clipboard",MB_ICONWARNING);
 		CloseClipboard();
@@ -2695,7 +2711,7 @@ void PanePaint(PaneStruct *pane)
 
 DWORD GetColorRGB(BYTE color)
 {
-	DWORD rgb;
+	DWORD rgb = Profile.color_message;
 
 	switch (color)
 	{
@@ -3289,7 +3305,8 @@ BOOL FAR PASCAL LogFileDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 					SetFocus(GetDlgItem(hDlg, IDC_LOGFILE));
 					return (FALSE);
 				}
-				else if (Need_Ext(szFileLog)) strcat(szFileLog,".log");
+				else if (Need_Ext(szFileLog) && strlen(szFileLog) + 4 < sizeof(szFileLog))
+					strcat(szFileLog,".log");
 
 				if (stricmp(szFileLog, Profile.filterfile) == 0)
 				{
@@ -3812,7 +3829,10 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 						return (FALSE);
 					}
 					sscanf(temp, "%x", &Profile.comPortAddr);
-					Profile.comPortIRQ = irqs[value];
+					int irqSelection = (int)SendDlgItemMessage(hDlg, IDC_COMIRQ,
+						CB_GETCURSEL, 0, 0L);
+					if (irqSelection < 0 || irqSelection > 8) irqSelection = 0;
+					Profile.comPortIRQ = irqs[irqSelection];
 				}
 			}
 			else	// OS => 2000
@@ -5977,7 +5997,10 @@ BOOL FAR PASCAL GeneralOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARA
 			{
 				if (SHGetPathFromIDList(pidl, tmp_path))
 				{
-					if (tmp_path[strlen(tmp_path)-1] != '\\') strcat(tmp_path, "\\");
+					const size_t pathLength = strlen(tmp_path);
+					if (pathLength > 0 && pathLength + 2 <= sizeof(tmp_path) &&
+						tmp_path[pathLength-1] != '\\')
+						strcat(tmp_path, "\\");
 					SetDlgItemText(hDlg, IDC_LOGFILEPATH, tmp_path);
 				}
 
@@ -6049,7 +6072,10 @@ BOOL FAR PASCAL GeneralOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARA
 						return (FALSE);
 					}
 				}
-				Profile.BlockDuplicate += SendDlgItemMessage(hDlg, IDC_BLOCKDUPOPTION, CB_GETCURSEL, 0, 0L);
+				int duplicateOption = (int)SendDlgItemMessage(hDlg, IDC_BLOCKDUPOPTION,
+					CB_GETCURSEL, 0, 0L);
+				if (duplicateOption == CB_ERR) duplicateOption = 0;
+				Profile.BlockDuplicate += duplicateOption;
 				Profile.BlockDuplicate += IsDlgButtonChecked(hDlg, IDC_BLOCKEDTXT) ? 4 : 0;
 				Profile.BlockDuplicate += GetDlgItemInt(hDlg, IDC_BLOCKDUPTIMER, NULL, FALSE) << 4;
 			}
@@ -6076,7 +6102,7 @@ BOOL FAR PASCAL GeneralOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARA
 
 BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	int i, j, cursel, nextsel, lastsel, state, mode=0;
+	int i, j, cursel, nextsel, lastsel=0, state, mode=0;
 	char tbuf[100];
 //								 PAGING		 MOBITEX	 ACARS
 	char columns[8][3][10] = {	"-",		"-",		"-",
@@ -6486,11 +6512,14 @@ void BuildFilterString(char *temp_str, FILTER filter)
 	strcat(temp_str, " ");
 	strcat(temp_str, filter.capcode[0] ? filter.capcode : "         ");
 
-	if ((filter.type == MOBITEX_FILTER) && filter.capcode[strlen(filter.capcode)-1] == 'X')
+	const size_t filterCapcodeLength = strlen(filter.capcode);
+	if ((filter.type == MOBITEX_FILTER) && filterCapcodeLength >= 1 &&
+		filter.capcode[filterCapcodeLength-1] == 'X')
 	{
 		temp_str[strlen(temp_str)-2] = '\0';
 	}
-	else if ((filter.type == POCSAG_FILTER) && filter.capcode[strlen(filter.capcode)-2] == '-')
+	else if ((filter.type == POCSAG_FILTER) && filterCapcodeLength >= 2 &&
+		filter.capcode[filterCapcodeLength-2] == '-')
 	{
 		temp_str[strlen(temp_str)-2] = '\0';
 	}
@@ -6523,7 +6552,8 @@ void BuildFilterString(char *temp_str, FILTER filter)
 		}
 		else
 		{
-			strcat(temp_str, filter.wave_number == -1 ? "NoSound" : wave_names[filter.wave_number]);
+			strcat(temp_str, (filter.wave_number < 0 || filter.wave_number > 10) ?
+				"NoSound" : wave_names[filter.wave_number]);
 		}
 	}
 
@@ -7407,7 +7437,8 @@ BOOL FAR PASCAL FilterOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 				}
 				else
 				{
-					if (Need_Ext(szFileFilter)) strcat(szFileFilter,".flt");
+					if (Need_Ext(szFileFilter) && strlen(szFileFilter) + 4 < sizeof(szFileFilter))
+						strcat(szFileFilter,".flt");
 					if (!FileExists(szLogPathName)) CreateDirectory(szLogPathName, NULL);
 				}
 
@@ -7522,7 +7553,7 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 									  "Light Cyan","Blue",     "Magenta", "Sea Green", "Pink",
 									  "Ice Blue",  "Turqoise", "Don't Change"};
 
-	static int capcode_len[7] = { 0, Profile.FlexGroupMode ? 7 : 9, 7, 0, 7, 6, 7 };
+	int capcode_len[7] = { 0, Profile.FlexGroupMode ? 7 : 9, 7, 0, 7, 6, 7 };
 
 	int i, index=-1, str_len, pos, idcControl=IDC_SEPFILTERFILE1;
 	int capcode=0, text=0, captxt=0, label=0;
@@ -7963,7 +7994,7 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 
 		if (filter.type == MOBITEX_FILTER)
 		{
-			switch (filter.capcode[strlen(filter.capcode)-2])
+			switch (strlen(filter.capcode) >= 2 ? filter.capcode[strlen(filter.capcode)-2] : 0)
 			{
 				case 'R' :
 				CheckDlgButton(hDlg, IDC_FILTERRXTXMAN, BST_UNCHECKED);
@@ -7986,7 +8017,7 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 			SendDlgItemMessage(hDlg, IDC_FILTERFNU, CB_ADDSTRING, 0, (LPARAM)(LPCTSTR) "3");
 			SendDlgItemMessage(hDlg, IDC_FILTERFNU, CB_ADDSTRING, 0, (LPARAM)(LPCTSTR) "4");
 
-			if (filter.capcode[strlen(filter.capcode)-2] == '-')	// Contains function number
+			if (strlen(filter.capcode) >= 2 && filter.capcode[strlen(filter.capcode)-2] == '-')	// Contains function number
 			{
 				 SendDlgItemMessage(hDlg, IDC_FILTERFNU, CB_SETCURSEL, (WPARAM) atoi(&filter.capcode[8]), 0L);
 			}
@@ -8404,7 +8435,8 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 						// Convert 9-digit short addresses to 7-digits
 						if ((strlen(filter.capcode) == 9) && memcmp(filter.capcode, "00", 2) == 0)
 						{
-							if (CompareCapcodes(filter.capcode, "002101249") < 0) memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode));
+							if (CompareCapcodes(filter.capcode, "002101249") < 0)
+								memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode)-1);
 //							if (atoi(filter.capcode) < 2101249) memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode));
 						}
 					}
@@ -8649,7 +8681,9 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 								{
 									if (strcmp(tmp_sepfile[j], "Don't change"))
 									{
-										if (Need_Ext(tmp_sepfile[j]) && tmp_sepfile[j][0]) strcat(tmp_sepfile[j],".txt");
+										if (Need_Ext(tmp_sepfile[j]) && tmp_sepfile[j][0] &&
+											strlen(tmp_sepfile[j]) + 4 <= FILTER_FILE_LEN)
+											strcat(tmp_sepfile[j],".txt");
 										strcpy(Profile.filters[index].sep_filterfile[j], tmp_sepfile[j]);
 									}
 								}
@@ -8850,7 +8884,13 @@ BOOL FAR PASCAL FilterCheckDuplicateDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam,
 		}
 		else
 		{
-			if ((strstr(szFilter1, Profile.filters[index1].label) == 0)   ||
+			if (index1 < 0 || index2 < 0 ||
+				index1 >= (int)Profile.filters.size() ||
+				index2 >= (int)Profile.filters.size())
+			{
+				bDuplicate=false;
+			}
+			else if ((strstr(szFilter1, Profile.filters[index1].label) == 0)   ||
 				(strstr(szFilter2, Profile.filters[index2].label) == 0)   ||
 				(strstr(szFilter1, Profile.filters[index1].capcode) == 0) ||
 				(strstr(szFilter2, Profile.filters[index2].capcode) == 0))
@@ -9457,7 +9497,8 @@ BOOL FAR PASCAL MonStatDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 				}
 				else
 				{
-					if (Need_Ext(szStatFile)) strcat(szStatFile,".st");
+					if (Need_Ext(szStatFile) && strlen(szStatFile) + 3 < sizeof(szStatFile))
+						strcat(szStatFile,".st");
 
 					if ((pFileLog = fopen(szStatFile, "a")) == NULL)
 					{
@@ -9543,7 +9584,7 @@ BOOL CenterWindow(HWND hWnd)
 
 BOOL ErrorMessageBox(LPCTSTR lpszText, LPCTSTR lpszTitle, LPCTSTR lpszFile, INT Line)
 {
-	#define ERROR_BUFFER_SIZE 512
+	#define ERROR_BUFFER_SIZE 2048
 
 	static TCHAR Format[] =
 	TEXT("%s\n\n"                                 )
@@ -9566,7 +9607,13 @@ BOOL ErrorMessageBox(LPCTSTR lpszText, LPCTSTR lpszTitle, LPCTSTR lpszFile, INT 
 
 	//-- allocate the message box buffer
 	hMessageBoxBuffer  = LocalAlloc(LMEM_FIXED, ERROR_BUFFER_SIZE);
+	if (!hMessageBoxBuffer) return (FALSE);
 	lpMessageBoxBuffer = LocalLock(hMessageBoxBuffer);
+	if (!lpMessageBoxBuffer)
+	{
+		LocalFree(hMessageBoxBuffer);
+		return (FALSE);
+	}
 
 	//-- get the system error and system error message
 	dwGetLastError = GetLastError();
@@ -9800,6 +9847,12 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->ScreenColumns[4]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("ScreenCol5"), 5, lpszIniPathName);
 	pProfile->ScreenColumns[5]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("ScreenCol6"), 6, lpszIniPathName);
 	pProfile->ScreenColumns[6]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("ScreenCol7"), 7, lpszIniPathName);
+	for (int screenColumn = 0; screenColumn < 7; ++screenColumn)
+	{
+		if (pProfile->ScreenColumns[screenColumn] < 0 ||
+			pProfile->ScreenColumns[screenColumn] > 7)
+			pProfile->ScreenColumns[screenColumn] = 0;
+	}
 
 	pProfile->stat_file_enabled = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("StatFileEnabled"), pProfile->stat_file_enabled, lpszIniPathName);
 
@@ -9902,6 +9955,8 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	GetPrivateProfileString("Filter", TEXT("FilterCmdFile"), "", pProfile->filter_cmd, MAX_FILE_LEN, lpszIniPathName);
 	GetPrivateProfileString("Filter", TEXT("FilterCmdArgs"), "", pProfile->filter_cmd_args, MAX_FILE_LEN, lpszIniPathName);
 	pProfile->filter_default_type = (INT) GetPrivateProfileInt("Filter", TEXT("FilterDefaultType"), pProfile->filter_default_type, lpszIniPathName);
+	if (pProfile->filter_default_type < 0 || pProfile->filter_default_type > 5)
+		pProfile->filter_default_type = 0;
 
 	if (ReadFilters(szFilterPathName, &Profile, false) == false)
 	{
@@ -9927,6 +9982,21 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 	int  i=0, pos, nLines=0, iFilterCount=0, iFilter=0;
 
 	FILTER filter;
+	auto copyQuotedField = [&szLine](int& position, char* destination,
+		size_t destinationSize) -> bool
+	{
+		if (!destination || destinationSize == 0 || position < 0) return false;
+		const size_t lineLength = strlen(szLine);
+		if ((size_t)position >= lineLength || szLine[position] != '"') return false;
+		const char* closingQuote = strchr(&szLine[position+1], '"');
+		if (!closingQuote) return false;
+		const size_t fieldLength = (size_t)(closingQuote - &szLine[position+1]);
+		const size_t copyLength = (std::min)(fieldLength, destinationSize-1);
+		memcpy(destination, &szLine[position+1], copyLength);
+		destination[copyLength] = '\0';
+		position = (int)(closingQuote - szLine);
+		return true;
+	};
 
 	#define FILTER_TYPE			1
 	#define FILTER_CAPCODE		2
@@ -9948,7 +10018,9 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 		while (fgets(szLine, sizeof(szLine), pFile) != NULL)
 		{
-			szLine[strlen(szLine)-1] = '\0';	// Remove linebreaks
+			size_t lineLength = strlen(szLine);
+			while (lineLength > 0 && (szLine[lineLength-1] == '\r' || szLine[lineLength-1] == '\n'))
+				szLine[--lineLength] = '\0';
 
 			if (nLines == 0)
 			{
@@ -9982,11 +10054,14 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 				if (strncmp(szLine, "Filter", 6) == 0)
 				{
-					pos = strchr(szLine, '=') - szLine+1;	// Find first item
+					char* equals = strchr(szLine, '=');
+					if (!equals) { bError = true; pos = 0; }
+					else pos = (int)(equals - szLine + 1);	// Find first item
 				}
 				else pos=0;
 
-				if (!isdigit(szLine[pos]) || szLine[pos+1] != ',')
+				if (bError || pos < 0 || (size_t)(pos+1) >= strlen(szLine) ||
+					!isdigit((unsigned char)szLine[pos]) || szLine[pos+1] != ',')
 				{
 					bError=true;
 				}
@@ -10014,45 +10089,32 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 							case FILTER_CAPCODE:		// Get capcode
 
-							if (szLine[pos+1] != '"')
+							if (!copyQuotedField(pos, filter.capcode, sizeof(filter.capcode)))
 							{
-								strncpy(filter.capcode, &szLine[pos+1], strlen(szLine));
-								filter.capcode[strchr(filter.capcode, '"') - filter.capcode] = 0;
-								pos += strlen(filter.capcode) + 1;	// + 1 to start at last "
-
-								// Convert 9-digit short addresses to 7-digits
-								if ((strlen(filter.capcode) == 9) && memcmp(filter.capcode, "00", 2) == 0)
-								{
-									if (CompareCapcodes(filter.capcode, "002101249") < 0) memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode));
-//									if (atoi(filter.capcode) < 2101249) memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode));
-//									memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode));
-								}
+								bError = true;
+								break;
 							}
-							else filter.capcode[0] = 0;
+
+							// Convert 9-digit short addresses to 7-digits
+							if ((strlen(filter.capcode) == 9) && memcmp(filter.capcode, "00", 2) == 0)
+							{
+								if (CompareCapcodes(filter.capcode, "002101249") < 0)
+									memmove(filter.capcode, &filter.capcode[2], strlen(filter.capcode)-1);
+							}
 
 							break;
 
 							case FILTER_LABEL:			// Get label
 
-							if (szLine[pos+1] != '"')
-							{
-								strncpy(filter.label, &szLine[pos+1], strlen(szLine));
-								filter.label[strchr(filter.label, '"') - filter.label] = 0;
-								pos += strlen(filter.label) + 1;	// + 1 to start at last "
-							}
-							else filter.label[0] = 0;
+							if (!copyQuotedField(pos, filter.label, sizeof(filter.label)))
+								bError = true;
 
 							break;
 
 							case FILTER_TEXT:			// Get text
 
-							if (szLine[pos+1] != '"')
-							{
-								strncpy(filter.text, &szLine[pos+1], strlen(szLine));
-								filter.text[strchr(filter.text, '"') - filter.text] = 0;
-								pos += strlen(filter.text) + 1;	// + 1 to start at last "
-							}
-							else filter.text[0] = 0;
+							if (!copyQuotedField(pos, filter.text, sizeof(filter.text)))
+								bError = true;
 
 							break;
 
@@ -10067,10 +10129,16 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 							case FILTER_WAVE:		// Get wave_number
 
-							while (szLine[pos] != ',') szTEMP[i++] = szLine[pos++];
+							while (szLine[pos] && szLine[pos] != ',')
+							{
+								if (i < (int)sizeof(szTEMP)-1) szTEMP[i++] = szLine[pos];
+								pos++;
+							}
 
 							szTEMP[i] = 0;
 							filter.wave_number = atoi(szTEMP);
+							if (filter.wave_number < -1 || filter.wave_number > 10)
+								filter.wave_number = -1;
 
 							break;
 
@@ -10082,19 +10150,29 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 							case FILTER_LABEL_COLOR:	// Get label_enabled / color
 
-							while (szLine[pos] != ',') szTEMP[i++] = szLine[pos++];
+							while (szLine[pos] && szLine[pos] != ',')
+							{
+								if (i < (int)sizeof(szTEMP)-1) szTEMP[i++] = szLine[pos];
+								pos++;
+							}
 
 							szTEMP[i] = 0;
 							iTEMP = atoi(szTEMP);
 
 							filter.label_enabled = iTEMP ? 1 : 0;
 							filter.label_color   = iTEMP ? iTEMP-1 : 0;
+							if (filter.label_color < 0 || filter.label_color > 16)
+								filter.label_color = 0;
 
 							break;
 
 							case FILTER_SEP:		// Get sep_filterfile_en / smtp / match_exact_msg
 
-							while (szLine[pos] != ',') szTEMP[i++] = szLine[pos++];
+							while (szLine[pos] && szLine[pos] != ',')
+							{
+								if (i < (int)sizeof(szTEMP)-1) szTEMP[i++] = szLine[pos];
+								pos++;
+							}
 
 							szTEMP[i] = 0;
 							iTEMP = atoi(szTEMP);
@@ -10107,30 +10185,47 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 							
 							case FILTER_SEPFILES:	// Get separate filterfile(s)
 
-							if (szLine[pos+1] != '"')
+							if (!copyQuotedField(pos, szSepfiles, sizeof(szSepfiles)))
 							{
-								strncpy(szSepfiles, &szLine[pos+1], strlen(szLine));
-								szSepfiles[strchr(szSepfiles, '"') - szSepfiles] = 0;
-								pos += strlen(szSepfiles);
-								token = strtok(szSepfiles, ";");
-
-								do
+								bError = true;
+								break;
+							}
+							if (szSepfiles[0])
+							{
+								char* separatorContext = NULL;
+								token = strtok_s(szSepfiles, ";", &separatorContext);
+								while (token && filter.sep_filterfiles < 3)
 								{
-									strcpy(filter.sep_filterfile[filter.sep_filterfiles++], token);
+									strncpy(filter.sep_filterfile[filter.sep_filterfiles], token,
+										sizeof(filter.sep_filterfile[0])-1);
+									filter.sep_filterfile[filter.sep_filterfiles][sizeof(filter.sep_filterfile[0])-1] = '\0';
+									filter.sep_filterfiles++;
+									token = strtok_s(NULL, ";", &separatorContext);
 								}
-								while (token = strtok(NULL, ";"));
 							}
 							break;
 
 							case FILTER_HITCOUNTER:	// Get hitcounter
 
-							if (token = strtok(&szLine[pos], ",")) filter.hitcounter = atoi(token);
-							if (token = strtok(NULL, ",")) strcpy(filter.lasthit_date, token);
-							if (token = strtok(NULL, ",")) strcpy(filter.lasthit_time, token);
+							{
+								char* hitContext = NULL;
+								if (token = strtok_s(&szLine[pos], ",", &hitContext)) filter.hitcounter = atoi(token);
+								if (token = strtok_s(NULL, ",", &hitContext))
+								{
+									strncpy(filter.lasthit_date, token, sizeof(filter.lasthit_date)-1);
+									filter.lasthit_date[sizeof(filter.lasthit_date)-1] = '\0';
+								}
+								if (token = strtok_s(NULL, ",", &hitContext))
+								{
+									strncpy(filter.lasthit_time, token, sizeof(filter.lasthit_time)-1);
+									filter.lasthit_time[sizeof(filter.lasthit_time)-1] = '\0';
+								}
+							}
 
 							break;
 						}
 	
+						if (bError) break;
 						token = strchr(&szLine[pos], ',');
 
 						if (token)
@@ -10139,11 +10234,18 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 						}
 						else break;
 					}
-					Profile.filters.insert(Profile.filters.begin() + iFilter, filter);
-					iFilter++;
+					if (!bError)
+					{
+						Profile.filters.insert(Profile.filters.begin() + iFilter, filter);
+						iFilter++;
+					}
 				}
 			}
-			if (bError) return(false);
+			if (bError)
+			{
+				fclose(pFile);
+				return(false);
+			}
 			else nLines++;
 		}
 		fclose(pFile);
@@ -10415,7 +10517,7 @@ void WriteFilters(PPROFILE pProfile, int backup)
 	char szLine[256];
 	char szFilename[MAX_PATH];
 	char szPathname[MAX_PATH];
-	char ext[10];
+	char ext[10] = "";
 
 	if (GetFileAttributes(szFilterPathName) & FILE_ATTRIBUTE_READONLY)
 	{
@@ -10566,15 +10668,18 @@ bool LoadDriver(void)	// HWi
 		slicer_in.irq = Profile.comPortIRQ;
 //		Use comport number instead of comport address
 		slicer_in.com_port = Profile.comPort;
-		hDriver = (HANDLE) rs232_connect(&slicer_in, &slicer_out);
+		const int rs232Result = rs232_connect(&slicer_in, &slicer_out);
 
-		if (hDriver != RS232_SUCCESS)
+		if (rs232Result != RS232_SUCCESS)
 		{
-			MessageBox(ghWnd,"Unable to open the selected Comport", "PDW Driver", MB_ICONWARNING);
+			MessageBox(ghWnd,
+				"Unable to open the selected COM port.\n\nIt may already be in use by another program, or it is not available.",
+				"COM Port", MB_ICONWARNING);
 //			OUTPUTDEBUGMSG((("Error: rs232_connect() = %d\n"), hDriver));		
 			nDriverLoaded = DRIVER_NOT_LOADED;
 			return(false);
 		}
+		hDriver = NULL;
 		nDriverLoaded = DRIVER_COM_LOADED;	    // HWi must be only TRUE when all is OK
 	}
 
@@ -10632,7 +10737,14 @@ void UnloadDriver(void)	//HWi made this a function to clean up the code
 		}
 		else 
 		{
-			rs232_disconnect();		// HWi 
+			const int disconnectResult = rs232_disconnect();		// HWi
+			if (disconnectResult != RS232_SUCCESS &&
+				disconnectResult != RS232_NO_CONNECTION)
+			{
+				// Keep the loaded state so a second worker cannot be started while the
+				// existing serial thread is still winding down.
+				return;
+			}
 		}
 		nDriverLoaded=DRIVER_NOT_LOADED;
 	}
@@ -10905,7 +11017,7 @@ void OnMouseWheel(WPARAM wParam, int x, int y, RECT g_rect)
 		p.y = y;
 
 		hScrollWND   = WindowFromPoint(p);
-		bScrollingUp = (HIWORD(wParam) == 120);
+		bScrollingUp = ((short)HIWORD(wParam) > 0);
 
 		if (Profile.ScrollSpeed)
 		{
@@ -11251,7 +11363,7 @@ void ResetHitcounters(bool bAll)
 	int index=-1, i=0;
 
 	char filename[MAX_PATH];
-	char ext[10];
+	char ext[10] = "";
 				
 	if (MessageBox(ghWnd, "Are you sure?", "Reset Hitcounters", MB_ICONQUESTION | MB_OKCANCEL) == IDCANCEL) return;
 
@@ -11313,6 +11425,8 @@ void SetWindowPaneSize(int param)
 		iMaxWidth-= GetSystemMetrics(SM_CXVSCROLL);			// PH: Subtract scrollbar width	
 		iMaxWidth-= (cxChar*2);								// PH: Subtract 1 character+1px
 		NewLinePoint = (iMaxWidth/cxChar);					// PH: We have the max. chars
+		if (NewLinePoint > LINE_SIZE-1) NewLinePoint = LINE_SIZE-1;
+		if (NewLinePoint < 1) NewLinePoint = 1;
 	}
 }
 
@@ -11410,17 +11524,25 @@ void SetNewWindowText(char *text)
 {
 //	extern bool bMode_IDLE;			// Set if no signal
 
-	strcpy(szTEMP, szWindowText[0]);
+	szTEMP[0] = '\0';
+	auto appendWindowText = [](char* destination, size_t destinationSize, const char* value)
+	{
+		if (!value || !value[0]) return;
+		const size_t used = strlen(destination);
+		if (used < destinationSize-1)
+			strncat(destination, value, destinationSize-1-used);
+	};
+	appendWindowText(szTEMP, sizeof(szTEMP), szWindowText[0]);
 
-	if (text[0]) strcat(szTEMP, text);
+	if (text && text[0]) appendWindowText(szTEMP, sizeof(szTEMP), text);
 	else
 	{
 		for (int i=1; i<6; i++)
 		{
 			if (szWindowText[i][0])
 			{
-				strcat(szTEMP, " - ");
-				strcat(szTEMP, szWindowText[i]);
+				appendWindowText(szTEMP, sizeof(szTEMP), " - ");
+				appendWindowText(szTEMP, sizeof(szTEMP), szWindowText[i]);
 			}
 		}
 		strcpy(szWindowText[5], "");
@@ -11538,6 +11660,8 @@ void SelectByDoubleClick(HWND hWnd, PaneStruct *pane, int iPosition, int StartRo
 	char *pchar;
 	
 	pchar = pane->buff_char;
+	if (!pchar || iPosition < 0 || iPosition >= LINE_SIZE) return;
+	if (line_no < 0 || line_no >= (int)pane->buff_lines) return;
 
 	if (pchar[offset + iPosition] > 32)	// If user clicked on a character bigger than ASCII(32)
 	{
@@ -11552,8 +11676,10 @@ void SelectByDoubleClick(HWND hWnd, PaneStruct *pane, int iPosition, int StartRo
 			iSelectionEndCol   = iPosition;
 		}
 
-		while (pchar[offset + iSelectionStartCol-1] > 32) iSelectionStartCol--;
-		while (pchar[offset + iSelectionEndCol+1] > 32)   iSelectionEndCol++;
+		while (iSelectionStartCol > 0 && pchar[offset + iSelectionStartCol-1] > 32)
+			iSelectionStartCol--;
+		while (iSelectionEndCol < LINE_SIZE-1 && pchar[offset + iSelectionEndCol+1] > 32)
+			iSelectionEndCol++;
 
 		LastSelection=MAKELONG(iSelectionStartCol, iSelectionEndCol);
 
@@ -11580,10 +11706,13 @@ void GoogleMaps(int iPosition)
 	int line_no = Pane1.iVscrollPos + iSelectionStartRow;
 	int offset  = line_no * (LINE_SIZE+1);
 	pchar = Pane1.buff_char;
+	if (!pchar || line_no < 0 || line_no >= (int)Pane1.buff_lines) return;
+	if (iSelectionStartCol < 0 || iSelectionStartCol >= LINE_SIZE) return;
 
 	if (Profile.monitor_mobitex && iPosition == iItemPositions[MSG_MESSAGE])
 	{
-		for (i=0, xx = iSelectionStartCol; xx <= (iSelectionStartCol+18); i++, xx++)
+		for (i=0, xx = iSelectionStartCol;
+			xx <= (iSelectionStartCol+18) && xx < LINE_SIZE; i++, xx++)
 		{
 			if (pchar[offset + xx]) szTMP[i] = pchar[offset + xx];
 			else break;

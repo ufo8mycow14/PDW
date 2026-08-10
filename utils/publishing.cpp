@@ -24,6 +24,7 @@
 #include "headers\notification.h"
 #include "headers\publishing.h"
 #include "publishing_core.h"
+#include "curl_runtime.h"
 
 namespace
 {
@@ -55,6 +56,12 @@ namespace
 		task.testHmac.clear();
 	}
 
+	void WipeString(std::string& value)
+	{
+		if (!value.empty()) SecureZeroMemory(&value[0], value.size());
+		value.clear();
+	}
+
 	struct Config
 	{
 		bool enabled;
@@ -69,6 +76,10 @@ namespace
 		std::string outputPath;
 		std::string webhookUrl;
 		std::string sourceAlias;
+		Config()
+			: enabled(false), acknowledged(false), paused(false), filteredOnly(true),
+			  staticEnabled(false), webhookEnabled(false), maskAddress(false),
+			  includeMessage(true), minimumInterval(0) {}
 	};
 
 	CRITICAL_SECTION g_lock;
@@ -77,8 +88,10 @@ namespace
 	HANDLE g_workEvent = NULL;
 	HANDLE g_stopEvent = NULL;
 	HANDLE g_thread = NULL;
+	bool g_curlInitialized = false;
 	std::deque<PublishTask> g_queue;
 	std::vector<pdw::publishing::PublishEvent> g_feed;
+	Config g_config;
 	char g_status[512] = "Publishing has not been initialized.";
 	volatile LONG g_counter = 0;
 
@@ -120,7 +133,7 @@ namespace
 		return JoinPath(szPath, path);
 	}
 
-	Config SnapshotConfig()
+	Config ProfileConfig()
 	{
 		Config config;
 		config.enabled = Profile.publishingEnabled != 0;
@@ -135,6 +148,14 @@ namespace
 		config.outputPath = ResolveOutputPath(Profile.publishingOutputPath);
 		config.webhookUrl = Profile.publishingWebhookUrl;
 		config.sourceAlias = Profile.publishingSourceAlias;
+		return config;
+	}
+
+	Config SnapshotConfig()
+	{
+		EnterCriticalSection(&g_lock);
+		const Config config(g_config);
+		LeaveCriticalSection(&g_lock);
 		return config;
 	}
 
@@ -284,13 +305,25 @@ namespace
 		std::string hmac = task.test ? task.testHmac : std::string();
 		if (!task.test)
 		{
-			ReadSecret("Bearer", bearer);
-			ReadSecret("HMAC", hmac);
+			if (!ReadSecret("Bearer", bearer) || !ReadSecret("HMAC", hmac))
+			{
+				error = "Windows Credential Manager could not read the publishing secret.";
+				WipeString(bearer);
+				WipeString(hmac);
+				return false;
+			}
 		}
 		CURL* curl = curl_easy_init();
-		if (!curl) { error = "Unable to create HTTPS publishing request."; return false; }
+		if (!curl)
+		{
+			error = "Unable to create HTTPS publishing request.";
+			WipeString(bearer);
+			WipeString(hmac);
+			return false;
+		}
 		struct curl_slist* headers = NULL;
 		headers = curl_slist_append(headers, "Content-Type: application/json; charset=utf-8");
+		headers = curl_slist_append(headers, "Expect:");
 		const std::string idempotency = "Idempotency-Key: " + task.event.id;
 		headers = curl_slist_append(headers, idempotency.c_str());
 		std::string authorization;
@@ -306,6 +339,7 @@ namespace
 			headers = curl_slist_append(headers, signature.c_str());
 		}
 		curl_easy_setopt(curl, CURLOPT_URL, config.webhookUrl.c_str());
+		curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, task.payload.data());
 		curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(task.payload.size()));
@@ -314,18 +348,24 @@ namespace
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-		curl_easy_setopt(curl, CURLOPT_USERAGENT, "PDW/3.3 publishing");
+		const std::string userAgent = std::string("PDW/") + (pdw_version ? pdw_version : "unknown") + " publishing";
+		curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, DiscardResponse);
+		char curlError[CURL_ERROR_SIZE] = {};
+		curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, curlError);
 		const CURLcode result = curl_easy_perform(curl);
 		long status = 0;
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
 		curl_slist_free_all(headers);
 		curl_easy_cleanup(curl);
-		if (!bearer.empty()) SecureZeroMemory(&bearer[0], bearer.size());
-		if (!hmac.empty()) SecureZeroMemory(&hmac[0], hmac.size());
+		WipeString(bearer);
+		WipeString(hmac);
+		WipeString(authorization);
+		WipeString(signature);
 		if (result == CURLE_OK && status >= 200 && status < 300) return true;
-		char message[180];
-		snprintf(message, sizeof(message), "Webhook failed: %s (HTTP %ld).", curl_easy_strerror(result), status);
+		char message[256];
+		snprintf(message, sizeof(message), "Webhook failed: %s (HTTP %ld).",
+			curlError[0] ? curlError : curl_easy_strerror(result), status);
 		error = message;
 		return false;
 	}
@@ -422,6 +462,12 @@ namespace
 
 	void QueueTask(PublishTask& task)
 	{
+		if (!g_thread || !g_workEvent)
+		{
+			WipeTaskSecrets(task);
+			SetStatus("Publishing worker is unavailable; the message remains in PDW's legacy outputs.");
+			return;
+		}
 		EnterCriticalSection(&g_lock);
 		if (g_queue.size() >= MAX_QUEUE)
 		{
@@ -506,13 +552,29 @@ void PublishingManagerInitialize(void)
 	if (g_initialized) return;
 	InitializeCriticalSection(&g_lock);
 	g_initialized = true;
+	InterlockedExchange(&g_stopping, 0);
 	g_workEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 	g_stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	curl_global_init(CURL_GLOBAL_DEFAULT);
+	if (!g_workEvent || !g_stopEvent)
+	{
+		SetStatus("Publishing could not create its worker events; legacy outputs remain available.");
+		return;
+	}
+	if (!CurlRuntimeAcquire())
+	{
+		SetStatus("Publishing could not initialize HTTPS support; legacy outputs remain available.");
+		return;
+	}
+	g_curlInitialized = true;
+	PublishingSettingsChanged();
 	LoadPersistentQueue();
 	const uintptr_t thread = _beginthreadex(NULL, 0, Worker, NULL, 0, NULL);
 	g_thread = reinterpret_cast<HANDLE>(thread);
-	PublishingSettingsChanged();
+	if (!g_thread)
+	{
+		SetStatus("Publishing could not start its worker; legacy outputs remain available.");
+		return;
+	}
 	if (!g_queue.empty()) SetEvent(g_workEvent);
 }
 
@@ -520,7 +582,7 @@ void PublishingManagerShutdown(void)
 {
 	if (!g_initialized) return;
 	InterlockedExchange(&g_stopping, 1);
-	SetEvent(g_stopEvent);
+	if (g_stopEvent) SetEvent(g_stopEvent);
 	if (g_thread && WaitForSingleObject(g_thread, 20000) == WAIT_OBJECT_0)
 	{
 		CloseHandle(g_thread);
@@ -532,10 +594,11 @@ void PublishingManagerShutdown(void)
 		WipeTaskSecrets(*task);
 	g_queue.clear();
 	LeaveCriticalSection(&g_lock);
-	CloseHandle(g_workEvent);
-	CloseHandle(g_stopEvent);
+	if (g_workEvent) CloseHandle(g_workEvent);
+	if (g_stopEvent) CloseHandle(g_stopEvent);
 	g_workEvent = g_stopEvent = NULL;
-	curl_global_cleanup();
+	if (g_curlInitialized) CurlRuntimeRelease();
+	g_curlInitialized = false;
 	g_initialized = false;
 	DeleteCriticalSection(&g_lock);
 }
@@ -543,14 +606,17 @@ void PublishingManagerShutdown(void)
 void PublishingSettingsChanged(void)
 {
 	if (!g_initialized) return;
-	const Config config = SnapshotConfig();
+	const Config config = ProfileConfig();
+	EnterCriticalSection(&g_lock);
+	g_config = config;
+	LeaveCriticalSection(&g_lock);
 	if (!config.enabled) SetStatus("Publishing is disabled.");
 	else if (!config.acknowledged) SetStatus("Publishing cannot start until the jurisdiction and permission acknowledgement is accepted.");
 	else if (!config.staticEnabled && !config.webhookEnabled) SetStatus("Choose static files, an HTTPS webhook, or both.");
 	else if (config.webhookEnabled && config.webhookUrl.compare(0, 8, "https://") != 0) SetStatus("Publishing webhook must use HTTPS.");
 	else if (config.paused) SetStatus("Publishing is enabled but paused; queued events are retained.");
 	else SetStatus("Publishing is enabled and ready.");
-	SetEvent(g_workEvent);
+	if (g_workEvent) SetEvent(g_workEvent);
 }
 
 void PublishingGetStatusText(char* buffer, size_t bufferSize)
@@ -578,7 +644,19 @@ void PublishingPublishDecodedMessage(const DecodedMessageNotificationContext& co
 	source.bitrate = Utf8(context.bitrate);
 	source.message = Utf8(context.message);
 	source.filterLabel = Utf8(context.filterLabel);
+	source.filterMatched = context.filterMatched;
+	source.monitorOnly = context.monitorOnly;
 	source.filtered = context.filtered;
+	source.rejected = context.rejected;
+	source.blockedDuplicate = context.blockedDuplicate;
+	source.groupCall = context.groupCall;
+	source.groupFinal = context.groupFinal;
+	source.fragmented = context.fragmented;
+	source.assembled = context.assembled;
+	source.filterIndex = context.filterIndex;
+	source.groupBit = context.groupBit;
+	source.cycle = context.cycle;
+	source.frame = context.frame;
 	pdw::publishing::TransformOptions options;
 	options.sourceAlias = Utf8(config.sourceAlias.c_str());
 	options.maskAddress = config.maskAddress;

@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <winbase.h>
+#include <atomic>
 #include "..\headers\slicer.h"
 #include "..\utils\debug.h"
 #include "..\utils\ostype.h"
@@ -8,12 +9,12 @@
 
 #define SLICER_BUFSIZE 10000
 
-volatile HANDLE m_hRxThread = INVALID_HANDLE_VALUE;
+HANDLE m_hRxThread = NULL;
 ULONG WINAPI RxThread(LPVOID pCl);
 BOOL	m_bConnectedToComport = FALSE;
 HANDLE	m_ComPortHandle = INVALID_HANDLE_VALUE;
 DWORD	m_dwThreadId = 0;
-BOOL	bKeepThreadAlive;
+std::atomic<bool> bKeepThreadAlive(false);
 double  nTiming ;	// was int
 BOOL    bOrgcomPortRS232 ;
 BOOL    bSlicerDriver = FALSE;
@@ -79,11 +80,12 @@ int rs232_connect(const SLICER_IN_STR *pInSlicer, SLICER_OUT_STR *pOutSlicer)
 	* Seek contact with the serial.sys driver. Configure it for overlapped operation, this is   *
 	* done so the receiving thread (later on in this code) can be terminated by the main thread *
 	********************************************************************************************/	
-	m_ComPortHandle = CreateFile(pcComPort,GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0);
+	// Read/write with no sharing makes ownership exclusive, including virtual COM redirectors.
+	m_ComPortHandle = CreateFile(pcComPort, GENERIC_READ | GENERIC_WRITE,
+		0, 0, OPEN_EXISTING, 0, 0);
 	if(m_ComPortHandle == INVALID_HANDLE_VALUE)
 	{
 	    OUTPUTDEBUGMSG((("ERROR: CreateFile() %08lX!\n"), GetLastError()));
-		CloseHandle(m_ComPortHandle);
 		return RS232_NO_DUT;
 	}
 
@@ -92,6 +94,7 @@ int rs232_connect(const SLICER_IN_STR *pInSlicer, SLICER_OUT_STR *pOutSlicer)
 	if(!GetCommProperties(m_ComPortHandle, &ComProp)) {
 	    OUTPUTDEBUGMSG((("ERROR: GetCommProperties() %08lX!\n"), GetLastError()));
 		CloseHandle(m_ComPortHandle);
+		m_ComPortHandle = INVALID_HANDLE_VALUE;
 		return RS232_NO_DUT;
 	}
 
@@ -109,6 +112,7 @@ int rs232_connect(const SLICER_IN_STR *pInSlicer, SLICER_OUT_STR *pOutSlicer)
 		{
 	        OUTPUTDEBUGMSG((("ERROR:ComProp.dwProvSpec1 != 0x48576877 || ComProp.dwProvSpec2 != 0x68774857!\n")));
 		    CloseHandle(m_ComPortHandle);
+			m_ComPortHandle = INVALID_HANDLE_VALUE;
 		    MessageBox(NULL, "Please install the Slicer driver from the install package!", "Slicer Driver Not Installed", MB_OK | MB_ICONEXCLAMATION) ;
 		    return RS232_NO_DUT;
 		}
@@ -118,6 +122,7 @@ int rs232_connect(const SLICER_IN_STR *pInSlicer, SLICER_OUT_STR *pOutSlicer)
 	{
 	    OUTPUTDEBUGMSG((("ERROR: GetCommState() %08lX!\n"), GetLastError()));
 		CloseHandle(m_ComPortHandle);
+		m_ComPortHandle = INVALID_HANDLE_VALUE;
 		return RS232_NO_DUT;
 	}
 
@@ -135,48 +140,68 @@ int rs232_connect(const SLICER_IN_STR *pInSlicer, SLICER_OUT_STR *pOutSlicer)
 	if(!SetCommState(m_ComPortHandle,&m_comDCB)) {
 	    OUTPUTDEBUGMSG((("ERROR: GetCommState() %08lX!\n"), GetLastError()));
 		CloseHandle(m_ComPortHandle);
+		m_ComPortHandle = INVALID_HANDLE_VALUE;
 		return RS232_NO_DUT;
 	}
 	if(!SetCommMask(m_ComPortHandle, bOrgcomPortRS232 ? 0 : EV_CTS | EV_DSR | EV_RLSD)) {
 	    OUTPUTDEBUGMSG((("ERROR: SetCommMask() %08lX!\n"), GetLastError()));
 		CloseHandle(m_ComPortHandle);
+		m_ComPortHandle = INVALID_HANDLE_VALUE;
 		return RS232_NO_DUT;
 	}
 	/* Purge buffers:*/
 	if(!PurgeComm(m_ComPortHandle,PURGE_TXABORT|PURGE_RXABORT|PURGE_TXCLEAR|PURGE_RXCLEAR)) {
 	    OUTPUTDEBUGMSG((("ERROR: PurgeComm() %08lX!\n"), GetLastError()));
 		CloseHandle(m_ComPortHandle);
+		m_ComPortHandle = INVALID_HANDLE_VALUE;
 		return RS232_NO_DUT;
 	}
-	if(bOrgcomPortRS232) {
-		ComTimeOuts.ReadIntervalTimeout = ComTimeOuts.ReadTotalTimeoutMultiplier = MAXDWORD ;
-		ComTimeOuts.ReadTotalTimeoutConstant = 100 ; // 100 ms timeout
- 		if(!SetCommTimeouts(m_ComPortHandle,&ComTimeOuts)) {
-			OUTPUTDEBUGMSG((("ERROR: SetCommTimeouts() %08lX!\n"), GetLastError()));
-			CloseHandle(m_ComPortHandle);
-			return RS232_NO_DUT;
-		}
+	// A bounded read is required for both raw RS232 and the legacy slicer driver so shutdown
+	// can join the worker without terminating it while it owns runtime or driver state.
+	ComTimeOuts.ReadIntervalTimeout = MAXDWORD;
+	ComTimeOuts.ReadTotalTimeoutMultiplier = MAXDWORD;
+	ComTimeOuts.ReadTotalTimeoutConstant = 100;
+	if(!SetCommTimeouts(m_ComPortHandle,&ComTimeOuts)) {
+		OUTPUTDEBUGMSG((("ERROR: SetCommTimeouts() %08lX!\n"), GetLastError()));
+		CloseHandle(m_ComPortHandle);
+		m_ComPortHandle = INVALID_HANDLE_VALUE;
+		return RS232_NO_DUT;
 	}
+	rs232_cpstn = 0;
 	m_bConnectedToComport= TRUE;
 
 	/************************************************************************************
 	* Next step : fire up a thread that takes care of placing received data in a buffer *
 	************************************************************************************/
 
-	bKeepThreadAlive = TRUE;
-	m_hRxThread = CreateThread(NULL, 0, RxThread, (LPVOID) NULL, CREATE_SUSPENDED, &m_dwThreadId) ;
-	ResumeThread(m_hRxThread);
+	bKeepThreadAlive.store(true);
+	m_hRxThread = CreateThread(NULL, 0, RxThread, (LPVOID) NULL, CREATE_SUSPENDED, &m_dwThreadId);
+	if (!m_hRxThread)
+	{
+		bKeepThreadAlive.store(false);
+		CloseHandle(m_ComPortHandle);
+		m_ComPortHandle = INVALID_HANDLE_VALUE;
+		m_bConnectedToComport = FALSE;
+		return RS232_UNKNOWN;
+	}
+	if (ResumeThread(m_hRxThread) == (DWORD)-1)
+	{
+		bKeepThreadAlive.store(false);
+		CloseHandle(m_hRxThread);
+		m_hRxThread = NULL;
+		CloseHandle(m_ComPortHandle);
+		m_ComPortHandle = INVALID_HANDLE_VALUE;
+		m_bConnectedToComport = FALSE;
+		return RS232_UNKNOWN;
+	}
 
 	return(RS232_SUCCESS) ;
 }
 
 int rs232_disconnect()
 {
-	int rc;
-	COMMTIMEOUTS ComTimeOuts = { 0 } ;
-
 	OUTPUTDEBUGMSG(("calling: rs232_disconnect()\n"));
-	if (!m_bConnectedToComport) {
+	if (!m_bConnectedToComport && !m_hRxThread) {
 		// return when already connected
 		return RS232_NO_CONNECTION;		
 	}
@@ -184,31 +209,41 @@ int rs232_disconnect()
 	* Terminate the Rx thread *
 	**************************/
 	OUTPUTDEBUGMSG(("main thread : set Rx Thread terminate event\n"));
-	bKeepThreadAlive = FALSE;
-	Sleep(250);
-	TerminateThread(m_hRxThread, -1) ;
-	Sleep(100);
-	OUTPUTDEBUGMSG(("main thread : closing handles\n"));
-
-	if(!SetCommTimeouts(m_ComPortHandle,&ComTimeOuts)) {
-		OUTPUTDEBUGMSG((("ERROR: SetCommTimeouts() %08lX!\n"), GetLastError()));
+	bKeepThreadAlive.store(false);
+	if (m_hRxThread)
+	{
+		CancelSynchronousIo(m_hRxThread);
+	}
+	if (m_ComPortHandle != INVALID_HANDLE_VALUE)
+	{
+		SetCommMask(m_ComPortHandle, 0);
+		PurgeComm(m_ComPortHandle, PURGE_RXABORT | PURGE_RXCLEAR);
+		CancelIoEx(m_ComPortHandle, NULL);
 	}
 
-	if(!SetCommMask(m_ComPortHandle, 0)) {
-		OUTPUTDEBUGMSG((("ERROR: SetCommMask() %08lX!\n"), GetLastError()));
-	}
-
-	assert(m_ComPortHandle != INVALID_HANDLE_VALUE);
-	rc = CloseHandle(m_ComPortHandle);
-	if (!rc) {
-		OUTPUTDEBUGMSG(("main thread : error closing handle!\n"));
-		rc = RS232_UNKNOWN;
-	}
-	else {
-		OUTPUTDEBUGMSG(("main thread : handle closed.\n"));
+	DWORD waitResult = m_hRxThread ? WaitForSingleObject(m_hRxThread, 1500) : WAIT_OBJECT_0;
+	if (waitResult != WAIT_OBJECT_0 && m_ComPortHandle != INVALID_HANDLE_VALUE)
+	{
+		CloseHandle(m_ComPortHandle);
 		m_ComPortHandle = INVALID_HANDLE_VALUE;
-		m_bConnectedToComport = FALSE;
+		waitResult = WaitForSingleObject(m_hRxThread, 1500);
 	}
+	if (waitResult != WAIT_OBJECT_0)
+	{
+		OUTPUTDEBUGMSG(("main thread : Rx thread did not exit after cancellation\n"));
+		return RS232_UNKNOWN;
+	}
+	if (m_hRxThread)
+	{
+		CloseHandle(m_hRxThread);
+		m_hRxThread = NULL;
+	}
+	if (m_ComPortHandle != INVALID_HANDLE_VALUE)
+	{
+		CloseHandle(m_ComPortHandle);
+		m_ComPortHandle = INVALID_HANDLE_VALUE;
+	}
+	m_bConnectedToComport = FALSE;
 	return(RS232_SUCCESS) ;
 }
 
@@ -217,7 +252,7 @@ int rs232_disconnect()
 ***********************************************************/
 DWORD WINAPI RxThread(LPVOID pCl)
 {
-	do
+	while (bKeepThreadAlive.load())
 	{
 		if(bOrgcomPortRS232) {
 			rs232_read() ;
@@ -227,18 +262,15 @@ DWORD WINAPI RxThread(LPVOID pCl)
 		}
 		Sleep(50) ;
 	}
-	while (bKeepThreadAlive);
 	
 	OUTPUTDEBUGMSG(("RxThread : terminating...\n"));
-	m_hRxThread = INVALID_HANDLE_VALUE;
-	ExitThread(0L) ;
 	return 0;
 }
 
 
 int rs232_read(void) 
 {
-	DWORD	dwRead ; // , dwEvent, dwSetEvent;
+	DWORD	dwRead = 0; // , dwEvent, dwSetEvent;
 	int     bit ;
 	BYTE    byData[256] ;
 
@@ -251,14 +283,17 @@ int rs232_read(void)
 
 	if(!ReadFile(m_ComPortHandle, byData, sizeof(byData), &dwRead, 0))
 	{
-		OUTPUTDEBUGMSG((("rs232_read : Error in reading 0x%0x!\n"), GetLastError()));
-		PurgeComm(m_ComPortHandle, PURGE_RXCLEAR) ;
+		const DWORD error = GetLastError();
+		OUTPUTDEBUGMSG((("rs232_read : Error in reading 0x%0x!\n"), error));
+		if (error != ERROR_OPERATION_ABORTED && m_ComPortHandle != INVALID_HANDLE_VALUE)
+			PurgeComm(m_ComPortHandle, PURGE_RXCLEAR);
 	}
 	else {
-		for(int i=0; i<dwRead; i++) {
+		const bool fourLevel = Profile.fourlevel != FALSE;
+		for(DWORD i=0; i<dwRead; i++) {
 			for (int j=7; j>=0; j--)
 			{
-				if(Profile.fourlevel) {
+				if(fourLevel) {
 					j-- ;
 					bit = (byData[i] >> j) & 3;
 				}
@@ -273,24 +308,28 @@ int rs232_read(void)
 			}
 		}
 	}
-	return(0) ;
+	return((int)dwRead) ;
 }
 
 
 int slicer_read(void) 
 {
-	DWORD dwRead, i, num ;
+	DWORD dwRead = 0, i, num ;
 	WORD	*freq ;
 	BYTE	*line ;
 
 	if(m_ComPortHandle == INVALID_HANDLE_VALUE) 
 	{
 		OUTPUTDEBUGMSG((("rs232_read : COMport not open!\n")));
+		return 0;
 	}
 	if(!ReadFile(m_ComPortHandle, byRS232Data, sizeof(byRS232Data), &dwRead, 0)) 
 	{
-		OUTPUTDEBUGMSG((("rs232_read : Error in reading 0x%0x!\n"), GetLastError()));
-		PurgeComm(m_ComPortHandle, PURGE_RXCLEAR) ;
+		const DWORD error = GetLastError();
+		OUTPUTDEBUGMSG((("rs232_read : Error in reading 0x%0x!\n"), error));
+		if (error != ERROR_OPERATION_ABORTED && m_ComPortHandle != INVALID_HANDLE_VALUE)
+			PurgeComm(m_ComPortHandle, PURGE_RXCLEAR);
+		return 0;
 	}
 
 	num = dwRead / (sizeof(WORD) + sizeof(BYTE)) ;
@@ -339,7 +378,6 @@ int OpenComPort(void)
 	if(m_ComPortHandle2 == INVALID_HANDLE_VALUE)
 	{
 	    OUTPUTDEBUGMSG((("ERROR: CreateFile() %08lX!\n"), GetLastError()));
-		CloseHandle(m_ComPortHandle2);
 		return RS232_NO_DUT;
 	}
 
@@ -348,6 +386,7 @@ int OpenComPort(void)
 	{
 	    OUTPUTDEBUGMSG((("ERROR: GetCommState() %08lX!\n"), GetLastError()));
 		CloseHandle(m_ComPortHandle2);
+		m_ComPortHandle2 = INVALID_HANDLE_VALUE;
 		return RS232_NO_DUT;
 	}
 
@@ -365,6 +404,7 @@ int OpenComPort(void)
 	if(!SetCommState(m_ComPortHandle2,&m_comDCB)) {
 	    OUTPUTDEBUGMSG((("ERROR: GetCommState() %08lX!\n"), GetLastError()));
 		CloseHandle(m_ComPortHandle2);
+		m_ComPortHandle2 = INVALID_HANDLE_VALUE;
 		return RS232_NO_DUT;
 	}
 
@@ -372,12 +412,24 @@ int OpenComPort(void)
 	if(!PurgeComm(m_ComPortHandle2,PURGE_TXABORT|PURGE_RXABORT|PURGE_TXCLEAR|PURGE_RXCLEAR)) {
 	    OUTPUTDEBUGMSG((("ERROR: PurgeComm() %08lX!\n"), GetLastError()));
 		CloseHandle(m_ComPortHandle2);
+		m_ComPortHandle2 = INVALID_HANDLE_VALUE;
+		return RS232_NO_DUT;
+	}
+
+	COMMTIMEOUTS secondaryTimeouts = {};
+	secondaryTimeouts.ReadIntervalTimeout = MAXDWORD;
+	secondaryTimeouts.ReadTotalTimeoutMultiplier = MAXDWORD;
+	secondaryTimeouts.ReadTotalTimeoutConstant = 100;
+	if (!SetCommTimeouts(m_ComPortHandle2, &secondaryTimeouts))
+	{
+		CloseHandle(m_ComPortHandle2);
+		m_ComPortHandle2 = INVALID_HANDLE_VALUE;
 		return RS232_NO_DUT;
 	}
 
 	m_bConnectedToComport2 = TRUE;
 
-	return(rc) ;
+	return(RS232_SUCCESS) ;
 }
 
 char chStartChar = 10 ;
@@ -394,7 +446,10 @@ int WriteComPort(char *szLine)
 	if(chStartChar) {
 		szTemp[len++] = chStartChar ;
 	}
-	len += wsprintf(szTemp + len, "%s", szLine) ;
+	const int available = (int)sizeof(szTemp) - len - (chEndChar ? 1 : 0);
+	const int written = _snprintf_s(szTemp + len, available, _TRUNCATE,
+		"%s", szLine ? szLine : "");
+	len += written < 0 ? available - 1 : written;
 	if(chEndChar) {
 		szTemp[len++] = chEndChar ;
 		szTemp[len] = 0;
@@ -413,6 +468,7 @@ int CloseComPort(void)
 	int rc; 
 
 	OUTPUTDEBUGMSG((("CloseComPort()\n")));
+	if (m_ComPortHandle2 == INVALID_HANDLE_VALUE) return RS232_NO_CONNECTION;
 	rc = CloseHandle(m_ComPortHandle2);
 	if (!rc) {
 		OUTPUTDEBUGMSG(("CloseComPort: Error closing handle!\n"));
@@ -426,7 +482,7 @@ int CloseComPort(void)
 	return(0) ;
 }
 
-int nComPortsArr[11] ;
+int nComPortsArr[51] ;
 
 int *FindComPorts(void)
 {
@@ -434,26 +490,34 @@ int *FindComPorts(void)
 	int nNumFound = 0 ;
 	char szPort[32] ;
 	HANDLE hCom ;
-	for(int i=1; i<50; i++) {
+	for(int i=1; i<50 && nNumFound < 50; i++) {
 		if(i > 9) {
-			wsprintf(szPort, "\\\\.\\COM%d", i) ;
+			_snprintf_s(szPort, sizeof(szPort), _TRUNCATE, "\\\\.\\COM%d", i) ;
 		}
 		else {
-			wsprintf(szPort, "COM%d", i) ;
+			_snprintf_s(szPort, sizeof(szPort), _TRUNCATE, "COM%d", i) ;
 		}
 
 		error = ERROR_SUCCESS ;
-		hCom = CreateFile(szPort, GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0);
-		if(hCom == INVALID_HANDLE_VALUE) {
-			error = GetLastError() ;
+		char deviceName[16];
+		char target[512];
+		_snprintf_s(deviceName, sizeof(deviceName), _TRUNCATE, "COM%d", i);
+		if (QueryDosDeviceA(deviceName, target, sizeof(target)) == 0)
+		{
+			hCom = CreateFile(szPort, GENERIC_READ | GENERIC_WRITE,
+				0, 0, OPEN_EXISTING, 0, 0);
+			if(hCom == INVALID_HANDLE_VALUE) error = GetLastError();
+		}
+		else
+		{
+			hCom = INVALID_HANDLE_VALUE;
 		}
 		if(error == ERROR_FILE_NOT_FOUND) {
 			OUTPUTDEBUGMSG((("COM%d: Not Found\n"), i));
-			CloseHandle(hCom);
 		}
 		else {
 			OUTPUTDEBUGMSG((("COM%d: Found\n"), i));
-			CloseHandle(hCom);
+			if (hCom != INVALID_HANDLE_VALUE) CloseHandle(hCom);
 			nComPortsArr[nNumFound++] = i ;
 		}
 	}

@@ -25,7 +25,13 @@ int main()
 	source.mode = "POCSAG";
 	source.messageType = "Alpha";
 	source.message = "A <test> & \"quote\"\nnext";
+	source.filterMatched = true;
 	source.filtered = true;
+	source.groupCall = true;
+	source.groupFinal = false;
+	source.groupBit = 3;
+	source.cycle = 2;
+	source.frame = 17;
 	pdw::publishing::TransformOptions options;
 	options.sourceAlias = "Adelaide receiver";
 	options.maskAddress = true;
@@ -37,6 +43,12 @@ int main()
 	std::string json = pdw::publishing::BuildJsonObject(published);
 	Require(json.find("\\\"quote\\\"") != std::string::npos, "JSON quotes were not escaped");
 	Require(json.find("\\nnext") != std::string::npos, "JSON newlines were not escaped");
+	Require(json.find("\"filter_matched\":true") != std::string::npos,
+		"filter match metadata is missing");
+	Require(json.find("\"group_bit\":3") != std::string::npos,
+		"FLEX group metadata is missing");
+	Require(json.find("\"cycle\":2,\"frame\":17") != std::string::npos,
+		"FLEX cycle/frame metadata is missing");
 	std::vector<pdw::publishing::PublishEvent> events(1, published);
 	Require(pdw::publishing::BuildRssFeed(events).find("&lt;test&gt; &amp;") != std::string::npos,
 		"RSS text was not XML escaped");

@@ -158,17 +158,19 @@ void FLEX::show_address(long int l, long int l2, bool bLongAddress)
 		if (FLEX_9) FLEX_9--;
 	}
 	else
-	{	
+	{
 		// to get capcode: take second word, invert it...
-		capcode = (l2 & 0x1fffffl) ^ 0x1fffffl;
+		unsigned long long wideCapcode =
+			(unsigned long long)((l2 & 0x1fffffl) ^ 0x1fffffl);
 
 		// multiply by 32768
-		capcode = capcode << 15;
+		wideCapcode <<= 15;
 
 		// add in 2068480 and first word
 		// NOTE : in the patent for FLEX, the number given was 2067456...
 		//			 which is apparently not correct
-		capcode = capcode + 2068480l + (l & 0x1fffffl);
+		wideCapcode += 2068480ull + (unsigned long long)(l & 0x1fffffl);
+		capcode = (wideCapcode > 999999999ull) ? -1l : (long int)wideCapcode;
 
 		if (FLEX_9 < 91) FLEX_9 += 10;
 	}
@@ -311,30 +313,36 @@ void FLEX::FlexTIME()
 			switch((frame[i] >> 4) & 0x07)
 			{
 				case 0:
-//					OUTPUTDEBUGMSG((("frame[i]: Type == SSID/Local ID’s (i8-i0)(512) & Coverage Zones (c4-c0)(32)\n")));		
+//					OUTPUTDEBUGMSG((("frame[i]: Type == SSID/Local IDâ€™s (i8-i0)(512) & Coverage Zones (c4-c0)(32)\n")));
 					break;
 				case 1:
-					frame[i] >>= 7;
-					recFlexTime.wYear = (frame[i] & 0x1F) + 1994;
-					frame[i] >>= 5;
-					recFlexTime.wDay = frame[i] & 0x1F;
-					frame[i] >>= 5;
-					recFlexTime.wMonth = (frame[i] & 0xF);
+				{
+					long biw = frame[i];
+					biw >>= 7;
+					recFlexTime.wYear = (biw & 0x1F) + 1994;
+					biw >>= 5;
+					recFlexTime.wDay = biw & 0x1F;
+					biw >>= 5;
+					recFlexTime.wMonth = (biw & 0xF);
 					bDate = true;
 					FLEX_date=1;
 //					OUTPUTDEBUGMSG((("BIW DATE: %d-%d-%d\n"), recFlexTime.wDay, recFlexTime.wMonth, recFlexTime.wYear));		
 					break;
+				}
 				case 2:
-					frame[i] >>= 7;
-					recFlexTime.wHour = frame[i] & 0x1F;
-					frame[i] >>= 5;
-					recFlexTime.wMinute = frame[i] & 0x3F;
-					frame[i] >>= 6;
+				{
+					long biw = frame[i];
+					biw >>= 7;
+					recFlexTime.wHour = biw & 0x1F;
+					biw >>= 5;
+					recFlexTime.wMinute = biw & 0x3F;
+					biw >>= 6;
 					recFlexTime.wSecond = seconds;
 					bTime = true;
 					FLEX_time=1;
 //					OUTPUTDEBUGMSG((("BIW TIME: %02d:%02d:%02d\n"), recFlexTime.wHour, recFlexTime.wMinute, recFlexTime.wSecond));
 					break;
+				}
 				case 5:
 //					OUTPUTDEBUGMSG((("frame[i]: Type == System Information (I9-I0. A3-A0) - related to NID roaming\n")));		
 					break;
@@ -408,6 +416,8 @@ void FLEX::showframe(int asa, int vsa)
 
 	if (xsumchk(frame[0]) == 0)			// make sure we start out with valid BIW
 	{
+		if (asa < 1 || asa > vsa || vsa > 88) return;
+
 		for (j=asa; j<vsa; j++, c=0, bLongAddress=false, bXsumError=false) // run through whole address field
 		{
 			cc2 = frame[j] & 0x1fffffl;	// Check if this can be the low part of a long address
@@ -422,10 +432,12 @@ void FLEX::showframe(int asa, int vsa)
 
 			if (xsumchk(frame[vb]) != 0)
 			{
+				if (bLongAddress) j++;
 				continue; 	// screwed up vector fields are not processed
 			}
 			if (Profile.FlexGroupMode && bLongAddress)
 			{
+				j++;
 				continue; 	// Don't process long addresses if FlexGroupMode
 			}
 			strcpy(szWindowText[4], "");
@@ -443,6 +455,8 @@ void FLEX::showframe(int asa, int vsa)
 				w2 = w1 >> 7;
 				w1 = w1 & 0x7f;
 				w2 = (w2 & 0x7f) + w1 - 1;
+				if (w2 > 199) w2 = 199;
+				if (w1 > w2) { if (bLongAddress) j++; continue; }
 
 				// get message fragment number (bits 11 and 12) from first header word
 				// if != 3 then this is a continued message
@@ -453,6 +467,7 @@ void FLEX::showframe(int asa, int vsa)
 				}
 				else
 				{
+					if (vb + 1 >= 200) { j++; continue; }
 					iFragmentNumber = (int) (frame[vb+1] >> 11) & 0x03;
 					w2--;
 				}
@@ -554,6 +569,7 @@ void FLEX::showframe(int asa, int vsa)
 				w2 = w1 >> 7;
 				w1 = w1 & 0x7f;
 				w2 = (w2 & 0x07) + w1;	// numeric message is 7 words max
+				if (w2 > 199) w2 = 199;
 
 				if (!bLongAddress)		// load first message word into cc
 				{
@@ -561,7 +577,11 @@ void FLEX::showframe(int asa, int vsa)
 					w1++;
 					w2++;
 				}
-				else cc = frame[vb+1];	// long address - first message word in second vector field
+				else
+				{
+					if (vb + 1 >= 200) { j++; continue; }
+					cc = frame[vb+1];	// long address - first message word in second vector field
+				}
 
 				// skip over first 10 bits for numbered numeric, otherwise skip first 2
 
@@ -652,6 +672,8 @@ void FLEX::showframe(int asa, int vsa)
 				w2 = w1 >> 7;
 				w1 = w1 & 0x7f;
 				w2 = (w2 & 0x7f) + w1 - 1;
+				if (w2 > 199) w2 = 199;
+				if (w1 > w2) { if (bLongAddress) j++; continue; }
 
 				if (!bLongAddress)
 				{
@@ -662,6 +684,7 @@ void FLEX::showframe(int asa, int vsa)
 				}
 				else
 				{
+					if (vb + 1 >= 200) { j++; continue; }
 					iFragmentNumber = (int) (frame[vb+1] >> 13) & 0x03;
 
 					if (iFragmentNumber == 3) w1++;
@@ -728,8 +751,7 @@ void FLEX::showblock(int blknum)
 			ob[j] = block[k];
 		}
 
-		err = ecd();		// do error correction
-		CountBiterrors(err);
+		err = ecd();		// do error correction (ecd also updates quality counters)
 
 		k = (blknum << 3) + i;
 

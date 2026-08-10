@@ -87,7 +87,24 @@ std::string BuildJsonObject(const PublishEvent& event)
 		<< "\",\"bitrate\":\"" << JsonEscape(event.bitrate)
 		<< "\",\"message\":\"" << JsonEscape(event.message)
 		<< "\",\"filter_label\":\"" << JsonEscape(event.filterLabel)
-		<< "\",\"filtered\":" << (event.filtered ? "true" : "false") << "}";
+		<< "\",\"filter_matched\":" << (event.filterMatched ? "true" : "false")
+		<< ",\"monitor_only\":" << (event.monitorOnly ? "true" : "false")
+		<< ",\"filtered\":" << (event.filtered ? "true" : "false")
+		<< ",\"rejected\":" << (event.rejected ? "true" : "false")
+		<< ",\"blocked_duplicate\":" << (event.blockedDuplicate ? "true" : "false")
+		<< ",\"group_call\":" << (event.groupCall ? "true" : "false")
+		<< ",\"group_final\":" << (event.groupFinal ? "true" : "false")
+		<< ",\"fragmented\":" << (event.fragmented ? "true" : "false")
+		<< ",\"assembled\":" << (event.assembled ? "true" : "false")
+		<< ",\"filter_index\":";
+	if (event.filterIndex >= 0) output << event.filterIndex; else output << "null";
+	output << ",\"group_bit\":";
+	if (event.groupBit >= 0) output << event.groupBit; else output << "null";
+	output << ",\"cycle\":";
+	if (event.cycle >= 0) output << event.cycle; else output << "null";
+	output << ",\"frame\":";
+	if (event.frame >= 0) output << event.frame; else output << "null";
+	output << "}";
 	return output.str();
 }
 

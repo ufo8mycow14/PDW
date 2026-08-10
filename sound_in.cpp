@@ -62,10 +62,10 @@ int au_threshold[10] = {0, 1, 2, 5, 9, 14, 17, 24, 30, 44};
 // Used for offsetting bit center / zero center
 int au_offset_center[10] = { 0, 1, -1, 2, -2, 3, -3, 4, -4, 5 };
 
-HWAVEIN  hWaveIn;                    // Handle to audio device
-HWAVEOUT hWaveOut;                   // Handle to audio device
+HWAVEIN  hWaveIn = NULL;             // Handle to audio device
+HWAVEOUT hWaveOut = NULL;            // Handle to audio device
 WAVEHDR WaveHeader[NUMBER_BUFFERS];  // Audio buffers to be put into audio queue
-int buffers_ready=0;                 // Used by callback function to indicate buffer(s) ready
+volatile LONG buffers_ready=0;       // Used by callback function to indicate buffer(s) ready
 int last_buff_processed = -1;        // Used for predicting next buffer to be filled.
 bool bCapturing=false;               // Used to check to see if capturing is enabled.
 bool bUsingWasapiFallback=false;
@@ -421,12 +421,15 @@ BOOL Start_Capturing(void)
 	my_wave_format.wBitsPerSample	= 8;
 	my_wave_format.cbSize			= 0;
 
-	// Open audio device meeting our requirements
-	waveOutOpen(&hWaveOut, WAVE_MAPPER, &my_wave_format,
-			(DWORD)Callback_Function, 0, CALLBACK_FUNCTION);
+	// The output handle is optional, but it must never retain an invalid value.
+	if (waveOutOpen(&hWaveOut, WAVE_MAPPER, &my_wave_format,
+			(DWORD_PTR)Callback_Function, 0, CALLBACK_FUNCTION) != MMSYSERR_NOERROR)
+	{
+		hWaveOut = NULL;
+	}
 
 	result = waveInOpen(&hWaveIn, Profile.audioDevice, &my_wave_format,
-			(DWORD)Callback_Function, 0, CALLBACK_FUNCTION);
+			(DWORD_PTR)Callback_Function, 0, CALLBACK_FUNCTION);
 
 	if (result) // error?
 	{
@@ -467,16 +470,27 @@ BOOL Start_Capturing(void)
 
 		if(!h_memory_block)
 		{
+			waveInReset(hWaveIn);
+			for (int header = 0; header < ctr; ++header)
+				waveInUnprepareHeader(hWaveIn, &WaveHeader[header], (UINT)sizeof(WaveHeader[header]));
 			waveInClose(hWaveIn);
+			hWaveIn = NULL;
 			free_audio_buffers();
+			if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
 			return(FALSE);
 		}
 		lp_memory_block = (LPSTR)GlobalLock(h_memory_block);
 
 		if(!lp_memory_block)
 		{
+			GlobalFree(h_memory_block);
+			waveInReset(hWaveIn);
+			for (int header = 0; header < ctr; ++header)
+				waveInUnprepareHeader(hWaveIn, &WaveHeader[header], (UINT)sizeof(WaveHeader[header]));
 			waveInClose(hWaveIn);
+			hWaveIn = NULL;
 			free_audio_buffers();
+			if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
 			return(FALSE);
 		}
 
@@ -492,10 +506,24 @@ BOOL Start_Capturing(void)
 		WaveHeader[ctr].dwBytesRecorded	= 0;
 		WaveHeader[ctr].lpData			= (LPSTR)lp_memory_block;
 
-		waveInPrepareHeader(hWaveIn, &WaveHeader[ctr], (UINT)sizeof(WaveHeader[ctr]));
-
-		// Add buffer to input queue
-		waveInAddBuffer(hWaveIn, &WaveHeader[ctr], (UINT)sizeof(WaveHeader[ctr]));
+		const MMRESULT prepareResult = waveInPrepareHeader(hWaveIn, &WaveHeader[ctr],
+			(UINT)sizeof(WaveHeader[ctr]));
+		const MMRESULT addResult = prepareResult == MMSYSERR_NOERROR ?
+			waveInAddBuffer(hWaveIn, &WaveHeader[ctr], (UINT)sizeof(WaveHeader[ctr])) :
+			prepareResult;
+		if (prepareResult != MMSYSERR_NOERROR || addResult != MMSYSERR_NOERROR)
+		{
+			waveInReset(hWaveIn);
+			const int preparedHeaders = ctr + (prepareResult == MMSYSERR_NOERROR ? 1 : 0);
+			for (int header = 0; header < preparedHeaders; ++header)
+				waveInUnprepareHeader(hWaveIn, &WaveHeader[header], (UINT)sizeof(WaveHeader[header]));
+			waveInClose(hWaveIn);
+			hWaveIn = NULL;
+			free_audio_buffers();
+			if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
+			if (TryStartWasapiFallback()) return(TRUE);
+			return(FALSE);
+		}
 	}
     
 	last_buff_processed = -1;
@@ -508,9 +536,13 @@ BOOL Start_Capturing(void)
 		bCapturing = true;
 		return(TRUE);     // OK!
 	}
+	waveInReset(hWaveIn);
+	for (int header = 0; header < audio_buffer_cnt; ++header)
+		waveInUnprepareHeader(hWaveIn, &WaveHeader[header], (UINT)sizeof(WaveHeader[header]));
 	waveInClose(hWaveIn);
 	hWaveIn = NULL;
 	free_audio_buffers();
+	if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
 	if (TryStartWasapiFallback()) return(TRUE);
 	return(FALSE);
 }
@@ -535,7 +567,7 @@ BOOL Stop_Capturing(void)
 		g_wasapiFallbackSink.Clear();
 		bUsingWasapiFallback = false;
 		g_modernCaptureKind = 0;
-		buffers_ready = 0;
+		InterlockedExchange(&buffers_ready, 0);
 		last_buff_processed = -1;
 		return(FALSE);
 	}
@@ -557,7 +589,7 @@ BOOL Stop_Capturing(void)
 	// Free memory used for audio buffers.
 	free_audio_buffers();
 
-	buffers_ready = 0;
+	InterlockedExchange(&buffers_ready, 0);
 	last_buff_processed = -1;
 
 	return(closeResult == MMSYSERR_NOERROR ? TRUE : FALSE);
@@ -575,7 +607,7 @@ void free_audio_buffers(void)
 		h_audio_memory_block[i] = NULL;
 	}
 	audio_buffer_cnt = 0;
-	buffers_ready = 0;
+	InterlockedExchange(&buffers_ready, 0);
 }
 
 //   Process_ReadyBuffers
@@ -649,7 +681,9 @@ void Process_ReadyBuffers(HWND hwnd)
 		ProcessWasapiFallbackBlocks();
 		return;
 	}
-	old_buffs_ready = buffers_ready;
+	old_buffs_ready = (int)InterlockedExchange(&buffers_ready, 0);
+	if (old_buffs_ready > NUMBER_BUFFERS) old_buffs_ready = NUMBER_BUFFERS;
+	bool requeueFailed = false;
 
 	for (int ctr=0; ctr<old_buffs_ready; ctr++)
 	{
@@ -705,10 +739,20 @@ void Process_ReadyBuffers(HWND hwnd)
 //		}
             
 		// Add audio buffer back to input queue
-		waveInAddBuffer(hWaveIn, &WaveHeader[last_buff_processed],
-							(UINT)sizeof(WaveHeader[last_buff_processed]));
+		if (waveInAddBuffer(hWaveIn, &WaveHeader[last_buff_processed],
+			(UINT)sizeof(WaveHeader[last_buff_processed])) != MMSYSERR_NOERROR)
+		{
+			requeueFailed = true;
+			break;
+		}
 	}
-	buffers_ready -= old_buffs_ready;
+	if (requeueFailed)
+	{
+		Stop_Capturing();
+		KillTimer(ghWnd, PDW_TIMER);
+		MessageBox(hwnd, "The audio capture device stopped accepting buffers.\n\nCapture has been stopped safely; select or reconnect the source and try again.",
+			"PDW audio capture", MB_ICONWARNING);
+	}
 }
 
 bool SignalDiagnosticStartRecording(const char *path, char *error, size_t errorSize)
@@ -847,7 +891,7 @@ void SignalDiagnosticsRecordDecodeResult(int errors)
 //
 void CALLBACK Callback_Function(HWAVEIN hwi, UINT uMsg, DWORD dwInstance, DWORD dwParam1, DWORD dwParam2)
 {
-	if (uMsg == WIM_DATA) buffers_ready++;
+	if (uMsg == WIM_DATA) InterlockedIncrement(&buffers_ready);
 }
 
 
@@ -1194,7 +1238,7 @@ void MOBITEX_To_Bits(char *lpAudioBuffer, long LenAudioBuffer)
 		// Resync on 0/1 and 1/0 crossings.
 		// Only resync if last sample count was equal to a single 1/0 bit.
 		if ((atb_value < -1) && (atb_bit == high_audio))
-		{    
+		{
 			atb_bit = low_audio;
 
 			if (((atb_len < WatchStep * 2) &&
@@ -1203,12 +1247,20 @@ void MOBITEX_To_Bits(char *lpAudioBuffer, long LenAudioBuffer)
 			{
 				WatchCtr = atb_ctr + (WatchStep / 2);		// center of bit == 1/2 data bit.
 			}
+			atb_len=0;
 		}
 		else if ((atb_value > -1) && (atb_bit == low_audio))
 		{
 			atb_bit = high_audio;
+
+			if (((atb_len < WatchStep * 2) &&
+				((atb_len / WatchStep) > clkt_lo) &&
+				((atb_len / WatchStep) < clkt_hi)))
+			{
+				WatchCtr = atb_ctr + (WatchStep / 2);
+			}
+			atb_len=0;
 		}
-		atb_len=0;
       
 		// Get sample value and process it if on WatchStep
 		if (WatchCtr - atb_ctr < 1 && WatchCtr != -1)

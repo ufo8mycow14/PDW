@@ -41,7 +41,12 @@ void PrintBuffer(LPSTR lpBuffer)
 	/* initialize PRINTDLG struct */
 	PrintInit(&printdlg, ghWnd);
 
-	if (!PrintDlg(&printdlg)) return;
+	if (!PrintDlg(&printdlg))
+	{
+		if (printdlg.hDevMode) GlobalFree(printdlg.hDevMode);
+		if (printdlg.hDevNames) GlobalFree(printdlg.hDevNames);
+		return;
+	}
 
 	docinfo.cbSize = sizeof(DOCINFO);
 	docinfo.lpszDocName = "Print...";
@@ -49,7 +54,13 @@ void PrintBuffer(LPSTR lpBuffer)
 	docinfo.lpszDatatype = NULL;
 	docinfo.fwType = 0;
 
-	StartDoc(printdlg.hDC, &docinfo);
+	if (!printdlg.hDC || StartDoc(printdlg.hDC, &docinfo) <= 0)
+	{
+		if (printdlg.hDC) DeleteDC(printdlg.hDC);
+		if (printdlg.hDevMode) GlobalFree(printdlg.hDevMode);
+		if (printdlg.hDevNames) GlobalFree(printdlg.hDevNames);
+		return;
+	}
 
 	/* get text metrics for printer */
 	GetTextMetrics(printdlg.hDC, &tm);
@@ -57,20 +68,30 @@ void PrintBuffer(LPSTR lpBuffer)
 	SetAbortProc(printdlg.hDC, (ABORTPROC) AbortFunc);
 	PrtCancel_hDlg = CreateDialog(ghInstance, "PrCancel", ghWnd, (DLGPROC) KillPrint);
 
-	for (copies=0; copies<printdlg.nCopies; copies++)
+	for (copies=0; copies<printdlg.nCopies && printOK; copies++)
 	{
-		StartPage(printdlg.hDC);
+		if (StartPage(printdlg.hDC) <= 0) { printOK = 0; break; }
 		prtX = 0;
 		prtY = 0;
 		i=0;
 		s = lpBuffer;
 
-		while (((*s) && (i < 15000)))
+		while ((*s) && (i < 15000) && printOK)
 		{
 			if (*s == '\n')
 			{
 				prtX = 0;
 				prtY += tm.tmHeight + tm.tmExternalLeading;
+				if (prtY + tm.tmHeight + tm.tmExternalLeading >
+					GetDeviceCaps(printdlg.hDC, VERTRES))
+				{
+					if (EndPage(printdlg.hDC) <= 0 || StartPage(printdlg.hDC) <= 0)
+					{
+						printOK = 0;
+						break;
+					}
+					prtY = 0;
+				}
 				s++;
 				continue;
 			}
@@ -80,21 +101,29 @@ void PrintBuffer(LPSTR lpBuffer)
 				continue;
 			}
 
-			TextOut(printdlg.hDC, prtX, prtY,(LPSTR)s, 1);
+			if (!TextOut(printdlg.hDC, prtX, prtY,(LPSTR)s, 1))
+			{
+				printOK = 0;
+				break;
+			}
 
 			prtX += tm.tmAveCharWidth + tm.tmExternalLeading;
 			s++;
 			i++;
 		}
-		EndPage(printdlg.hDC);
+		if (printOK && EndPage(printdlg.hDC) <= 0) printOK = 0;
 	}
 
-   if (printOK)
+	if (PrtCancel_hDlg)
 	{
-		if (PrtCancel_hDlg) DestroyWindow(PrtCancel_hDlg);
-		EndDoc(printdlg.hDC);
+		DestroyWindow(PrtCancel_hDlg);
+		PrtCancel_hDlg = NULL;
 	}
+	if (printOK) EndDoc(printdlg.hDC);
+	else AbortDoc(printdlg.hDC);
 	DeleteDC(printdlg.hDC);
+	if (printdlg.hDevMode) GlobalFree(printdlg.hDevMode);
+	if (printdlg.hDevNames) GlobalFree(printdlg.hDevNames);
 }
 
 

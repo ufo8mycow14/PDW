@@ -22,8 +22,23 @@ struct PublishEvent
 	std::string bitrate;
 	std::string message;
 	std::string filterLabel;
+	bool filterMatched;
+	bool monitorOnly;
 	bool filtered;
-	PublishEvent() : filtered(false) {}
+	bool rejected;
+	bool blockedDuplicate;
+	bool groupCall;
+	bool groupFinal;
+	bool fragmented;
+	bool assembled;
+	int filterIndex;
+	int groupBit;
+	int cycle;
+	int frame;
+	PublishEvent()
+		: filterMatched(false), monitorOnly(false), filtered(false), rejected(false),
+		  blockedDuplicate(false), groupCall(false), groupFinal(false), fragmented(false),
+		  assembled(false), filterIndex(-1), groupBit(-1), cycle(-1), frame(-1) {}
 };
 
 struct TransformOptions

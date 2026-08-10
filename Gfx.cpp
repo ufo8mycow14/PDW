@@ -539,7 +539,7 @@ bool GetSysObjects(HWND hwnd)
 	if (!(null_pen = (HPEN) GetStockObject(NULL_PEN))) return(false);
 
 	hbm_exclam = LoadBitmap(ghInstance,MAKEINTRESOURCE((WORD)IDS_EXCLAM));
-	GetObject(hbm_exclam, sizeof(bme), &bme);
+	if (hbm_exclam) GetObject(hbm_exclam, sizeof(bme), &bme);
 
 	return(true);
 }
@@ -798,6 +798,7 @@ LRESULT CALLBACK TmpDlgChildWinProc(HWND hwnd, UINT message, WPARAM wParam, LPAR
 		case WM_CREATE:
 		break;
 
+		case WM_DESTROY:
 		case WM_CLOSE:                  // Fall through.
 		if(hbm_chw != NULL)
 		{      // Delete bitmap.

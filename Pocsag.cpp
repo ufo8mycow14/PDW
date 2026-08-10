@@ -184,11 +184,11 @@ void POCSAG::process_word(int fn2)
 				if (errl > 2)
 				{
 //					sr ^= 0x1000;	// keep error correcting info also
-					message_color_alp[nalp]=COLOR_BITERRORS;
+					if (nalp < MAX_STR_LEN-1) message_color_alp[nalp]=COLOR_BITERRORS;
 				}
-				else message_color_alp[nalp]=COLOR_MESSAGE;
+				else if (nalp < MAX_STR_LEN-1) message_color_alp[nalp]=COLOR_MESSAGE;
 
-				alp[nalp++] = sr;
+				if (nalp < MAX_STR_LEN-1) alp[nalp++] = sr;
 
 				srca = 0;
 			}
@@ -201,11 +201,11 @@ void POCSAG::process_word(int fn2)
 
 					if (errl > 2)
 					{
-						message_color_num[nnum]=COLOR_BITERRORS;
+						if (nnum < 40) message_color_num[nnum]=COLOR_BITERRORS;
 					}
-					else message_color_num[nnum]=COLOR_NUMERIC;
+					else if (nnum < 40) message_color_num[nnum]=COLOR_NUMERIC;
 
-					num[nnum++] = aNumeric[du];
+					if (nnum < 40) num[nnum++] = aNumeric[du];
 
 					srcn = 0;
 				}
@@ -284,9 +284,10 @@ void POCSAG::show_addr(bool bAlpha)
 		break;
 	}
 
+	const bool badCapcode = pocaddr > 0x3fffffl;
 	pocaddr = pocaddr & 0x1fffffl;
 
-	if (pocaddr > 0x3fffffl)	// If error in capcode don`t display it.
+	if (badCapcode)	// If error in capcode don`t display it.
 	{
 		strcpy(Current_MSG[MSG_CAPCODE], "???????");
 		function=0;
@@ -300,7 +301,7 @@ void POCSAG::show_addr(bool bAlpha)
 
 	/* Show Capcode */
 	
-	messageitems_colors[1] = COLOR_ADDRESS;
+	messageitems_colors[1] = badCapcode ? COLOR_BITERRORS : COLOR_ADDRESS;
 
 	/* Show Time / Date */
 

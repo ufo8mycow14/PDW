@@ -15,8 +15,7 @@
 #include "headers\language.h"
 #include "headers\sound_in.h"
 #include "headers\helper_funcs.h"
-#include "headers\notification.h"
-#include "headers\publishing.h"
+#include "headers\message_router.h"
 #include "utils\binary.h"
 
 #define FILTER_PARAM_LEN	500
@@ -500,7 +499,8 @@ void SortGroupCall(int groupbit)	// PH: Sort aGroupCodes[groupbit]
 	for (int nCapcode=1; nCapcode <= aGroupCodes[groupbit][CAPCODES_INDEX]; nCapcode++)
 	{
 		int min, j;
-		for (min=nCapcode, j=nCapcode+1; aGroupCodes[groupbit][j] > 0; j++)
+		for (min=nCapcode, j=nCapcode+1;
+			j < MAXIMUM_GROUPSIZE && aGroupCodes[groupbit][j] > 0; j++)
 		{
 			if (aGroupCodes[groupbit][j] < aGroupCodes[groupbit][min]) min = j;
 		}
@@ -1289,6 +1289,12 @@ void ShowMessage()
 		}
 	} // if (bShowMessage)
 
+	const bool eventFragmented = bFragment;
+	const bool eventGroupCall = iConvertingGroupcall != 0 || bGroupcode;
+	const int eventGroupBit = iConvertingGroupcall
+		? iConvertingGroupcall - 1
+		: (bGroupcode ? atoi(Current_MSG[MSG_CAPCODE]) - 2029568 : -1);
+
 	if (!iConvertingGroupcall || bGroupcode)
 	{
 		LogFileHandling(NULL, NULL, CLOSE_FILES);
@@ -1319,7 +1325,14 @@ void ShowMessage()
 	notification.filterMatched = bMATCH;
 	notification.monitorOnly = bMONITOR_ONLY;
 	notification.filtered = bFILTERED;
+	notification.groupCall = eventGroupCall;
+	notification.groupFinal = bGroupcode;
+	notification.groupBit = (eventGroupBit >= 0 && eventGroupBit < 16) ? eventGroupBit : -1;
+	notification.fragmented = eventFragmented;
 	notification.selectedForEmail = bMATCH ? Profile.filters[iMatch].smtp : 0;
+	notification.filterIndex = bMATCH ? iMatch : -1;
+	notification.cycle = strstr(Current_MSG[MSG_MODE], "FLEX") ? iCurrentCycle : -1;
+	notification.frame = strstr(Current_MSG[MSG_MODE], "FLEX") ? iCurrentFrame : -1;
 	notification.address = Current_MSG[MSG_CAPCODE];
 	notification.time = Current_MSG[MSG_TIME];
 	notification.date = Current_MSG[MSG_DATE];
@@ -1328,8 +1341,7 @@ void ShowMessage()
 	notification.bitrate = Current_MSG[MSG_BITRATE];
 	notification.message = iMOBITEX ? Current_MSG[MSG_MOBITEX] : Current_MSG[MSG_MESSAGE];
 	notification.filterLabel = szCurrentLabel[0];
-	NotificationPublishDecodedMessage(notification);
-	PublishingPublishDecodedMessage(notification);
+	MessageRouterPublishDecodedMessage(notification);
 
 	if (Current_MSG[MSG_MOBITEX][0]) Current_MSG[MSG_MOBITEX][0] = '\0';
 
@@ -1793,7 +1805,10 @@ int Check_4_Filtermatch()
 
 			if (mode == MOBITEX_FILTER)
 			{
-				switch (Profile.filters[iFilter].capcode[strlen(Profile.filters[iFilter].capcode)-2])
+				const size_t capcodeLength = strlen(Profile.filters[iFilter].capcode);
+				const char matchMarker = capcodeLength >= 2 ?
+					Profile.filters[iFilter].capcode[capcodeLength-2] : '\0';
+				switch (matchMarker)
 				{
 					case 'R' :
 

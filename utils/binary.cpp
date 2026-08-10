@@ -129,10 +129,10 @@ char *DeCrlf(char *szStr)
 	if(szTmp) {
 		while(*szTmp) {
 			if(*szTmp == '\n') {
-				*szTmp = '»' ;
+				*szTmp = 'Â»' ;
 			}
 			if(*szTmp == '\r') {
-				*szTmp = '»' ;
+				*szTmp = 'Â»' ;
 			}
 			szTmp++ ;
 		}

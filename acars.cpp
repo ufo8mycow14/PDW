@@ -79,6 +79,7 @@ ACARS::ACARS()
 
 ACARS::~ACARS()
 {
+	free_data();
 }
 
 // Reset routine. Required for switching data mode and also
@@ -363,6 +364,7 @@ void ACARS::ac_out_msg(void)
 
 	messageitems_colors[6] = mode_parity_error ? COLOR_BITERRORS : COLOR_MODETYPEBIT;
 	Current_MSG[MSG_BITRATE][0] = (char)(mode[0] & 0x7F);
+	Current_MSG[MSG_BITRATE][1] = '\0';
 
 	//************* Label *****************
 
@@ -826,6 +828,14 @@ void ACARS::free_data(void)
 	if (db_airline != NULL)			free_db_info(db_airline);			// Airline
 	if (db_gnd_station != NULL)		free_db_info(db_gnd_station);		// Ground station
 	if (db_routes != NULL)			free_db_info(db_routes);			// Routes
+
+	// Keep cleanup safe if a partially loaded database is reset more than once.
+	db_label = NULL;
+	db_aircraft_type = NULL;
+	db_origin = NULL;
+	db_airline = NULL;
+	db_gnd_station = NULL;
+	db_routes = NULL;
 }
 
 // Reads ACARS database text files.

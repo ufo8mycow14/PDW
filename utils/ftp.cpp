@@ -21,6 +21,7 @@
 #include "headers\pdw.h"
 #include "headers\ftp.h"
 #include "headers\initapp.h"
+#include "curl_runtime.h"
 
 using namespace std;
 
@@ -908,8 +909,7 @@ void FtpInitialize(void)
 	g_ftpInitialized = true;
 	InterlockedExchange(&g_uploadInProgress, 0);
 	InterlockedExchange(&g_shuttingDown, 0);
-	CURLcode curlResult = curl_global_init(CURL_GLOBAL_DEFAULT);
-	g_curlInitialized = curlResult == CURLE_OK;
+	g_curlInitialized = CurlRuntimeAcquire();
 	if (g_curlInitialized && CurlSupportsProtocol("ftp") && CurlSupportsProtocol("ftps") && CurlSupportsProtocol("sftp"))
 		CopyText(g_ftpStatus, sizeof(g_ftpStatus), "FTP, FTPS and SFTP uploader is ready.");
 	else if (g_curlInitialized)
@@ -941,7 +941,7 @@ void FtpShutdown(void)
 
 	if (waitResult == WAIT_OBJECT_0 && g_curlInitialized)
 	{
-		curl_global_cleanup();
+		CurlRuntimeRelease();
 		g_curlInitialized = false;
 	}
 }

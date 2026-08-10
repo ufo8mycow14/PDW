@@ -23,6 +23,7 @@
 #include "headers\initapp.h"
 #include "headers\notification.h"
 #include "notification_core.h"
+#include "curl_runtime.h"
 #include "smtp.h"
 
 using namespace std;
@@ -507,6 +508,8 @@ namespace
 			statefulEndpoint ? string() : config.destinations);
 		string identifierHeader = "X-PDW-Notification-ID: " + event.identifier;
 		string timestampHeader = "X-PDW-Event-Timestamp: " + event.timestamp;
+		string userAgent = string("PDW/") + (pdw_version ? pdw_version : "unknown") +
+			" Apprise-Client/1.0";
 		struct curl_slist *headers = NULL;
 		headers = curl_slist_append(headers, "Content-Type: application/json");
 		headers = curl_slist_append(headers, "Accept: application/json");
@@ -534,7 +537,7 @@ namespace
 		PDW_APPRISE_SETOPT(CURLOPT_WRITEFUNCTION, DiscardResponse);
 		PDW_APPRISE_SETOPT(CURLOPT_XFERINFOFUNCTION, TransferProgress);
 		PDW_APPRISE_SETOPT(CURLOPT_NOPROGRESS, 0L);
-		PDW_APPRISE_SETOPT(CURLOPT_USERAGENT, "PDW/3.3 Apprise-Client/1.0");
+		PDW_APPRISE_SETOPT(CURLOPT_USERAGENT, userAgent.c_str());
 #undef PDW_APPRISE_SETOPT
 
 		outcome.curlCode = setup == CURLE_OK ? curl_easy_perform(curl) : setup;
@@ -763,8 +766,7 @@ void NotificationManagerInitialize(void)
 		return;
 	}
 
-	CURLcode curlResult = curl_global_init(CURL_GLOBAL_DEFAULT);
-	g_curlInitialized = curlResult == CURLE_OK;
+	g_curlInitialized = CurlRuntimeAcquire();
 	if (!g_curlInitialized)
 	{
 		SetStatus("PDW could not initialize the HTTPS notification client.");
@@ -811,7 +813,7 @@ void NotificationManagerShutdown(void)
 	if (g_stopEvent != NULL) CloseHandle(g_stopEvent);
 	g_workEvent = NULL;
 	g_stopEvent = NULL;
-	if (g_curlInitialized) curl_global_cleanup();
+	if (g_curlInitialized) CurlRuntimeRelease();
 	g_curlInitialized = false;
 	g_notificationInitialized = false;
 	DeleteCriticalSection(&g_notificationLock);

@@ -48,7 +48,7 @@ int gmat[18]={	0xF08, 0x784, 0x3C2, 0x1E1, 0xD96, 0x6CB, 0xE03, 0xA67, 0x855,
 				0x94C, 0x4A6, 0x253, 0xC4F, 0xB41, 0x8C6, 0x463, 0xF57, 0xACD };
 
 char numformat[17]={"0123456789/ U-.%"};					// contains numeric paging data format
-char alpformat[33]={"@£$¥èéùìòÇ Øø Åå            ÆæßÉ"};	// contains alphanumeric paging data format
+char alpformat[33]={"@Â£$Â¥Ã¨Ã©Ã¹Ã¬Ã²Ã‡ Ã˜Ã¸ Ã…Ã¥            Ã†Ã¦ÃŸÃ‰"};	// contains alphanumeric paging data format
 
 
 // Default ERMES settings
@@ -114,8 +114,8 @@ int ERMES::nOnes(int k)
 */
 int ERMES::lOnes(long int k)
 {
-	int kt;
-	for (int i=0, kt=0; i<32; i++)
+	int kt = 0;
+	for (int i=0; i<32; i++)
 	{
 		if ((k & 0x0001l) != 0l) kt++;
 		k = k >> 1;

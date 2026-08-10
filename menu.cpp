@@ -97,7 +97,8 @@ void set_menu_items(void)
 	// Check correct Langauge item.
 	// Also set the current language table.
 
-	if (Profile.lang_mi_index > lang_cnt) Profile.lang_mi_index = 0;
+	if (Profile.lang_mi_index < 0 || Profile.lang_mi_index > lang_cnt)
+		Profile.lang_mi_index = 0;
 
 	Profile.reverse_msg = FALSE;
 	Profile.lang_tbl_index = 0;
