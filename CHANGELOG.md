@@ -1,5 +1,39 @@
 # Changelog
 
+## 4.6.0 Beta
+
+Dual-architecture follow-up to the merged 4.5 Beta release. The same decoder,
+settings, and output behavior is now built and tested for both x64 and Win32,
+while Win32 remains available for older receiver drivers and serial hardware.
+
+### Added
+
+- Native x64 Release builds, tests, CI artifacts, and portable packages beside
+  the existing Win32 equivalents.
+- Architecture checks for optional receiver DLLs, with clear diagnostics when
+  a 32-bit DLL is selected in x64 PDW or a 64-bit DLL is selected in Win32 PDW.
+- A maintained Windows architecture guide covering package choice, receiver
+  compatibility, and the architecture-neutral `rtl_tcp` path.
+
+### Changed
+
+- Removed pointer-width assumptions in shared UI, message, and signal-source
+  paths so the same source compiles cleanly for x64 and Win32.
+- Made CI and release packaging architecture-aware without removing any legacy
+  decoder, WinMM, serial, slicer, filter, or output path.
+- Centralized current executable naming and aligned product, resource,
+  manifest, workflow artifact, branch, and package identity to PDW v4.6.0 Beta.
+
+### Compatibility
+
+- Win32 remains the recommended build for legacy x86-only receiver DLLs and
+  hardware drivers. The x64 package intentionally excludes x86-only receiver
+  binaries and DOS-era VxD support assets.
+- `rtl_tcp` remains architecture-neutral because PDW communicates with it over
+  TCP rather than loading its receiver driver into the PDW process.
+- No decoder algorithm, protocol default, filter boundary, or optional-output
+  default changed for this release.
+
 ## 4.5.0 Beta
 
 Compatibility-first integration release. The v4.1 layout and legacy decoder,

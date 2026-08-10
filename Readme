@@ -6,7 +6,7 @@
 
 A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
-![Version](https://img.shields.io/badge/version-4.5.0%20Beta-2E74B5)
+![Version](https://img.shields.io/badge/version-4.6.0%20Beta-2E74B5)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
 ![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20Win32-555555)
 ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
@@ -211,6 +211,7 @@ PDW is being modernised conservatively.
 
 | Version | Release Date | Highlights |
 | --- | --- | --- |
+| **4.6.0 Beta** | **10 August 2026** | Native x64 and Win32 builds, architecture-matched receiver validation, dual CI artifacts and architecture-specific portable packages while retaining legacy Win32 hardware support. |
 | **4.5.0 Beta** | **10 August 2026** | Unified decoded-message routing, MQTT, SQLite, MySQL/ODBC, Telnet JSON, Windows notifications, Delivery Health, INI preservation, optional FLEX reassembly and expanded compatibility tests. |
 | **4.1.0 Beta** | **10 August 2026** | Modern interface, Settings hub, themes, DPI improvements, RTL-TCP, direct RTL-SDR, WAV/SigMF recording and replay, diagnostics, calibration, Apprise, FTPS/SFTP and privacy-controlled publishing. |
 | **3.2b01** | **20 August 2016** | SSL support and related fixes for the SMTP email client. |

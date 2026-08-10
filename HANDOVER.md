@@ -10,10 +10,11 @@ stay authoritative, and enhancements must be additive or fail independently.
 ## Repository and release identity
 
 - Source checkout: `C:\PDW Update\PDW-source`
-- Release branch: `pdw-v4.5.0-beta`
-- Product/display name: **PDW v4.5.0 Beta**
-- Executable: `out\build-win32\Release\PDW v4.5.0 Beta.exe`
-- Windows file version: `4.5.0.0`
+- Release branch: `pdw-v4.6.0-beta`
+- Product/display name: **PDW v4.6.0 Beta**
+- Win32 executable: `out\build-win32\Release\PDW v4.6.0 Beta.exe`
+- x64 executable: `out\build-x64\Release\PDW v4.6.0 Beta.exe`
+- Windows file version: `4.6.0.0`
 - Writable fork remote: `fork` (`ufo8mycow14/PDW`)
 - Authoritative upstream: `origin` (`Discriminator/PDW`)
 - Audit-only comparison remote: `spiral`; push is disabled
@@ -29,8 +30,9 @@ Important integration checkpoints:
 
 Fork publication state:
 
-- pushed branch: `fork/pdw-v4.5.0-beta`;
-- draft PR: `https://github.com/ufo8mycow14/PDW/pull/5`;
+- v4.5 PR #5 was merged into fork `master` on 10 August 2026;
+- `pdw-v4.6.0-beta` is the current local release branch and is not considered
+  published until its clean dual-architecture gates pass and it is pushed;
 - superseded v4.1 draft PR #3 is closed, with its branch retained;
 - Win32 workflow run `31361744748` passed dependency build, application build,
   all 18 tests, and artifact upload;
@@ -43,9 +45,9 @@ GitHub's separate AI-findings helper failed before reviewing code because its
 configured model was unsupported (HTTP 400). This was a GitHub service-side
 agent failure; the standard CodeQL and project checks passed.
 
-Historical v4.1 references in its changelog section and contributor credit are
-intentional. Current executable, workflow artifact, documentation, branch, and
-package references use v4.5.0 Beta.
+Historical v4.1 and v4.5 references in release history, acceptance evidence,
+and contributor credit are intentional. Current executable, workflow artifact,
+documentation, branch, and package targets use v4.6.0 Beta.
 
 ## Safe integration result
 
@@ -116,22 +118,29 @@ before safe modification. See `docs/FLEX_FRAGMENTS.md`.
 
 ## Verified local build state
 
-The Win32 Release build completed on 10 August 2026 with Visual Studio 2022 and
-the pinned x86 dependency set. The expanded local CTest suite passes
-**24 of 24 tests**.
+Clean Visual Studio 2022 Release builds completed for Win32 and x64 on
+10 August 2026. Each architecture passes **24 of 24 tests**. The optional
+WinMM and WASAPI smoke targets also compile for both architectures.
 
 Verified executable metadata:
 
-- filename: `PDW v4.5.0 Beta.exe`;
-- file version: `4.5.0.0`;
-- product version: `4.5.0 Beta`;
-- SHA-256: `E2602F6498401AB20AA5D1724F8F3CAD46ABAF78ADE93CFFFBF94B2D09757D8C`.
+- filename: `PDW v4.6.0 Beta.exe`;
+- file version: `4.6.0.0`;
+- product version: `4.6.0 Beta`;
+- Win32 PE machine: `0x014C`;
+- Win32 SHA-256: `60DC5C166A51D312C76435D5F032A5B0D21AC418A48B69E6FF6DE554FBC36D12`;
+- x64 PE machine: `0x8664`;
+- x64 SHA-256: `EE688513E7F61826DB1D93D817E0A3488C5A4D152D4AEE5C37B027F07068C0E8`.
 
-A real startup smoke test created a main window titled **PDW v4.5.0 Beta**.
-The app remained running until the exact smoke-test process was stopped. The
-native resource compiler also accepted the expanded Screen Options dialog.
+Both executables created a responsive main window titled **PDW v4.6.0 Beta**
+when launched with the sanitized portable profile. Automated native-window
+smoke then verified all 10 Settings destinations, an unclipped 769x440 dark
+Backup / Restore dialog, and correct disable/re-enable modality on Win32 and
+x64. The embedded manifest extracted from each executable reports version
+`4.6.0.0` with architecture-neutral assembly metadata; the PE header remains
+the authoritative executable architecture.
 
-Follow-up acceptance on 10 August 2026 measured responsive manual main-window
+Earlier v4.5 acceptance on 10 August 2026 measured responsive manual main-window
 starts from 243 ms to 1,189 ms, including 422 ms after the final clean build,
 and responsive `/startup` starts from 5,141 ms to 6,906 ms. The optional hardware smoke targets
 captured 44,100 bytes through legacy WinMM at 44.1 kHz 8-bit mono and 48,000
@@ -168,6 +177,13 @@ cmake --build out\build-win32 --config Release --target clean
 cmake --build out\build-win32 --config Release --parallel
 ctest --test-dir out\build-win32 -C Release --output-on-failure
 
+.\scripts\build-dependencies.ps1 -Architecture x64
+cmake -S . -B out\build-x64 -A x64 `
+  -DPDW_DEPENDENCY_ROOT="$PWD\out\dependencies\x64"
+cmake --build out\build-x64 --config Release --target clean
+cmake --build out\build-x64 --config Release --parallel
+ctest --test-dir out\build-x64 -C Release --output-on-failure
+
 # Optional, machine-specific live audio checks
 cmake --build out\build-win32 --config Release --target PDWWinmmDeviceSmoke
 .\out\build-win32\Release\PDWWinmmDeviceSmoke.exe
@@ -180,14 +196,15 @@ cmake --build out\build-win32 --config Release --target PDWWasapiDeviceSmoke
 The reproducible package command is:
 
 ```powershell
-.\scripts\package-release.ps1
+.\scripts\package-release.ps1 -Architecture Win32
+.\scripts\package-release.ps1 -Architecture x64
 ```
 
 It requires a clean Git tree and matching executable metadata, refuses to
 overwrite an existing release, stages under `C:\PDW Update\tmp`, and produces:
 
-- `C:\PDW Update\PDW-4.5.0-Beta`;
-- `C:\PDW Update\PDW-4.5.0-Beta-Win32.zip`.
+- `C:\PDW Update\PDW-4.6.0-Beta-Win32` and its matching ZIP;
+- `C:\PDW Update\PDW-4.6.0-Beta-x64` and its matching ZIP.
 
 The ready-to-run root and `Application` copy include the executable, sanitized
 disabled-by-default `PDW.INI`, empty filters, documentation, standard receiver
@@ -196,8 +213,8 @@ from `git archive HEAD`. `SHA256SUMS.txt` covers every staged file. The script
 rejects runtime logs, databases, IQ/SigMF data, publish queues, dead-letter
 content, and non-empty INI secret fields.
 
-The prior `C:\PDW Update\PDW-4.1.0-Beta` folder is retained as rollback evidence
-and is not overwritten by the v4.5 package.
+The prior v4.1 and v4.5 release folders are retained as rollback evidence and
+are not overwritten by the architecture-specific v4.6 packages.
 
 The last clean-tree package audit verified all 287 recorded file hashes, found
 no private runtime artifacts or old-version filenames, confirmed every optional
@@ -263,7 +280,7 @@ The maintained milestone view is in `docs/ROADMAP.md`.
 - Inspect the complete diff and preserve unrelated work.
 - Stage explicit release files; do not use broad cleanup/reset commands.
 - Build and test before committing.
-- Push `pdw-v4.5.0-beta` to the writable `fork` remote.
+- Push `pdw-v4.6.0-beta` to the writable `fork` remote.
 - Open a draft PR against the fork's `master`; close older draft PRs only as
   superseded references, without deleting their rollback branches.
 - Treat push, PR, merge, tag, GitHub release, and local installation as distinct

@@ -55,9 +55,9 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v4.5.0-Beta-${{ matrix.label }}
+          name: PDW-v4.6.0-Beta-${{ matrix.label }}
           path: |
-            build-${{ matrix.architecture }}\Release\PDW v4.5.0 Beta.exe
+            build-${{ matrix.architecture }}\Release\PDW v4.6.0 Beta.exe
             License
             THIRD_PARTY_NOTICES.md
             out\dependencies\${{ matrix.architecture }}\pdw-dependencies.lock

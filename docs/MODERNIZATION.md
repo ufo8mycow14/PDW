@@ -7,8 +7,9 @@ boundary at a time.
 
 ## Non-negotiable compatibility boundaries
 
-- Ship one `PDW v4.5.0 Beta.exe`, one settings experience, and one consolidated message
-  stream. Do not create separate legacy/enhanced editions or helper services.
+- Ship one product as architecture-matched `PDW v4.6.0 Beta.exe` packages, one
+  settings experience, and one consolidated message stream. Do not create
+  separate legacy/enhanced editions or helper services.
 - Do not alter protocol algorithms without representative signal recordings
   and before/after decoder-output comparisons.
 - Keep the Win32 build available while the serial slicer and its x86
@@ -81,7 +82,8 @@ visually verified Radio and Signal Sources dialog. WinMM remains first choice.
 - Separate capture, decoding, message formatting, and presentation boundaries.
 - Add structured diagnostic logging that excludes decoded message content by
   default.
-- Evaluate x64 only after legacy serial/hardware dependencies are isolated.
+- Maintain tested x64 and Win32 builds. Keep Win32 available for legacy
+  serial/hardware dependencies and reject mismatched in-process receiver DLLs.
 
 ## Phase 5: enhanced decoding beside legacy
 
@@ -147,11 +149,11 @@ legacy non-group alpha fragments are always shown first and a complete strict
 chain can add one marked assembled copy. FLEX Group Mode stays on its legacy
 path; fragment assembly is not required to publish a website or webhook.
 
-## Release gate for 4.5 Beta
+## Release gate for 4.6 Beta
 
-A public 4.5 Beta build requires:
+A public 4.6 Beta build requires:
 
-1. A successful clean Visual Studio 2022 Win32 Release build.
+1. Successful clean Visual Studio 2022 x64 and Win32 Release builds.
 2. Startup and shutdown tests on current Windows.
 3. Audio-device capture smoke testing.
 4. Representative POCSAG and FLEX regression recordings at minimum.

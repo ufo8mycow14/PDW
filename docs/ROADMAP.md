@@ -16,7 +16,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 
 | Area | Current state | Next gate |
 | --- | --- | --- |
-| Win32 build | Local Release build passes all 24 tests; previously published fresh-clone build passed its 18-test checkpoint | Keep CI green and verify the expanded suite after push |
+| Win32 build | Local Release build passes all 24 tests; the merged v4.5 workflow passed its publication gates | Keep the 24-test suite green in dual-architecture CI |
 | Windows interface | Approved 2026 command bar, live meter, modeless 10-page Settings Center, encrypted configuration backup/restore, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
 | Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
 | Windows audio | WinMM and WASAPI captured from the real default device on the development machine | Live device-loss, hot-plug, and broader device-matrix acceptance |
@@ -29,15 +29,15 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Delivery health | Content-free observer, dialog, history, and alerts complete at `682dfd2` | Runtime visual acceptance across themes and DPI |
 | Settings compatibility | Unknown INI keys, sections, comments, BOM, and line endings preserved at `98ff7ad` | Extend round-trip fixtures with future settings |
 | FLEX fragments | Additive non-group K/F/C alpha reassembly complete at `77e23bd`; original fragments remain authoritative | Recording-backed live acceptance; Group Mode remains legacy |
-| Release packaging | Prior v4.5 folder/ZIP audited; current UI executable smoke-tested in the preserved Desktop test installation; v4.1 package retained | Commit/rebuild clean portable package, then complete manual acceptance |
-| x64 | Not started | Isolate legacy serial and slicer dependencies first |
+| Release packaging | Architecture-aware Win32 and x64 packaging implemented; prior v4.5 and v4.1 packages remain rollback evidence | Generate and audit both clean v4.6 portable packages |
+| x64 | Native Release build and all 24 tests pass locally; receiver DLL architecture is validated before load | Complete CI, package, and physical receiver acceptance while keeping Win32 available |
 
 ## Safe integration sequence
 
-The active release branch is `pdw-v4.5.0-beta`. The v4.1 interface, defaults,
-and legacy behavior remain authoritative. The `spiral` remote is fetch-only;
-work is selectively adopted and independently tested rather than wholesale
-merged.
+The active release branch is `pdw-v4.6.0-beta`. The approved interface,
+defaults, and legacy behavior remain authoritative. The `spiral` remote is
+fetch-only; work is selectively adopted and independently tested rather than
+wholesale merged.
 
 | Order | Stage | State |
 | --- | --- | --- |
@@ -47,8 +47,9 @@ merged.
 | 4 | Content-free Delivery Health observer and UI | Complete at `682dfd2` |
 | 5 | INI preservation and compatibility verification | Complete at `98ff7ad` |
 | 6 | Optional FLEX fragment assembly with guaranteed legacy fallback | Complete at `77e23bd`; disabled by default |
-| 7 | PDW v4.5.0 Beta metadata, package, fork, CI, and artifact alignment | Complete; draft PR #5 |
-| 8 | Image-approved 2026 Windows navigation, live input, and Settings Center | Implemented locally; 100% Light/Dark and compact-size smoke passed |
+| 7 | PDW v4.5.0 Beta metadata, package, fork, CI, and artifact alignment | Complete; PR #5 merged into fork `master` |
+| 8 | Image-approved 2026 Windows navigation, live input, and Settings Center | Complete in fork `master`; 100% Light/Dark and compact-size smoke passed |
+| 9 | PDW v4.6.0 Beta native x64 plus retained Win32 release alignment | Implemented locally; clean dual builds, packages, CI, and fork publication are the release gate |
 
 Delivery Health stores no pager addresses or decoded text and cannot alter a
 delivery result. FLEX shadow assembly cannot suppress a legacy fragment on
@@ -57,11 +58,11 @@ not changed without representative replay evidence.
 
 ## Milestone 1 - Release-state alignment
 
-Status: complete for local packaging and draft-fork publication
+Status: in progress for v4.6 dual-architecture publication
 
 - Align `Headers/version.h`, executable output name, About/resource metadata,
   changelog, documentation, workflow artifact, branch, and package filename to
-  **PDW v4.5.0 Beta**.
+  **PDW v4.6.0 Beta**.
 - Keep Git, local build output, portable package, test installation, pushed
   branch, pull request, CI result, and release artifact as separate states.
 - Generate a portable package containing only required runtime files and
@@ -168,7 +169,7 @@ display change, and repeated maximize/restore cycles. Keyboard-only, High
 Contrast, 125-200% DPI, and physical-radio acceptance remain open in
 `docs/WINDOWS_UI_ACCEPTANCE.md`.
 
-## Milestone 6 - Maintainability and x64 evaluation
+## Milestone 6 - Maintainability and dual-architecture support
 
 Priority: after regression coverage
 
@@ -176,14 +177,16 @@ Priority: after regression coverage
 - Continue separating capture, decoder, formatting, output, and presentation
   code behind tested interfaces.
 - Add content-safe diagnostics that exclude decoded text by default.
-- Isolate legacy serial/slicer requirements, then evaluate an x64 build while
-  keeping Win32 available for required hardware.
+- Keep native x64 and Win32 builds warning-clean at shared pointer and handle
+  boundaries, while retaining Win32 for required legacy hardware.
+- Validate in-process receiver DLL architecture before load and keep `rtl_tcp`
+  available as an architecture-neutral receiver path.
 
 ## Release gates
 
 Every beta or stable release requires:
 
-1. Clean Win32 Release build and all automated tests passing.
+1. Clean x64 and Win32 Release builds and all automated tests passing.
 2. Startup, shutdown, configuration round-trip, and Windows auto-start checks.
 3. Live input smoke testing appropriate to the release scope.
 4. Decoder regression evidence for every changed decoder boundary.

@@ -1,7 +1,7 @@
 # Radio, recording, and replay
 
 Open **Settings > Decoder and input > Radio and replay**. These inputs are
-additional choices inside the same `PDW v4.5.0 Beta.exe`; they do not create a separate
+additional choices inside the same `PDW v4.6.0 Beta.exe`; they do not create a separate
 edition or background helper.
 
 ## Local audio and serial compatibility
@@ -32,20 +32,20 @@ sent to the RTL-TCP server.
 
 ## RTL-SDR USB
 
-Select **Direct RTL-SDR USB receiver**. The distribution includes a standard
-32-bit receiver package for common RTL2832U devices and RTL-SDR Blog V3, V4 and
-V4L models under `Receivers\RTL-SDR`. PDW lists connected devices by name and
-index. The device test opens the selected receiver and applies tuner settings
-without changing the saved source until **OK** is selected.
+Select **Direct RTL-SDR USB receiver**. The Win32 distribution includes a
+standard 32-bit receiver package for common RTL2832U devices and RTL-SDR Blog
+V3, V4 and V4L models under `Receivers\RTL-SDR`; the x64 package requires a
+trusted matching x64 library or RTL-TCP. PDW lists connected devices by name
+and index. The device test opens the selected receiver and applies tuner
+settings without changing the saved source until **OK** is selected.
 
-Use **Add receiver...** to import another 32-bit `rtlsdr.dll` or
+Use **Add receiver...** to import a matching-architecture `rtlsdr.dll` or
 `librtlsdr.dll`. PDW checks the PE architecture and required receive API, then
 copies the primary library and neighbouring DLL dependencies into a portable
 `Receivers\Custom` package. Existing compatible DLLs beside
-`PDW v4.5.0 Beta.exe` remain
-selectable as a legacy fallback. Arbitrary vendor APIs are not loaded as if
-they were librtlsdr; those receivers can feed PDW through local/virtual audio
-or an RTL-TCP-compatible bridge.
+`PDW v4.6.0 Beta.exe` remain selectable as a legacy fallback. Arbitrary vendor
+APIs are not loaded as if they were librtlsdr; those receivers can feed PDW
+through local/virtual audio or an RTL-TCP-compatible bridge.
 
 The optional Zadig utility and matching source are under `Receivers\Driver
 Tools`. It can install WinUSB for RTL-SDR hardware, but it requires
