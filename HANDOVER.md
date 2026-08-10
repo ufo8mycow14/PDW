@@ -37,6 +37,8 @@ Fork publication state:
 - draft PR: `https://github.com/ufo8mycow14/PDW/pull/7`;
 - v4.6.0 draft PR #6 is closed as superseded, with its branch retained as
   rollback history;
+- PR #7 release-candidate checks pass for Win32, x64, CodeQL C/C++, CodeQL
+  Actions, and the final CodeQL gate;
 - the first v4.6 release commit is `14e9591`; GitHub checks run on every PR
   update and the PR is the authoritative current CI state;
 - the repository audit, release rules, and package-evidence sync remain on the
@@ -145,9 +147,9 @@ Verified executable metadata:
 - file version: `4.6.1.0`;
 - product version: `4.6.1 Beta`;
 - Win32 PE machine: `0x014C`;
-- Win32 SHA-256: `471AE87D194C865FD1507E910C23522E44EA45E2B866623397EE5FEEA15DDA07`;
+- Win32 SHA-256: `95B0EBA5E180DACDC2249F82E1BFBD262E51C43B34DC35BDF8794B5C452AFC44`;
 - x64 PE machine: `0x8664`;
-- x64 SHA-256: `2292EA14CBD5BA2EE1671024012486111B8B2150D6F4B4C56844182DA5A6A36F`.
+- x64 SHA-256: `0AE8984935684C678E1239CE023C0B308CD4EA00296AD9792FC1AF23C3F4D28E`.
 
 Both executables created a responsive main window titled **PDW v4.6.1 Beta**
 when launched with the sanitized portable profile. Automated native-window
