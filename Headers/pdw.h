@@ -182,6 +182,7 @@ typedef struct
 
 	int  FlexTIME;					// Flag for FlexTIME as systemtime
 	int  FlexGroupMode;				// Flag for FlexGroupMode
+	int  flexFragmentReassemblyEnabled; // additive FLEX alpha copy; legacy fragments remain
 
 	int  SMTP;						// SMTP-email
 	int  appriseEnabled;			// Apprise push notifications for filtered messages
@@ -474,6 +475,7 @@ void display_cfstatus(int cy=-1, int fr=-1);
 void setupecc();
 void frame_flex(char gin);
 void flex_reset(void);
+void flex_fragment_reassembly_reset(void);
 int  nOnes(int k);
 int  bit10(int gin);
 int  ecd();

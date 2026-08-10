@@ -779,12 +779,12 @@ BEGIN
     RTEXT           "0%",IDC_FILTERDUP_PCT,301,35,22,8
 END
 
-SCREENOPTIONSDLGBOX DIALOG 10, 10, 363, 131
+SCREENOPTIONSDLGBOX DIALOG 10, 10, 363, 151
 STYLE DS_SETFONT | DS_MODALFRAME | DS_3DLOOK | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
 CAPTION "PDW Screen Options"
 FONT 8, "Verdana"
 BEGIN
-    GROUPBOX        "Columns to be shown on screen",IDC_STATIC,5,7,353,96
+    GROUPBOX        "Columns to be shown on screen",IDC_STATIC,5,7,353,116
     LTEXT           "Column 1",IDC_STATIC,16,23,32,8
     COMBOBOX        801,13,38,45,80,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     LTEXT           "Column 2",IDC_STATIC,65,23,32,8
@@ -806,8 +806,10 @@ BEGIN
                     "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,146,66,173,10
     CONTROL         "Hide groupcodes within successfully converted groupcalls",IDC_FGM_HIDEGROUPCODES,
                     "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,146,85,203,10
-    PUSHBUTTON      "OK",IDOK,140,110,38,14
-    PUSHBUTTON      "Cancel",IDCANCEL,194,110,38,14
+    CONTROL         "Also show assembled FLEX alpha copy (original fragments remain)",IDC_FLEX_REASSEMBLY,
+                    "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,14,105,300,10
+    PUSHBUTTON      "OK",IDOK,140,130,38,14
+    PUSHBUTTON      "Cancel",IDCANCEL,194,130,38,14
 END
 
 MAIL_DLGBOX DIALOGEX 0, 0, 357, 265

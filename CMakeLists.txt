@@ -124,6 +124,7 @@ add_executable(PDW WIN32
 set_source_files_properties(
   utils/data_outputs.cpp
   utils/decoded_event.cpp
+  utils/flex_fragment_reassembly_core.cpp
   utils/output_health.cpp
   PROPERTIES COMPILE_OPTIONS "/W4;/WX"
 )
@@ -447,6 +448,20 @@ if(BUILD_TESTING)
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	add_test(NAME ini-preservation COMMAND PDWIniPreservationTests)
+
+	add_executable(PDWFlexFragmentReassemblyTests
+		tests/flex_fragment_reassembly_core_tests.cpp
+		utils/flex_fragment_reassembly_core.cpp
+	)
+	target_include_directories(PDWFlexFragmentReassemblyTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWFlexFragmentReassemblyTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME flex-fragment-reassembly COMMAND PDWFlexFragmentReassemblyTests)
 
 	add_executable(PDWWasapiDeviceSmoke EXCLUDE_FROM_ALL
 		tests/wasapi_device_smoke.cpp

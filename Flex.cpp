@@ -27,6 +27,7 @@
 #include "headers\helper_funcs.h"
 #include "headers\initapp.h"
 #include "utils\debug.h"
+#include "utils\flex_fragment_reassembly_core.h"
 
 #define min(a,b) (((a) < (b)) ? (a) : (b))
 #define max(a,b) (((a) > (b)) ? (a) : (b))
@@ -91,6 +92,24 @@ int syncs[8] = { 0x870C, 0x7B18, 0xB068, 0xDEA0, 0, 0, 0, 0x4C7C };
 
 char phase;
 
+// The reassembler is a shadow observer only. FLEX::showframe always sends the
+// original fragment through the established path before an optional assembled
+// copy is emitted.
+static pdw::flex::FragmentReassembler g_flexFragmentReassembler(
+	16, 120000, MAX_STR_LEN - 1);
+
+static std::uint64_t FlexFragmentNowMs()
+{
+	// Keep the legacy GetTickCount import while extending its 32-bit wrap for
+	// the two-minute fragment timeout. Decoder callbacks are serialized.
+	static DWORD previousTick = 0;
+	static std::uint64_t tickEpoch = 0;
+	const DWORD currentTick = GetTickCount();
+	if (currentTick < previousTick) tickEpoch += (static_cast<std::uint64_t>(1) << 32);
+	previousTick = currentTick;
+	return tickEpoch + currentTick;
+}
+
 
 FLEX::FLEX()
 {
@@ -110,6 +129,12 @@ void flex_reset(void)
 	flex_timer = 0;
 	bReflex = false;
 	bFlexActive = false;
+	flex_fragment_reassembly_reset();
+}
+
+void flex_fragment_reassembly_reset(void)
+{
+	g_flexFragmentReassembler.Reset();
 }
 
 // checksum check for BIW and vector type words
@@ -398,10 +423,11 @@ void FLEX::FlexTIME()
 void FLEX::showframe(int asa, int vsa)
 {
 	int vb, vt, tt, w1, w2, j, k, l, m, n=0, i, c=0;
-	long int cc, cc2, cc3;
-	bool bLongAddress=false, bXsumError=false;
+	long int cc, cc2, cc3, fragmentHeader=0;
+	bool bLongAddress=false, bXsumError=false, bFlexAssembledCopyReady=false;
 
-	int iFragmentNumber, iAssignedFrame;
+	int iFragmentNumber, iContinuationFlag=0, iAssignedFrame;
+	pdw::flex::FragmentResult flexFragmentResult;
 
 	extern unsigned long hourly_stat[NUM_STAT][2];
 	extern unsigned long hourly_char[NUM_STAT][2];
@@ -420,6 +446,10 @@ void FLEX::showframe(int asa, int vsa)
 
 		for (j=asa; j<vsa; j++, c=0, bLongAddress=false, bXsumError=false) // run through whole address field
 		{
+			bFlexAssembledCopyReady = false;
+			flexFragmentResult = pdw::flex::FragmentResult();
+			fragmentHeader = 0;
+			iContinuationFlag = 0;
 			cc2 = frame[j] & 0x1fffffl;	// Check if this can be the low part of a long address
 
 			// check for long addresses (bLongAddress indicates long address)
@@ -462,13 +492,17 @@ void FLEX::showframe(int asa, int vsa)
 				// if != 3 then this is a continued message
 				if (!bLongAddress)
 				{
-					iFragmentNumber = (int) (frame[w1] >> 11) & 0x03;
+					fragmentHeader = frame[w1];
+					iFragmentNumber = (int) (fragmentHeader >> 11) & 0x03;
+					iContinuationFlag = (int) (fragmentHeader >> 10) & 0x01;
 					w1++;
 				}
 				else
 				{
 					if (vb + 1 >= 200) { j++; continue; }
-					iFragmentNumber = (int) (frame[vb+1] >> 11) & 0x03;
+					fragmentHeader = frame[vb+1];
+					iFragmentNumber = (int) (fragmentHeader >> 11) & 0x03;
+					iContinuationFlag = (int) (fragmentHeader >> 10) & 0x01;
 					w2--;
 				}
 
@@ -508,6 +542,26 @@ void FLEX::showframe(int asa, int vsa)
 						hourly_char[flex_speed][STAT_ALPHA]++;
 						daily_char [flex_speed][STAT_ALPHA]++;
 					}
+				}
+
+				// Compatibility-first shadow assembly. Every fragment is still shown
+				// by the original ShowMessage()/ConvertGroupcall logic below. Group
+				// mode stays entirely on its proven legacy behavior.
+				if (Profile.flexFragmentReassemblyEnabled && !Profile.FlexGroupMode &&
+					!bFLEX_groupmessage && capcode >= 0 &&
+					strchr(Current_MSG[MSG_CAPCODE], '?') == NULL &&
+					fragmentHeader >= 0 && fragmentHeader <= 0x3fffffl)
+				{
+					pdw::flex::FragmentObservation observation;
+					observation.address = static_cast<std::uint32_t>(capcode);
+					observation.fragmentNumber = static_cast<unsigned int>(iFragmentNumber);
+					observation.continuation = iContinuationFlag != 0;
+					observation.observedAtMs = FlexFragmentNowMs();
+					observation.text = message_buffer;
+					observation.colors = reinterpret_cast<const std::uint8_t*>(message_color);
+					observation.length = static_cast<std::size_t>(iMessageIndex);
+					flexFragmentResult = g_flexFragmentReassembler.Observe(observation);
+					bFlexAssembledCopyReady = flexFragmentResult.assembled;
 				}
 
 				if (iFragmentNumber < 3)	// Change last 0 of bitrate into fragmentnumber
@@ -726,7 +780,17 @@ void FLEX::showframe(int asa, int vsa)
 				}
 				else AddAssignment(iAssignedFrame, FlexTempAddress, capcode);
 			}
-			else ShowMessage();
+			else
+			{
+				ShowMessage();
+				if (bFlexAssembledCopyReady)
+				{
+					ShowAssembledFlexCopy(
+						reinterpret_cast<const unsigned char*>(flexFragmentResult.text.data()),
+						flexFragmentResult.colors.empty() ? NULL : &flexFragmentResult.colors[0],
+						flexFragmentResult.text.size());
+				}
+			}
 
 			if (bLongAddress) j++;	// if long address then make sure we skip over both parts
 		}

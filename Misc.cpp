@@ -107,6 +107,10 @@ BYTE *dsc_pcolor;
 
 FILE *pBlocked = NULL;						// PH: Used for blocked messages
 
+// True only during the synchronous additive copy emitted after a complete
+// FLEX fragment chain. The legacy fragment call always runs first.
+static bool g_showingAssembledFlexCopy = false;
+
 
 void ResetBools();
 bool BlockChecker(char *address, int fnu, char *message, bool reject);
@@ -596,7 +600,8 @@ void ShowMessage()
 
 	bool bBlock=false, bSkip_character=false;
 	bool bMATCH=false, bMONITOR_ONLY=false, bFILTERED=false;
-	bool bShowMessage=true, bFragment=false, bGroupcode;
+	const bool bAssembledFlexCopy = g_showingAssembledFlexCopy;
+	bool bShowMessage=true, bFragment=bAssembledFlexCopy, bGroupcode;
 	bool bNumeric=false;
 	bool bNewFile, bNewLine;					// PH: To indicate if the logfile is new / already exists
 	bool bSeparator[2] = { true, true };		// PH: Set if a separator is needed
@@ -619,6 +624,11 @@ void ShowMessage()
 	DWORD dwColor;
 
 	PaneStruct *pPane;
+
+	if (bAssembledFlexCopy)
+	{
+		strcpy(szFragment, "[Assembled FLEX fragments]");
+	}
 
 	if (!iConvertingGroupcall)
 	{
@@ -728,7 +738,7 @@ void ShowMessage()
 			return;
 		}
 
-		if (Profile.BlockDuplicate && !iConvertingGroupcall)	// Do we want to block duplicate messages?
+		if (Profile.BlockDuplicate && !iConvertingGroupcall && !bAssembledFlexCopy)	// Do we want to block duplicate messages?
 		{
 			bBlock = BlockChecker(Current_MSG[MSG_CAPCODE], strstr(Current_MSG[MSG_MODE], "POCSAG") ? atoi(&Current_MSG[MSG_MODE][7]) : 0, Current_MSG[MSG_MESSAGE], false);
 
@@ -858,7 +868,7 @@ void ShowMessage()
 				continue;
 			}
 
-			if (strstr(Current_MSG[MSG_MODE], "FLEX") && (Current_MSG[MSG_BITRATE][3] != '0'))
+			if (!bAssembledFlexCopy && strstr(Current_MSG[MSG_MODE], "FLEX") && (Current_MSG[MSG_BITRATE][3] != '0'))
 			{
 				if (Profile.FlexGroupMode)
 				{
@@ -1329,6 +1339,7 @@ void ShowMessage()
 	notification.groupFinal = bGroupcode;
 	notification.groupBit = (eventGroupBit >= 0 && eventGroupBit < 16) ? eventGroupBit : -1;
 	notification.fragmented = eventFragmented;
+	notification.assembled = bAssembledFlexCopy;
 	notification.selectedForEmail = bMATCH ? Profile.filters[iMatch].smtp : 0;
 	notification.filterIndex = bMATCH ? iMatch : -1;
 	notification.cycle = strstr(Current_MSG[MSG_MODE], "FLEX") ? iCurrentCycle : -1;
@@ -1346,6 +1357,51 @@ void ShowMessage()
 	if (Current_MSG[MSG_MOBITEX][0]) Current_MSG[MSG_MOBITEX][0] = '\0';
 
 } // end of ShowMessage()
+
+
+void ShowAssembledFlexCopy(const unsigned char* text, const BYTE* colors, size_t length)
+{
+	if (text == NULL || length == 0) return;
+	if (length >= MAX_STR_LEN) length = MAX_STR_LEN - 1;
+
+	// The extra copy is deliberately transactional around legacy globals. It
+	// may be filtered, logged, and routed like any other message, but the final
+	// original fragment remains PDW's previous/current message state.
+	static char savedCurrent[9][MAX_STR_LEN];
+	static char savedPrevious[2][9][MAX_STR_LEN];
+	static unsigned char savedMessageBuffer[MAX_STR_LEN+1];
+	static unsigned char savedMobitexBuffer[MAX_STR_LEN+1];
+	static BYTE savedMessageColor[MAX_STR_LEN+1];
+
+	memcpy(savedCurrent, Current_MSG, sizeof(savedCurrent));
+	memcpy(savedPrevious, Previous_MSG, sizeof(savedPrevious));
+	memcpy(savedMessageBuffer, message_buffer, sizeof(savedMessageBuffer));
+	memcpy(savedMobitexBuffer, mobitex_buffer, sizeof(savedMobitexBuffer));
+	memcpy(savedMessageColor, message_color, sizeof(savedMessageColor));
+	const int savedMessageIndex = iMessageIndex;
+	const bool savedAssembledState = g_showingAssembledFlexCopy;
+
+	memset(message_buffer, 0, sizeof(message_buffer));
+	memset(mobitex_buffer, 0, sizeof(mobitex_buffer));
+	memset(message_color, COLOR_UNUSED, sizeof(message_color));
+	memcpy(message_buffer, text, length);
+	if (colors != NULL) memcpy(message_color, colors, length);
+	else memset(message_color, COLOR_MESSAGE, length);
+	message_buffer[length] = 0;
+	message_color[length] = COLOR_UNUSED;
+	iMessageIndex = static_cast<int>(length);
+
+	g_showingAssembledFlexCopy = true;
+	ShowMessage();
+	g_showingAssembledFlexCopy = savedAssembledState;
+
+	memcpy(Current_MSG, savedCurrent, sizeof(savedCurrent));
+	memcpy(Previous_MSG, savedPrevious, sizeof(savedPrevious));
+	memcpy(message_buffer, savedMessageBuffer, sizeof(savedMessageBuffer));
+	memcpy(mobitex_buffer, savedMobitexBuffer, sizeof(savedMobitexBuffer));
+	memcpy(message_color, savedMessageColor, sizeof(savedMessageColor));
+	iMessageIndex = savedMessageIndex;
+}
 
 
 bool BlockChecker(char *address, int fnu, char *message, bool reject)

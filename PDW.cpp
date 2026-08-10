@@ -586,6 +586,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 
 	Profile.FlexTIME			= 0;	// Flag for FlexTIME as systemtime
 	Profile.FlexGroupMode		= 0;
+	Profile.flexFragmentReassemblyEnabled = 0;
 
 	Profile.xPos  = 0;
 	Profile.yPos  = 0;
@@ -6197,6 +6198,7 @@ BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 		CheckDlgButton(hDlg, IDC_FGM_LOGGING,        Profile.FlexGroupMode & FLEXGROUPMODE_LOGGING);
 		CheckDlgButton(hDlg, IDC_FGM_COMBINE,        Profile.FlexGroupMode & FLEXGROUPMODE_COMBINE);
 		CheckDlgButton(hDlg, IDC_FGM_HIDEGROUPCODES, Profile.FlexGroupMode & FLEXGROUPMODE_HIDEGROUPCODES);
+		CheckDlgButton(hDlg, IDC_FLEX_REASSEMBLY,    Profile.flexFragmentReassemblyEnabled);
 
 		if (Profile.monitor_paging)
 		{
@@ -6208,6 +6210,7 @@ BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_LOGGING),        Profile.FlexGroupMode ? true : false);
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_COMBINE),        Profile.FlexGroupMode ? true : false);
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_HIDEGROUPCODES), Profile.FlexGroupMode ? true : false);
+			EnableWindow(GetDlgItem(hDlg, IDC_FLEX_REASSEMBLY),    Profile.FlexGroupMode ? false : true);
 		}
 
 		return (TRUE);
@@ -6268,6 +6271,7 @@ BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_LOGGING),        state ? true : false);
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_COMBINE),        state ? true : false);
 			EnableWindow(GetDlgItem(hDlg, IDC_FGM_HIDEGROUPCODES), state ? true : false);
+			EnableWindow(GetDlgItem(hDlg, IDC_FLEX_REASSEMBLY),    state ? false : true);
 
 			break;
 
@@ -6316,6 +6320,11 @@ BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 				Profile.FlexGroupMode += IsDlgButtonChecked(hDlg, IDC_FGM_LOGGING) ? FLEXGROUPMODE_LOGGING : 0;
 				Profile.FlexGroupMode += IsDlgButtonChecked(hDlg, IDC_FGM_COMBINE) ? FLEXGROUPMODE_COMBINE : 0;
 				Profile.FlexGroupMode += IsDlgButtonChecked(hDlg, IDC_FGM_HIDEGROUPCODES) ? FLEXGROUPMODE_HIDEGROUPCODES : 0;
+			}
+			Profile.flexFragmentReassemblyEnabled = IsDlgButtonChecked(hDlg, IDC_FLEX_REASSEMBLY);
+			if (!Profile.flexFragmentReassemblyEnabled || Profile.FlexGroupMode)
+			{
+				flex_fragment_reassembly_reset();
 			}
 
 			WriteSettings();
@@ -9937,6 +9946,8 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->BlockDuplicate= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("BlockDuplicate"), pProfile->BlockDuplicate, lpszIniPathName);
 	pProfile->FlexTIME		= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("FlexTIME"), pProfile->FlexTIME, lpszIniPathName);
 	pProfile->FlexGroupMode	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("FlexGroupMode"), pProfile->FlexGroupMode, lpszIniPathName);
+	pProfile->flexFragmentReassemblyEnabled = (INT) GetPrivateProfileInt(lpszAppTitle,
+		TEXT("FlexFragmentReassembly"), pProfile->flexFragmentReassemblyEnabled, lpszIniPathName);
 	pProfile->SystemTray	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("SystemTray"), pProfile->SystemTray, lpszIniPathName);
 	pProfile->SystemTrayRestore = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("SystemTrayRestore"), pProfile->SystemTrayRestore, lpszIniPathName);
 
@@ -10549,6 +10560,7 @@ void WriteSettings()
 		fprintf(pFile, "BlockDuplicate=%i\n",			Profile.BlockDuplicate);
 		fprintf(pFile, "FlexTIME=%i\n",					Profile.FlexTIME);
 		fprintf(pFile, "FlexGroupMode=%i\n",			Profile.FlexGroupMode);
+		fprintf(pFile, "FlexFragmentReassembly=%i\n",	Profile.flexFragmentReassemblyEnabled);
 		fprintf(pFile, "SystemTray=%i\n",				Profile.SystemTray);
 		fprintf(pFile, "SystemTrayRestore=%i\n",		Profile.SystemTrayRestore);
 

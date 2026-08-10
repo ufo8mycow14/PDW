@@ -231,6 +231,7 @@
 #define IDC_FGM_LOGGING            811
 #define IDC_FGM_COMBINE            812
 #define IDC_FGM_HIDEGROUPCODES     813
+#define IDC_FLEX_REASSEMBLY        814
 
 #define IDC_SCROLLPANE1            890
 #define IDC_SCROLLPANE2            891
