@@ -70,7 +70,7 @@ if (-not $major -or -not $minor -or -not $patch) {
 $version = "$major.$minor.$patch"
 function Read-StringMacro([string]$Name) {
     $match = [regex]::Match($versionHeader,
-        '(?m)^#define ' + [regex]::Escape($Name) + ' "([^"]+)"$')
+        '(?m)^#define ' + [regex]::Escape($Name) + ' "([^"]+)"\r?$')
     if (-not $match.Success) { throw "Unable to read $Name from Headers\version.h." }
     return $match.Groups[1].Value
 }

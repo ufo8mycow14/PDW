@@ -25,7 +25,7 @@ if (Test-Path -LiteralPath $destinationRoot) {
 $versionHeader = Get-Content -LiteralPath (Join-Path $sourceRoot "Headers\version.h") -Raw
 function Read-StringMacro([string]$Name) {
     $match = [regex]::Match($versionHeader,
-        '(?m)^#define ' + [regex]::Escape($Name) + ' "([^"]+)"$')
+        '(?m)^#define ' + [regex]::Escape($Name) + ' "([^"]+)"\r?$')
     if (-not $match.Success) { throw "Unable to read $Name from Headers\version.h." }
     return $match.Groups[1].Value
 }
