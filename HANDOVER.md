@@ -27,6 +27,22 @@ Important integration checkpoints:
 - `98ff7ad` - INI preservation;
 - `77e23bd` - legacy-safe FLEX fragment reassembly.
 
+Fork publication state:
+
+- pushed branch: `fork/pdw-v4.5.0-beta`;
+- draft PR: `https://github.com/ufo8mycow14/PDW/pull/5`;
+- superseded v4.1 draft PR #3 is closed, with its branch retained;
+- Win32 workflow run `31361744748` passed dependency build, application build,
+  all 18 tests, and artifact upload;
+- CodeQL C/C++, Actions, and final CodeQL checks passed;
+- uploaded artifact: `PDW-v4.5.0-Beta-Win32`;
+- downloaded artifact copy:
+  `C:\PDW Update\output\PDW-v4.5.0-Beta-GitHub-Artifact`.
+
+GitHub's separate AI-findings helper failed before reviewing code because its
+configured model was unsupported (HTTP 400). This was a GitHub service-side
+agent failure; the standard CodeQL and project checks passed.
+
 Historical v4.1 references in its changelog section and contributor credit are
 intentional. Current executable, workflow artifact, documentation, branch, and
 package references use v4.5.0 Beta.
@@ -120,6 +136,12 @@ content, and non-empty INI secret fields.
 The prior `C:\PDW Update\PDW-4.1.0-Beta` folder is retained as rollback evidence
 and is not overwritten by the v4.5 package.
 
+The local package audit verified all 287 recorded file hashes, found no private
+runtime artifacts or old-version filenames, confirmed every optional `Enable`
+default and FLEX assembly are off, and confirmed the standard RTL-SDR DLL is in
+`Receivers\RTL-SDR`. The packaged executable metadata and SHA-256 match the
+tested local build.
+
 ## Compatibility and privacy boundaries
 
 - Preserve POCSAG, FLEX, ACARS, MOBITEX, and ERMES legacy protocol behavior.
@@ -146,7 +168,6 @@ and is not overwritten by the v4.5 package.
    legacy output; specifically exercise complete and broken FLEX chains.
 4. Test FTP/FTPS/SFTP, SMTP, Apprise, webhook, MQTT, ODBC, Telnet, and Windows
    notification success/failure paths using disposable non-private data.
-5. Verify GitHub CI and the `PDW-v4.5.0-Beta-Win32` artifact after pushing.
 
 The maintained milestone view is in `docs/ROADMAP.md`.
 

@@ -16,7 +16,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 
 | Area | Current state | Next gate |
 | --- | --- | --- |
-| Win32 build | Release build and 18 tests pass locally | Fresh-clone CI verification |
+| Win32 build | Clean local build and fresh-clone GitHub build pass all 18 tests | Keep CI green |
 | Windows interface | v4.1 themes, menus, Settings, DPI, and startup layout retained | Light/dark, keyboard, DPI, and small-screen acceptance |
 | Legacy decoding | POCSAG, FLEX, ACARS, MOBITEX, and ERMES paths retained | Recording-backed protocol regression suite |
 | Windows audio | WinMM retained; WASAPI fallback implemented | Live device-loss and hot-plug acceptance |
@@ -29,7 +29,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Delivery health | Content-free observer, dialog, history, and alerts complete at `682dfd2` | Runtime visual acceptance across themes and DPI |
 | Settings compatibility | Unknown INI keys, sections, comments, BOM, and line endings preserved at `98ff7ad` | Extend round-trip fixtures with future settings |
 | FLEX fragments | Additive non-group K/F/C alpha reassembly complete at `77e23bd`; original fragments remain authoritative | Recording-backed live acceptance; Group Mode remains legacy |
-| Release packaging | PDW v4.5.0 Beta alignment in progress; v4.1 package retained as rollback | Privacy-reviewed package, fork push, CI, and artifact verification |
+| Release packaging | v4.5 folder/ZIP audited; fork branch, draft PR, CI, and artifact verified; v4.1 package retained | Manual acceptance before wider release |
 | x64 | Not started | Isolate legacy serial and slicer dependencies first |
 
 ## Safe integration sequence
@@ -47,7 +47,7 @@ merged.
 | 4 | Content-free Delivery Health observer and UI | Complete at `682dfd2` |
 | 5 | INI preservation and compatibility verification | Complete at `98ff7ad` |
 | 6 | Optional FLEX fragment assembly with guaranteed legacy fallback | Complete at `77e23bd`; disabled by default |
-| 7 | PDW v4.5.0 Beta metadata, package, fork, CI, and artifact alignment | In progress |
+| 7 | PDW v4.5.0 Beta metadata, package, fork, CI, and artifact alignment | Complete; draft PR #5 |
 
 Delivery Health stores no pager addresses or decoded text and cannot alter a
 delivery result. FLEX shadow assembly cannot suppress a legacy fragment on
@@ -56,7 +56,7 @@ not changed without representative replay evidence.
 
 ## Milestone 1 - Release-state alignment
 
-Priority: immediate
+Status: complete for local packaging and draft-fork publication
 
 - Align `Headers/version.h`, executable output name, About/resource metadata,
   changelog, documentation, workflow artifact, branch, and package filename to
