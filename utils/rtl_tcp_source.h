@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "audio_capture_core.h"
+#include "rtl_signal_conditioner.h"
 
 namespace pdw
 {
@@ -30,6 +31,7 @@ struct RtlTcpConfig
 	int frequencyCorrectionPpm;
 	std::uint32_t nfmBandwidthHz;
 	bool automaticGain;
+	bool signalConditionerEnabled;
 	std::string receiverLibraryPath;
 
 	RtlTcpConfig();
@@ -40,11 +42,13 @@ class RtlFmDemodulator
 public:
 	RtlFmDemodulator(std::uint32_t iqSampleRate = 1024000,
 		std::uint32_t audioSampleRate = 48000,
-		std::uint32_t nfmBandwidthHz = 12000);
+		std::uint32_t nfmBandwidthHz = 12000,
+		bool signalConditionerEnabled = false);
 
 	void Reset();
 	void Configure(std::uint32_t iqSampleRate, std::uint32_t audioSampleRate,
-		std::uint32_t nfmBandwidthHz = 12000);
+		std::uint32_t nfmBandwidthHz = 12000,
+		bool signalConditionerEnabled = false);
 	void ProcessUnsignedIq(const unsigned char* iqBytes,
 		std::size_t byteCount,
 		std::vector<float>& audio);
@@ -61,6 +65,8 @@ private:
 	std::uint32_t nfmBandwidthHz_;
 	float lowPassAlpha_;
 	float lowPassState_;
+	bool signalConditionerEnabled_;
+	RtlSignalConditioner signalConditioner_;
 };
 
 enum RtlTcpState

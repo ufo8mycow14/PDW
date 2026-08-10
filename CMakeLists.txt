@@ -134,9 +134,17 @@ set_source_files_properties(
   utils/data_outputs.cpp
   utils/decoded_event.cpp
   utils/flex_fragment_reassembly_core.cpp
+  utils/local_dashboard_server.cpp
+  utils/message_archive.cpp
+  utils/message_archive_manager.cpp
+  utils/message_centre.cpp
+  utils/multi_channel.cpp
+  utils/multi_channel_core.cpp
+  utils/multi_channel_manager.cpp
   utils/output_health.cpp
   utils/publishing_delivery_state.cpp
   utils/publishing_job_store.cpp
+	utils/rtl_signal_conditioner.cpp
   PROPERTIES COMPILE_OPTIONS "/W4;/WX"
 )
 
@@ -359,6 +367,7 @@ if(BUILD_TESTING)
 	add_executable(PDWRtlTcpTests
 		tests/rtl_tcp_source_tests.cpp
 		utils/audio_signal_core.cpp
+		utils/rtl_signal_conditioner.cpp
 		utils/rtl_tcp_source.cpp
 	)
 	target_include_directories(PDWRtlTcpTests PRIVATE
@@ -484,6 +493,77 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(PDWSQLiteOutputTests PRIVATE Winsqlite3.lib)
 	add_test(NAME sqlite-output COMMAND PDWSQLiteOutputTests)
+
+	add_executable(PDWMessageArchiveTests
+		tests/message_archive_tests.cpp
+		utils/message_archive.cpp
+		utils/publishing_core.cpp
+	)
+	target_include_directories(PDWMessageArchiveTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWMessageArchiveTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWMessageArchiveTests PRIVATE Winsqlite3.lib)
+	add_test(NAME message-archive COMMAND PDWMessageArchiveTests)
+
+	add_executable(PDWMessageArchiveManagerTests
+		tests/message_archive_manager_tests.cpp
+		utils/local_dashboard_server.cpp
+		utils/message_archive.cpp
+		utils/message_archive_manager.cpp
+		utils/publishing_core.cpp
+	)
+	target_include_directories(PDWMessageArchiveManagerTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Headers"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+target_compile_definitions(PDWMessageArchiveManagerTests PRIVATE
+	_CRT_SECURE_NO_WARNINGS
+	PDW_MESSAGE_ARCHIVE_MANAGER_TEST_HOOKS
+)
+	target_compile_options(PDWMessageArchiveManagerTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWMessageArchiveManagerTests PRIVATE Winsqlite3.lib Ws2_32.lib)
+	add_test(NAME message-archive-manager COMMAND PDWMessageArchiveManagerTests)
+
+	add_executable(PDWLocalDashboardCoreTests
+		tests/local_dashboard_core_tests.cpp
+		utils/local_dashboard_server.cpp
+	)
+	target_include_directories(PDWLocalDashboardCoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Headers"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWLocalDashboardCoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWLocalDashboardCoreTests PRIVATE Ws2_32.lib)
+	add_test(NAME local-dashboard-core COMMAND PDWLocalDashboardCoreTests)
+
+	add_executable(PDWMultiChannelCoreTests
+		tests/multi_channel_core_tests.cpp
+		utils/multi_channel_core.cpp
+	)
+	target_include_directories(PDWMultiChannelCoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWMultiChannelCoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME multi-channel-core COMMAND PDWMultiChannelCoreTests)
 
 	add_executable(PDWTelnetOutputServerTests
 		tests/telnet_output_server_tests.cpp

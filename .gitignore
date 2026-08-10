@@ -25,6 +25,9 @@ ipch/
 /pdw-messages.sqlite3
 /pdw-messages.sqlite3-wal
 /pdw-messages.sqlite3-shm
+/pdw-history.sqlite3
+/pdw-history.sqlite3-wal
+/pdw-history.sqlite3-shm
 /PDW-signal.wav
 /PDW-signal.sigmf-meta
 /PDW-signal.sigmf-data

@@ -1,5 +1,46 @@
 # Changelog
 
+## PDW v5.1 2026 Release
+
+An additive local-operations release for capcode identification, searchable
+history, browser-based monitoring, signal diagnostics, and isolated receiver
+workers. Existing decoders, protocols, filters, sources, and output behavior
+remain available and unchanged by default.
+
+### Added
+
+- A searchable local Capcode Directory that preserves the raw decoded address
+  while attaching protocol-specific display names, agencies, colours, notes,
+  enabled state, and CSV import/export metadata.
+- Optional bounded SQLite message history and a GET-only live dashboard/API
+  restricted to `127.0.0.1`; both are disabled by default and message text is
+  excluded from history by default.
+- Live audio-spectrum and rolling-waterfall diagnostics derived from the same
+  captured samples as the existing waveform without changing decoder input.
+- An optional RTL polyphase signal conditioner with an exact legacy bypass;
+  it is disabled by default and covered by bypass and processing tests.
+- Guarded multi-channel receivers using up to four isolated PDW worker
+  processes and distinct rtl_tcp endpoints or direct RTL-SDR devices.
+
+### Compatibility and security
+
+- Multi-channel workers preserve decoder isolation, cannot reuse a receiver,
+  cannot overwrite the main settings, and disable network/publishing outputs.
+  Endpoint matching canonicalizes local and case-equivalent hosts without DNS;
+  workers start suspended inside kill-on-close jobs and use a bounded forced
+  shutdown fallback. This release does not split one wideband IQ stream into
+  several channels.
+- Publishing/data-output address masking also removes capcode aliases and
+  agency metadata so local names cannot defeat the privacy control.
+- Operator-selected archive files must pass checked SQLite connection defenses
+  and a first-on-open bounded integrity check before any schema or message SQL.
+- The guided upgrade removes only the exact renamed v5 predecessor executable;
+  settings, filters, receiver additions, sounds, logs, and databases remain
+  preserved.
+- The directory, archive, dashboard, multi-channel manager, and signal
+  conditioner are opt-in local features. Offline decoder-comparison tooling is
+  intentionally not included.
+
 ## PDW v5 2026 Release
 
 The first non-beta release of the modernized PDW line. It retains the complete

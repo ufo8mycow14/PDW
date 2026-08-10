@@ -38,7 +38,8 @@ CalibrationResult::CalibrationResult()
 }
 
 SignalDiagnostics::SignalDiagnostics()
-	: waveform_(512, 0.0f), waveformPosition_(0), waveformWrapped_(false)
+	: waveform_(512, 0.0f), waveformPosition_(0), waveformWrapped_(false),
+	  spectrum_(64, 0.0f), spectrumSamplesPending_(0)
 {
 	InitializeCriticalSection(&lock_);
 }
@@ -56,6 +57,9 @@ void SignalDiagnostics::Reset()
 	waveformPosition_ = 0;
 	waveformWrapped_ = false;
 	qualityHistory_.clear();
+	std::fill(spectrum_.begin(), spectrum_.end(), 0.0f);
+	waterfall_.clear();
+	spectrumSamplesPending_ = 0;
 	LeaveCriticalSection(&lock_);
 }
 
@@ -98,12 +102,43 @@ void SignalDiagnostics::Observe(const float* samples, std::size_t sampleCount)
 	metrics_.signalQuality += blend * (quality - metrics_.signalQuality);
 	metrics_.multipathRisk += blend * (multipath - metrics_.multipathRisk);
 	metrics_.sampleCount += sampleCount;
+	spectrumSamplesPending_ += sampleCount;
 	const std::size_t stride = (std::max)(static_cast<std::size_t>(1), sampleCount / 128);
 	for (std::size_t index = 0; index < sampleCount; index += stride)
 	{
 		waveform_[waveformPosition_] = ClampNormalized(samples[index]);
 		waveformPosition_ = (waveformPosition_ + 1) % waveform_.size();
 		if (waveformPosition_ == 0) waveformWrapped_ = true;
+	}
+	if (sampleCount >= 256 && spectrumSamplesPending_ >= 4096)
+	{
+		const std::size_t windowStart = sampleCount - 256;
+		std::vector<float> nextSpectrum(64, 0.0f);
+		float maximum = 0.0f;
+		const double pi = 3.14159265358979323846;
+		for (std::size_t bin = 0; bin < nextSpectrum.size(); ++bin)
+		{
+			const std::size_t frequencyBin = bin * 2;
+			double real = 0.0, imaginary = 0.0;
+			for (std::size_t position = 0; position < 256; ++position)
+			{
+				const double phase = 2.0 * pi * static_cast<double>(frequencyBin) * position / 256.0;
+				const double window = 0.5 - 0.5 * std::cos(2.0 * pi * position / 255.0);
+				const double sample = ClampNormalized(samples[windowStart + position]) * window;
+				real += sample * std::cos(phase);
+				imaginary -= sample * std::sin(phase);
+			}
+			nextSpectrum[bin] = static_cast<float>(std::sqrt(real * real + imaginary * imaginary));
+			maximum = (std::max)(maximum, nextSpectrum[bin]);
+		}
+		if (maximum > 0.000001f)
+			for (std::size_t bin = 0; bin < nextSpectrum.size(); ++bin)
+				nextSpectrum[bin] = Clamp01(nextSpectrum[bin] / maximum);
+		spectrum_.swap(nextSpectrum);
+		if (waterfall_.size() >= 64 * 32)
+			waterfall_.erase(waterfall_.begin(), waterfall_.begin() + 64);
+		waterfall_.insert(waterfall_.end(), spectrum_.begin(), spectrum_.end());
+		spectrumSamplesPending_ = 0;
 	}
 	LeaveCriticalSection(&lock_);
 }
@@ -127,7 +162,8 @@ void SignalDiagnostics::RecordDecodeResult(int errors, int flexPhase, int cycle,
 }
 
 SignalMetrics SignalDiagnostics::Snapshot(std::vector<float>* waveform,
-	std::vector<float>* qualityHistory) const
+	std::vector<float>* qualityHistory, std::vector<float>* spectrum,
+	std::vector<float>* waterfall) const
 {
 	EnterCriticalSection(&lock_);
 	const SignalMetrics copy = metrics_;
@@ -142,6 +178,8 @@ SignalMetrics SignalDiagnostics::Snapshot(std::vector<float>* waveform,
 		else waveform->insert(waveform->end(), waveform_.begin(), waveform_.begin() + waveformPosition_);
 	}
 	if (qualityHistory) *qualityHistory = qualityHistory_;
+	if (spectrum) *spectrum = spectrum_;
+	if (waterfall) *waterfall = waterfall_;
 	LeaveCriticalSection(&lock_);
 	return copy;
 }

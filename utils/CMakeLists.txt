@@ -15,6 +15,10 @@ set( PDW_INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/flex_fragment_reassembly_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/ini_preservation_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/ipcnfg.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/local_dashboard_server.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/message_archive.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_core.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_manager.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mysql_odbc_output.h
   ${CMAKE_CURRENT_SOURCE_DIR}/notification_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/output_health_core.h
@@ -23,6 +27,7 @@ set( PDW_INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/publishing_job_store.h
   ${CMAKE_CURRENT_SOURCE_DIR}/receiver_catalog.h
   ${CMAKE_CURRENT_SOURCE_DIR}/rs232.h
+	${CMAKE_CURRENT_SOURCE_DIR}/rtl_signal_conditioner.h
   ${CMAKE_CURRENT_SOURCE_DIR}/rtl_tcp_source.h
   ${CMAKE_CURRENT_SOURCE_DIR}/signal_diagnostics.h
   ${CMAKE_CURRENT_SOURCE_DIR}/signal_recording_core.h
@@ -51,10 +56,18 @@ set( PDW_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/signal_recording_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/signal_diagnostics.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/wasapi_capture.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/rtl_signal_conditioner.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/rtl_tcp_source.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/receiver_catalog.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/ini_preservation_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/message_router.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/local_dashboard_server.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/message_archive.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/message_archive_manager.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/message_centre.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_core.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_manager.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/mysql_odbc_output.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/output_health.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/output_health_core.cpp

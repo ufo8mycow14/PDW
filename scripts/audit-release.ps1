@@ -57,6 +57,8 @@ $productVersion = Read-HeaderStringMacro $versionHeader "PDW_VERSION_STRING"
 $packageBase = Read-HeaderStringMacro $versionHeader "PDW_PACKAGE_BASENAME"
 $resourceVersion = "$version.0"
 Require-Match $versionHeader ('(?m)^#define PDW_VERSION_RESOURCE_STRING "' + [regex]::Escape($resourceVersion) + '"$') "Resource version string does not match $resourceVersion."
+Require-Match $versionHeader ('(?m)^#define PDW_VERSION_RESOURCE ' +
+    [regex]::Escape("$($majorMatch.Groups[1].Value),$($minorMatch.Groups[1].Value),$($patchMatch.Groups[1].Value),0") + '$') "Numeric resource version does not match $resourceVersion."
 if ($productVersion -notmatch ('^' + [regex]::Escape($version) + ' ')) {
     Add-Failure "Product version string does not begin with canonical version $version."
 }
@@ -101,6 +103,16 @@ foreach ($required in @(
 )) {
     [void](Read-RepoFile $required)
 }
+
+$installer = Read-RepoFile "installer\PDW.iss"
+Require-Match $installer ('(?m)^#define AppName "' + [regex]::Escape($display) + '"$') "Installer AppName does not match $display."
+Require-Match $installer ('(?m)^#define AppVersion "' + [regex]::Escape($version) + '"$') "Installer AppVersion does not match $version."
+Require-Match $installer ('(?m)^#define AppExeName "' + [regex]::Escape($executableName) + '"$') "Installer executable does not match $executableName."
+Require-Match $installer ('(?m)^#define SetupBaseName "' + [regex]::Escape("$packageBase-Setup") + '"$') "Installer filename does not match $packageBase."
+Require-Match $installer ('(?m)^VersionInfoVersion=' + [regex]::Escape($resourceVersion) + '$') "Installer file version does not match $resourceVersion."
+Require-Match $installer ('(?m)^VersionInfoProductVersion=' + [regex]::Escape($resourceVersion) + '$') "Installer product version does not match $resourceVersion."
+Require-Match $installer ('(?m)^VersionInfoDescription=' + [regex]::Escape("$display Setup") + '$') "Installer description does not match $display."
+Require-Match $installer ('(?m)^VersionInfoProductName=' + [regex]::Escape($display) + '$') "Installer product name does not match $display."
 
 $tracked = @(& git -C $repoRoot ls-files)
 if ($LASTEXITCODE -ne 0) {

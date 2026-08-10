@@ -20,6 +20,9 @@ set( PDW_INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/misc.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mobitex.h
   ${CMAKE_CURRENT_SOURCE_DIR}/message_router.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/message_archive_manager.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/message_centre.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/notification.h
   ${CMAKE_CURRENT_SOURCE_DIR}/output_health.h
   ${CMAKE_CURRENT_SOURCE_DIR}/pdw.h

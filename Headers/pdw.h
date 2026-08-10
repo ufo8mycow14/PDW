@@ -27,6 +27,7 @@
 #define MYSQL_ODBC_DSN_LEN 255
 #define MYSQL_ODBC_USERNAME_LEN 127
 #define TELNET_BIND_ADDRESS_LEN 63
+#define MESSAGE_ARCHIVE_PATH_LEN 511
 
 #define AUDIO_SOURCE_LOCAL   0
 #define AUDIO_SOURCE_RTL_TCP 1
@@ -287,6 +288,15 @@ typedef struct
 	int windowsToastEnabled;
 	int windowsToastIncludeMessage;
 
+	// Local-only capcode directory, searchable history, and read-only browser
+	// dashboard. Message persistence and the HTTP listener remain opt-in.
+	int messageHistoryEnabled;
+	int messageHistoryIncludeMessage;
+	unsigned int messageHistoryRetentionDays;
+	char messageArchivePath[MESSAGE_ARCHIVE_PATH_LEN+1];
+	int liveDashboardEnabled;
+	int liveDashboardPort;
+
 	int outputHealthAlertsEnabled;
 	unsigned int outputHealthFailureThreshold;
 
@@ -332,6 +342,7 @@ typedef struct
 	int rtlFrequencyCorrectionPpm;
 	int rtlBandwidthHz;
 	int rtlAutomaticGain;
+	int rtlSignalConditionerEnabled;
 	int rtlDeviceIndex;
 	char rtlReceiverId[RTL_RECEIVER_ID_LEN+1];
 	int audioThreshold[AUDIO_CUSTOM_RATE_COUNT];
