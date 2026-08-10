@@ -64,95 +64,81 @@ PDWMENU MENU
 BEGIN
     POPUP "&File"
     BEGIN
-        MENUITEM "&Log file...\tAlt+L",           IDM_LOGFILE
-        MENUITEM "&Save copied data...",          IDM_COPY_SAVE
-        MENUITEM "&Print copied data...\tCtrl+P", IDM_COPY_PRINT
+        MENUITEM "&Log file...\tAlt+L",             IDM_LOGFILE
+        MENUITEM "&Record signal...\tAlt+Shift+R",  IDM_RECORD
+        MENUITEM "&Play recording...\tAlt+Shift+P", IDM_PLAYBACK
         MENUITEM SEPARATOR
-        MENUITEM "&Exit\tAlt+F4",               IDM_EXIT
-    END
-    POPUP "&Edit"
-    BEGIN
-        MENUITEM "&Copy Selection\tCtrl+C",     IDM_COPY_SELECTION
-        MENUITEM "Copy &monitor window\tCtrl+U", IDM_COPY_UPPER
-        MENUITEM "Copy &filtered window\tCtrl+L", IDM_COPY_LOWER
+        MENUITEM "&Save copied data...",            IDM_COPY_SAVE
+        MENUITEM "&Print copied data...\tCtrl+P",   IDM_COPY_PRINT
         MENUITEM SEPARATOR
-        MENUITEM "C&lear monitor...\tCtrl+D",    IDM_CLEARDISPLAY
+        MENUITEM "E&xit\tAlt+F4",                   IDM_EXIT
     END
     POPUP "&Monitor"
     BEGIN
-        MENUITEM "&Input setup...\tCtrl+S",     IDM_INTERFACE
-        MENUITEM "&Volume mixer...\tAlt+V",     IDM_VOLUME
+        MENUITEM "&Signal source and radio...",    IDM_SETTINGS_SIGNAL_PAGE
+        MENUITEM "&Pause or resume",               IDT_TOOLBAR_BTN9
         MENUITEM SEPARATOR
-        POPUP "&Decoding mode"
+        POPUP "&Decoder mode"
         BEGIN
-            MENUITEM "&POCSAG / FLEX",          IDM_POCSAGFLEX
-            MENUITEM "&ACARS",                  IDM_ACARS
-            MENUITEM "&MOBITEX",                IDM_MOBITEX
-            MENUITEM "&ERMES",                  IDM_ERMES
+            MENUITEM "&POCSAG / FLEX",             IDM_POCSAGFLEX
+            MENUITEM "&ACARS",                     IDM_ACARS
+            MENUITEM "&MOBITEX",                   IDM_MOBITEX
+            MENUITEM "&ERMES",                     IDM_ERMES
         END
         MENUITEM SEPARATOR
-        MENUITEM "&Statistics...\tAlt+S",       IDM_MONSTAT
-        MENUITEM "&Pause or resume",            IDT_TOOLBAR_BTN9
+        MENUITEM "&Statistics...\tAlt+S",          IDM_MONSTAT
+        MENUITEM "&Diagnostics...\tF12",           IDM_DEBUG
     END
     POPUP "&Filters"
     BEGIN
-        MENUITEM "&Manage filters...\tCtrl+F",  IDM_FILTERS
-        MENUITEM "Filter &options...",           IDM_FILTEROPTIONS
-        MENUITEM "&Reload filters\tCtrl+R",     IDM_RELOAD
-        MENUITEM "Reset &all hit counters...",   IDM_RESET_HITCOUNTERS
+        MENUITEM "&Manage filters...\tCtrl+F",     IDM_FILTERS
+        MENUITEM "Filter &options...",             IDM_FILTEROPTIONS
+        MENUITEM "&Reload filters\tCtrl+R",        IDM_RELOAD
+        MENUITEM "Reset &all hit counters...",     IDM_RESET_HITCOUNTERS
         MENUITEM SEPARATOR
-        MENUITEM "Write &filter file",           IDM_FILTERFILE_EN
-        MENUITEM "Run filter &command file",     IDM_FILTERCOMMANDFILE
+        POPUP "&Advanced"
+        BEGIN
+            MENUITEM "Write &filter file",          IDM_FILTERFILE_EN
+            MENUITEM "Run filter &command file",    IDM_FILTERCOMMANDFILE
+        END
     END
-    POPUP "&Settings"
+    POPUP "&Outputs"
     BEGIN
-        MENUITEM "&Settings...\tCtrl+,",         IDM_SETTINGS
+        MENUITEM "Delivery &health...",             IDM_OUTPUT_HEALTH
         MENUITEM SEPARATOR
-        POPUP "&Appearance"
+        MENUITEM "Publish to &web...",              IDM_PUBLISHING
+        MENUITEM "&File transfer...",                IDM_FTP
+        MENUITEM "&Push and Windows notifications...", IDM_APPRISE
+        MENUITEM "&Email...\tCtrl+M",               IDM_MAIL
+        MENUITEM "&Data outputs...",                 IDM_DATA_OUTPUTS
+    END
+    POPUP "&View"
+    BEGIN
+        MENUITEM "&Switch focused pane",             IDM_PANE_SWITCH
+        MENUITEM "View and &columns...",             IDM_SCREENOPTIONS
+        MENUITEM "&Scrollback...",                   IDM_SCROLLBACK
+        MENUITEM SEPARATOR
+        POPUP "&Theme"
         BEGIN
-            POPUP "&Theme"
-            BEGIN
-                MENUITEM "Follow &Windows",     IDM_THEME_SYSTEM
-                MENUITEM "&Light",              IDM_THEME_LIGHT
-                MENUITEM "&Dark",               IDM_THEME_DARK
-            END
-            MENUITEM SEPARATOR
-            MENUITEM "&Colours...",             IDM_COLOR
-            MENUITEM "&Font...\tAlt+F",         IDM_FONT
-            MENUITEM "&View and columns...",    IDM_SCREENOPTIONS
-            MENUITEM "&Scrollback...",          IDM_SCROLLBACK
-            MENUITEM "System &tray...\tCtrl+T", IDM_SYSTEMTRAY
+            MENUITEM "Follow &Windows",              IDM_THEME_SYSTEM
+            MENUITEM "&Light",                       IDM_THEME_LIGHT
+            MENUITEM "&Dark",                        IDM_THEME_DARK
         END
-        POPUP "&Decoder and input"
-        BEGIN
-            MENUITEM "&Decoder options...\tCtrl+O", IDM_OPTIONS
-            MENUITEM "&General behaviour...\tCtrl+G", IDM_GENERAL
-            MENUITEM "&Input setup...\tCtrl+S", IDM_INTERFACE
-            MENUITEM "&Radio and replay...", IDM_SIGNAL_SOURCES
-            MENUITEM "&Volume mixer...\tAlt+V", IDM_VOLUME
-        END
-        POPUP "&Connections and automation"
-        BEGIN
-            MENUITEM "&Email...\tCtrl+M",       IDM_MAIL
-            MENUITEM "&Push notifications...", IDM_APPRISE
-            MENUITEM "&File transfer...",       IDM_FTP
-			MENUITEM "Publish to &web...",       IDM_PUBLISHING
-			MENUITEM "&Data outputs...",         IDM_DATA_OUTPUTS
-			MENUITEM SEPARATOR
-			MENUITEM "Delivery &health...",       IDM_OUTPUT_HEALTH
-        END
+        MENUITEM "&Text and colours...",             IDM_COLOR
+        MENUITEM "&Font...\tAlt+F",                  IDM_FONT
+        MENUITEM "System &tray...\tCtrl+T",          IDM_SYSTEMTRAY
+        MENUITEM SEPARATOR
         POPUP "&Character set"
         BEGIN
-            MENUITEM "&Default",                IDM_ENGLISH
+            MENUITEM "&Default",                     IDM_ENGLISH
         END
     END
     POPUP "&Help"
     BEGIN
-        MENUITEM "&User guide\tF1",             IDM_HELP
+        MENUITEM "&User guide\tF1",                 IDM_HELP
+        MENUITEM "&Keyboard shortcuts",              IDM_KEYBOARD_SHORTCUTS
         MENUITEM SEPARATOR
-        MENUITEM "&Diagnostics...\tF12",        IDM_DEBUG
-        MENUITEM SEPARATOR
-        MENUITEM "&About...",                   IDM_ABOUT
+        MENUITEM "&About PDW...",                    IDM_ABOUT
     END
 END
 

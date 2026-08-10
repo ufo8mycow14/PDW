@@ -8,5 +8,7 @@ void SetToolBarButtons(void);
 void Add_TB_ButtonsBitmaps(HWND tbar_hwnd,HINSTANCE hThisInstance);
 void TB_AutoSize(HWND hTbar);
 void SetToolTXT(HINSTANCE hThisInstance, LPARAM lParam);
+void ToolbarRefreshState(void);
+void ToolbarRefreshTheme(void);
 
 #endif

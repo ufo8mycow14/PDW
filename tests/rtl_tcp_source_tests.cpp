@@ -7,6 +7,19 @@
 
 namespace
 {
+class CollectingSink : public pdw::signal::AudioSampleSink
+{
+public:
+	CollectingSink() : callbacks(0), samples(0) {}
+	void OnAudioSamples(const float*, std::size_t sampleCount, std::uint32_t, bool)
+	{
+		InterlockedIncrement(&callbacks);
+		samples += sampleCount;
+	}
+	volatile LONG callbacks;
+	std::size_t samples;
+};
+
 void Expect(bool condition, const char* message)
 {
 	if (!condition)
@@ -17,7 +30,7 @@ void Expect(bool condition, const char* message)
 }
 }
 
-int main()
+int main(int argc, char** argv)
 {
 	using namespace pdw::signal;
 	const std::uint32_t iqRate = 960000;
@@ -48,6 +61,43 @@ int main()
 	demodulator.Reset();
 	demodulator.ProcessUnsignedIq(NULL, 0, audio);
 	Expect(audio.empty(), "empty IQ input is safe");
+
+	if (argc > 1)
+	{
+		RtlTcpConfig config;
+		config.receiverLibraryPath = argv[1];
+		config.frequencyHz = 148812500;
+		config.sampleRate = 2400000;
+		config.audioSampleRate = 44100;
+		config.gainTenthsDb = 328;
+		config.nfmBandwidthHz = 12000;
+		CollectingSink sink;
+		RtlSdrSource source;
+		Expect(!source.Start(config, 99, &sink), "unavailable RTL-SDR device reports failure");
+		Expect(source.state() == RTL_TCP_FAILED, "unavailable RTL-SDR state is failed");
+
+		RtlTcpConfig lossConfig = config;
+		lossConfig.frequencyHz = 148812501;
+		Expect(source.Start(lossConfig, 0, &sink), "RTL-SDR starts before simulated async loss");
+		const DWORD lossWaitStarted = GetTickCount();
+		while (source.state() != RTL_TCP_FAILED && GetTickCount() - lossWaitStarted < 2000) Sleep(5);
+		Expect(source.state() == RTL_TCP_FAILED, "unexpected async end is reported as failed");
+		Expect(source.lastError().find("ended unexpectedly") != std::string::npos,
+			"unexpected async end retains an actionable error");
+
+		const bool started = source.Start(config, 0, &sink);
+		if (!started) std::cerr << "RTL-SDR start error: " << source.lastError() << '\n';
+		Expect(started, "RTL-SDR source starts");
+		const DWORD waitStarted = GetTickCount();
+		while (!source.lastIqCallbackTick() && GetTickCount() - waitStarted < 2000) Sleep(5);
+		Expect(source.lastIqCallbackTick() != 0, "RTL-SDR exposes last IQ callback time");
+		while (InterlockedCompareExchange(&sink.callbacks, 0, 0) == 0 &&
+			GetTickCount() - waitStarted < 2000) Sleep(5);
+		Expect(InterlockedCompareExchange(&sink.callbacks, 0, 0) > 0,
+			"RTL-SDR callback reaches the audio sink");
+		source.Stop();
+		Expect(source.state() == RTL_TCP_STOPPED, "mock RTL-SDR stops cleanly");
+	}
 
 	std::cout << "RTL-TCP demodulator tests passed\n";
 	return 0;

@@ -315,6 +315,8 @@
 #include "headers\notification.h"
 #include "headers\output_health.h"
 #include "headers\publishing.h"
+#include "headers\settings_center.h"
+#include "headers\status_bar.h"
 #include "headers\ui_theme.h"
 #include "headers\version.h"
 #include "utils\rs232.h"
@@ -328,7 +330,7 @@
 #define MIN_X_WIN_SIZE		444		// Smallest main win X size can be (was 444)
 #define MIN_Y_WIN_SIZE		261		// Smallest main win Y size can be (was 261)
 
-#define TOOLBAR_SIZE		49		// Space for Toolbar/Top of Pane1 (was 52)
+#define TOOLBAR_SIZE		54		// Approved 2026 command-bar height
 #define WIN_DIVIDER_SIZE	19		// Pane1/Pane2 seperator size (was 56)
 #define PANE1_SIZE			1000	// Pane1 default scrollback size
 #define PANE2_SIZE			200		// Pane2 default scrollback size
@@ -359,6 +361,7 @@ bool bWin9x;
 int  nDriverLoaded	= DRIVER_NOT_LOADED;// VxD/comport loaded?
 bool bEditFilter	= false;		// Set before/after calling edit dialog
 bool bPauseFlag		= false;		// Decides if message output is paused.
+HWND hStatusBar		= NULL;
 bool bUpdateFilters	= false;		// PH: Needs FILTERS.INI to be updated?
 
 double dRX_Quality;
@@ -800,7 +803,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	}
 	else if (Profile.audioEnabled && !bCapturing)
 	{
-		if (Start_Capturing())
+		if (Start_Capturing() || Profile.audioSource != AUDIO_SOURCE_LOCAL)
 		{
 			SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL); // start timer.
 		}
@@ -815,6 +818,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 
 	while (GetMessage(&msg, NULL, 0, 0))
 	{
+		if (SettingsCenterIsDialogMessage(&msg)) continue;
 		if (!TranslateAccelerator(ghWnd, ghAccel, &msg))
 		{
 			TranslateMessage(&msg);
@@ -851,7 +855,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	time_t lTime;
 	struct tm *recTm; 
 
-	int g_xNew, g_yNew, g_scrollSize;
+	int g_xNew, g_yNew, g_scrollSize, statusHeight;
 	unsigned int g_min_col, g_max_col, g_min_row, g_max_row, g_index;
 	
 	extern bool bMode_IDLE;			// Set if no signal
@@ -870,6 +874,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	{
 		case WM_TIMER: // Decode POCSAG/FLEX with comport or sound card.
 		if (wParam == SECOND_TIMER) FtpSchedulerTick();
+		if (wParam == PDW_TIMER) SignalSourceService();
 
 		if (!bPauseFlag)
 		{
@@ -994,6 +999,14 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		DrawTitleBarGfx(hWnd);		// Draw pane1/pane2 title bars
 		break;
 		}
+
+		case WM_MEASUREITEM:
+			if (PdwThemeHandleMenuMeasure(lParam)) return TRUE;
+			break;
+
+		case WM_DRAWITEM:
+			if (PdwThemeHandleMenuDraw(lParam)) return TRUE;
+			break;
 		
 		case WM_CREATE:
 
@@ -1021,6 +1034,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			Free_Common_Objects();	// Free any objects we got!
 			return(-1);
 		}
+		hStatusBar = PdwStatusBarCreate(hWnd, IDW_STATUS_BAR);
 		PdwThemeApplyToMainWindow(hWnd, hToolbar);
 
 		hfont = CreateFontIndirect(&Profile.fontInfo);
@@ -1294,9 +1308,9 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                 // HWi 
 				case IDM_RECORD:	// RAH
 
-				if (bCapturing)
+				if (bCapturing || SignalDiagnosticIsRecording())
 				{
-					MessageBox(ghWnd, "This option can't be used when using the soundcard!", "PDW Recording", MB_ICONWARNING);
+					SignalDiagnosticToggleRecording(hWnd);
 					break;
 				}
 
@@ -1574,6 +1588,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					SetNewWindowText(" - PAUSED...");
 					bPauseFlag=true;
 				}
+				ToolbarRefreshState();
 				break;
 
 				case IDT_TOOLBAR_BTN8:
@@ -1588,8 +1603,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				break;
 
 				case IDM_SETTINGS:
-					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(SETTINGS_HUB_DLGBOX),
-									 hWnd, (DLGPROC) SettingsHubDlgProc, 0L);
+					ShowSettingsCenter(hWnd, -1);
+				break;
+
+				case IDM_SETTINGS_SIGNAL_PAGE:
+					ShowSettingsCenter(hWnd, PDW_SETTINGS_SIGNAL);
 				break;
 
 				case IDM_THEME_SYSTEM:
@@ -1680,7 +1698,21 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 				case IDM_ABOUT:
 					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(ABOUTDLGBOX),
-												 hWnd, (DLGPROC) AboutDlgProc, 0L);
+										 hWnd, (DLGPROC) AboutDlgProc, 0L);
+				break;
+
+				case IDM_KEYBOARD_SHORTCUTS:
+					MessageBoxA(hWnd,
+						"Ctrl+,    Open or focus Settings\n"
+						"Ctrl+F    Manage filters\n"
+						"Ctrl+C    Copy selected decoded text\n"
+						"Ctrl+D    Clear monitor\n"
+						"Alt+Shift+R    Record signal\n"
+						"Alt+Shift+P    Play recording\n"
+						"F11       Switch focused pane\n"
+						"F12       Diagnostics\n"
+						"F1        User guide",
+						"PDW Keyboard Shortcuts", MB_OK | MB_ICONINFORMATION);
 				break;
 
 				case IDM_DEBUG:
@@ -1718,6 +1750,8 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				break;
 			}
 			set_menu_items();
+			ToolbarRefreshState();
+			PdwStatusBarRefresh(hStatusBar);
 		}
 		break;
 
@@ -1729,6 +1763,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		case WM_SETTINGCHANGE:
 			PdwThemeSystemSettingChanged(hWnd);
+			PdwStatusBarRefresh(hStatusBar);
 		break;
 
 		case WM_NCMOUSEMOVE:
@@ -1919,7 +1954,8 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			GetClientRect(hWnd, &g_rect);
 			g_xNew = g_rect.right - g_rect.left;   // Width of client area
 			g_yNew = g_rect.bottom - g_rect.top;   // Height of client area
-			g_yNew -= TOOLBAR_SIZE+WIN_DIVIDER_SIZE; // Allow space for tool bar etc
+			statusHeight = PdwStatusBarHeight(hWnd);
+			g_yNew -= TOOLBAR_SIZE+WIN_DIVIDER_SIZE+statusHeight; // Allow space for command and status bars
 
 			// The following code sets pane1 to n% percent of main win client area.
 			pane1Pos    = TOOLBAR_SIZE+1;
@@ -1947,6 +1983,9 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			SendMessage(Pane2.hWnd, WM_VSCROLL, SB_BOTTOM, 0L);
 
 			TB_AutoSize(hToolbar);	// keep toolbar correct size!
+			GetClientRect(hWnd, &g_rect);
+			PdwStatusBarResize(hStatusBar, g_rect.right - g_rect.left,
+				g_rect.bottom - g_rect.top);
 		}
 		break;
 
@@ -1955,6 +1994,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			KillTimer(ghWnd, PDW_TIMER);
 			KillTimer(ghWnd, MINUTE_TIMER);
 			KillTimer(ghWnd, SECOND_TIMER);
+			if (SettingsCenterWindow()) DestroyWindow(SettingsCenterWindow());
 
 			// Stop every producer before queues, decoder buffers, or drawing state are released.
 			if (nDriverLoaded) UnloadDriver();
@@ -3940,8 +3980,6 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			if (Profile.comPortRS232) Profile.comPortRS232 += SendDlgItemMessage(hDlg, IDC_RS232MODE, CB_GETCURSEL, 0, 0L);
 			Profile.audioEnabled   = IsDlgButtonChecked(hDlg, IDC_AUDIOENABLE);
 			Profile.audioDevice    = SendDlgItemMessage(hDlg, IDC_AUDIODEVICES, CB_GETCURSEL, 0, 0L);
-			Profile.audioSource    = AUDIO_SOURCE_LOCAL;
-
 			if (Profile.audioDevice != old_device)
 			{
 				if (bCapturing)

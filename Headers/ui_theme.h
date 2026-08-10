@@ -14,6 +14,8 @@ void PdwThemeInitialize(void);
 void PdwThemeShutdown(void);
 void PdwThemeApplyToMainWindow(HWND hWnd, HWND hToolbar);
 LRESULT PdwThemeHandleToolbarCustomDraw(LPARAM lParam);
+BOOL PdwThemeHandleMenuMeasure(LPARAM lParam);
+BOOL PdwThemeHandleMenuDraw(LPARAM lParam);
 void PdwThemeApplyToWindow(HWND hWnd);
 void PdwThemeSystemSettingChanged(HWND hWnd);
 void PdwThemeSetMode(int mode, HWND owner);

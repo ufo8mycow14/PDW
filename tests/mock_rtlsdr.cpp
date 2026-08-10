@@ -1,4 +1,12 @@
 #include <cstdint>
+#include <cstddef>
+#include <windows.h>
+
+namespace
+{
+	volatile LONG g_cancelRequested = 0;
+	volatile LONG g_endCaptureEarly = 0;
+}
 
 extern "C"
 {
@@ -14,17 +22,44 @@ extern "C"
 	}
 	__declspec(dllexport) int __cdecl rtlsdr_open(void** device, std::uint32_t)
 	{
+		InterlockedExchange(&g_cancelRequested, 0);
+		InterlockedExchange(&g_endCaptureEarly, 0);
 		if (device) *device = reinterpret_cast<void*>(1);
 		return 0;
 	}
 	__declspec(dllexport) int __cdecl rtlsdr_close(void*) { return 0; }
-	__declspec(dllexport) int __cdecl rtlsdr_set_center_freq(void*, std::uint32_t) { return 0; }
+	__declspec(dllexport) int __cdecl rtlsdr_set_center_freq(void*, std::uint32_t frequency)
+	{
+		InterlockedExchange(&g_endCaptureEarly, frequency == 148812501 ? 1 : 0);
+		return 0;
+	}
 	__declspec(dllexport) int __cdecl rtlsdr_set_sample_rate(void*, std::uint32_t) { return 0; }
 	__declspec(dllexport) int __cdecl rtlsdr_set_tuner_gain_mode(void*, int) { return 0; }
 	__declspec(dllexport) int __cdecl rtlsdr_set_tuner_gain(void*, int) { return 0; }
 	__declspec(dllexport) int __cdecl rtlsdr_set_freq_correction(void*, int) { return 0; }
 	__declspec(dllexport) int __cdecl rtlsdr_reset_buffer(void*) { return 0; }
 	__declspec(dllexport) int __cdecl rtlsdr_read_async(void*,
-		void (__cdecl *)(unsigned char*, std::uint32_t, void*), void*, std::uint32_t, std::uint32_t) { return 0; }
-	__declspec(dllexport) int __cdecl rtlsdr_cancel_async(void*) { return 0; }
+		void (__cdecl *callback)(unsigned char*, std::uint32_t, void*), void* context,
+		std::uint32_t, std::uint32_t)
+	{
+		unsigned char iq[32768];
+		for (std::size_t index = 0; index < sizeof(iq); index += 2)
+		{
+			iq[index] = static_cast<unsigned char>(96 + ((index / 2) % 64));
+			iq[index + 1] = static_cast<unsigned char>(159 - ((index / 2) % 64));
+		}
+		if (callback) callback(iq, static_cast<std::uint32_t>(sizeof(iq)), context);
+		if (InterlockedCompareExchange(&g_endCaptureEarly, 0, 0) != 0)
+		{
+			Sleep(50);
+			return 0;
+		}
+		while (InterlockedCompareExchange(&g_cancelRequested, 0, 0) == 0) Sleep(5);
+		return 0;
+	}
+	__declspec(dllexport) int __cdecl rtlsdr_cancel_async(void*)
+	{
+		InterlockedExchange(&g_cancelRequested, 1);
+		return 0;
+	}
 }

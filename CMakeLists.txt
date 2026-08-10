@@ -106,6 +106,9 @@ list(APPEND PDW_SRCS
   menu.cpp
   mobitex.cpp
   toolbar.cpp
+  live_signal_meter.cpp
+  settings_center.cpp
+  status_bar.cpp
   ui_theme.cpp
   printer.cpp
   sigind.cpp
@@ -342,11 +345,12 @@ if(BUILD_TESTING)
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	target_link_libraries(PDWRtlTcpTests PRIVATE Ws2_32.lib)
-	add_test(NAME rtl-tcp-core COMMAND PDWRtlTcpTests)
+	add_test(NAME rtl-tcp-core COMMAND PDWRtlTcpTests $<TARGET_FILE:PDWMockRtlSdr>)
 
 	add_library(PDWMockRtlSdr SHARED
 		tests/mock_rtlsdr.cpp
 	)
+	add_dependencies(PDWRtlTcpTests PDWMockRtlSdr)
 	set_target_properties(PDWMockRtlSdr PROPERTIES PREFIX "")
 
 	add_executable(PDWReceiverCatalogTests

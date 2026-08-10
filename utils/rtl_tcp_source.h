@@ -113,6 +113,7 @@ public:
 	void Stop();
 	RtlTcpState state() const;
 	std::string lastError() const;
+	DWORD lastIqCallbackTick() const;
 
 private:
 	RtlSdrSource(const RtlSdrSource&);
@@ -136,6 +137,7 @@ private:
 	RtlFmDemodulator demodulator_;
 	RtlTcpState state_;
 	std::string lastError_;
+	volatile LONG lastIqCallbackTick_;
 };
 
 // Optional in-process support is loaded dynamically so absence of rtlsdr.dll

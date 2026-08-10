@@ -31,6 +31,9 @@ hardware paths remain available in one executable.
 - CI tests for versioned publishing-job persistence, deterministic delivery
   transitions, restart-unique event IDs, and disabled-by-default release
   configuration. The Release suite now contains 23 tests.
+- An image-approved native Windows command bar, clickable live-input meter,
+  quiet status bar, and single-instance modeless Settings Center with search,
+  draft Apply/Revert behavior, persistent navigation, and an **About me** page.
 
 ### Changed
 
@@ -62,6 +65,11 @@ hardware paths remain available in one executable.
 - Normal developer builds now copy `PDW.pdf` beside the executable so F1 help
   works outside the portable package. Package review scans every staged INI
   for non-empty secret fields, including indented entries.
+- Reorganized the main menu into File, Monitor, Filters, Outputs, View, and
+  Help while preserving command IDs and accelerators. Menus, command controls,
+  signal surfaces, and retained dialogs now use the approved Windows light/dark
+  palette. Settings typography and full-child resize repainting prevent clipped
+  headings, duplicated pixels, and fragmented button labels at compact sizes.
 
 ### Compatibility
 

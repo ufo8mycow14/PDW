@@ -23,6 +23,7 @@
 #include "headers\toolbar.h"
 #include "headers\gfx.h"
 #include "headers\initapp.h"
+#include "headers\live_signal_meter.h"
 #include "headers\sigind.h"
 #include "headers\ui_theme.h"
 
@@ -93,8 +94,7 @@ void FreeSigInd(void)
 // Draw signal indicator on toolbar
 void DrawSigInd(HWND hwnd)
 {
-	si_index=0;  // this is used by UpdateSigInd().
-	if (got_sigind) show_sigind(0, 0);
+	(void)hwnd;
 }
 
 // Update signal indicator on toolbar.
@@ -102,48 +102,10 @@ void DrawSigInd(HWND hwnd)
 // removing old line first.
 void UpdateSigInd(int direction_flg)
 {
-	si_old_index = si_index;
-
-	if (old_rect_flg)
-	{
-		if (direction_flg)	// Move indictor right 1
-		{
-			si_low_hover=0;
-			si_index ? si_index+=2 : si_index++;
-
-			if (si_index > MAX_SI_POS)
-			{
-				si_hi_hover++;
-				si_index=MAX_SI_POS;
-				return;
-			}
-	 	}
-		else
-		{							// Move indictor left 1
-			if (si_low_hover)
-			{
-				if (si_low_hover==1)
-				{
-					show_sigind(1, 0);
-				}
-				if (si_low_hover > 1)
-				{
-					si_low_hover=0;
-					show_sigind(0, 1);
-				}
-			}
-			si_hi_hover=0;
-			si_index--;
-
-			if (si_index < 0)
-			{
-				si_low_hover++;
-				si_index=0;
-				return;
-			}
-		}
-		show_sigind(si_index, si_old_index);
-	}
+	// Legacy serial/slicer paths do not expose normalized audio samples. Record
+	// their real transitions for the new UI meter instead of painting from the
+	// decoder thread.
+	LiveSignalMeterNoteLegacyActivity(direction_flg);
 }
 
 
@@ -152,76 +114,12 @@ void UpdateSigInd(int direction_flg)
 // old_pos is used to erase previous line.
 void DrawToolbarIndicators(HDC hdc)
 {
-	RECT client;
-	GetClientRect(hToolbar, &client);
-	extern double dRX_Quality;
-
-	RECT status = { client.right - 75, 4, client.right - 50, 28 };
-	HBRUSH statusBackground = CreateSolidBrush(PdwThemeSurfaceColor());
-	HPEN statusBorder = CreatePen(PS_SOLID, 1, PdwThemeBorderColor());
-	HGDIOBJ oldBrush = SelectObject(hdc, statusBackground);
-	HGDIOBJ oldPen = SelectObject(hdc, statusBorder);
-	RoundRect(hdc, status.left, status.top, status.right, status.bottom, 5, 5);
-
-	if (dRX_Quality && dRX_Quality < 90)
-	{
-		SetBkMode(hdc, TRANSPARENT);
-		SetTextColor(hdc, RGB(255, 185, 0));
-		if (PdwThemeUiSemiboldFont()) SelectObject(hdc, PdwThemeUiSemiboldFont());
-		TextOut(hdc, client.right - 66, 7, "!", 1);
-	}
-	else if (dRX_Quality == 0)
-	{
-		SetBkMode(hdc, TRANSPARENT);
-		SetTextColor(hdc, PdwThemeMutedTextColor());
-		if (PdwThemeUiSemiboldFont()) SelectObject(hdc, PdwThemeUiSemiboldFont());
-		TextOut(hdc, client.right - 68, 7, "Q", 1);
-	}
-	else
-	{
-		HPEN goodPen = CreatePen(PS_SOLID, 2, RGB(16, 124, 16));
-		SelectObject(hdc, goodPen);
-		MoveToEx(hdc, client.right - 68, 16, NULL);
-		LineTo(hdc, client.right - 64, 20);
-		LineTo(hdc, client.right - 57, 11);
-		SelectObject(hdc, statusBorder);
-		DeleteObject(goodPen);
-	}
-
-	RECT gauge = { client.right - 47, 4, client.right - 5, 28 };
-	HBRUSH background = CreateSolidBrush(PdwThemeSurfaceColor());
-	HPEN border = CreatePen(PS_SOLID, 1, PdwThemeBorderColor());
-	SelectObject(hdc, background);
-	SelectObject(hdc, border);
-	RoundRect(hdc, gauge.left, gauge.top, gauge.right, gauge.bottom, 5, 5);
-
-	int activeBars = min(5, max(0, (si_index + 3) / 4));
-	for (int i = 0; i < 5; ++i)
-	{
-		int height = 4 + i * 3;
-		RECT bar = { gauge.left + 6 + i * 6, gauge.bottom - 5 - height,
-			gauge.left + 10 + i * 6, gauge.bottom - 5 };
-		HBRUSH barBrush = CreateSolidBrush(i < activeBars ?
-			PdwThemeAccentColor() : PdwThemeBorderColor());
-		FillRect(hdc, &bar, barBrush);
-		DeleteObject(barBrush);
-	}
-
-	SelectObject(hdc, oldBrush);
-	SelectObject(hdc, oldPen);
-	DeleteObject(statusBackground);
-	DeleteObject(statusBorder);
-	DeleteObject(background);
-	DeleteObject(border);
+	(void)hdc;
 }
 
 void show_sigind(int new_pos,int old_pos)
 {
 	(void)new_pos;
 	(void)old_pos;
-	if (!hToolbar) return;
-	HDC hdc = GetDC(hToolbar);
-	DrawToolbarIndicators(hdc);
-	ReleaseDC(hToolbar, hdc);
 }
 

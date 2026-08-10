@@ -82,6 +82,8 @@
 
 #define IDM_HELP                   280
 #define IDM_ABOUT                  281
+#define IDM_SETTINGS_SIGNAL_PAGE   282
+#define IDM_KEYBOARD_SHORTCUTS     283
 
 #define IDM_DEBUG                  290
 #define IDM_PANE_SWITCH            291
@@ -393,6 +395,7 @@
 #define IDC_DEBUG_TEST            1181
 
 #define IDW_TOOL_BAR              1200
+#define IDW_STATUS_BAR            1218
 #define IDT_TOOLBAR_BTN0          1201
 #define IDT_TOOLBAR_BTN1          1202
 #define IDT_TOOLBAR_BTN2          1203

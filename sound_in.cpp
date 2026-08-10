@@ -14,6 +14,7 @@
 #endif
 
 #include <windows.h>
+#include <commdlg.h>
 #include <shellapi.h>
 #include <shlobj.h>
 
@@ -184,6 +185,10 @@ namespace
 	std::uint32_t g_activeAudioSampleRate = 44100;
 	int g_modernCaptureKind = 0; // 0=none, 1=WASAPI fallback, 2=rtl_tcp, 3=RTL-SDR
 	std::string g_receiverStartError;
+	std::string g_lastReceiverError;
+	std::string g_receiverStatus = "Not started";
+	DWORD g_lastModernStartAttempt = 0;
+	bool g_suppressCaptureError = false;
 	pdw::signal::SignalRecording g_diagnosticRecording;
 	std::string g_diagnosticRecordingPath;
 	bool g_diagnosticRecordingActive = false;
@@ -368,6 +373,39 @@ namespace
 		Reset_ATB();
 		return true;
 	}
+
+	const char* ReceiverSourceName()
+	{
+		return Profile.audioSource == AUDIO_SOURCE_RTL_SDR ? "RTL-SDR" : "RTL-TCP";
+	}
+
+	void TraceReceiverStartup(bool success, const std::string& error)
+	{
+		char detail[768];
+		snprintf(detail, sizeof(detail),
+			"PDW receiver: source=%s result=%s receiver=%s device=%d frequency=%u iq-rate=%u audio-rate=%u bandwidth=%d gain=%d ppm=%d%s%s\r\n",
+			ReceiverSourceName(), success ? "running" : "failed",
+			Profile.rtlReceiverId, Profile.rtlDeviceIndex, Profile.rtlFrequencyHz,
+			Profile.rtlSampleRate, Profile.rtlAudioSampleRate, Profile.rtlBandwidthHz,
+			Profile.rtlGainTenthsDb, Profile.rtlFrequencyCorrectionPpm,
+			error.empty() ? "" : " error=", error.empty() ? "" : error.c_str());
+		OutputDebugStringA(detail);
+	}
+
+	pdw::signal::RtlTcpState ConfiguredReceiverState()
+	{
+		if (Profile.audioSource == AUDIO_SOURCE_RTL_SDR) return g_rtlSdrSource.state();
+		if (Profile.audioSource == AUDIO_SOURCE_RTL_TCP) return g_rtlTcpSource.state();
+		return pdw::signal::RTL_TCP_STOPPED;
+	}
+
+	std::string ConfiguredReceiverError()
+	{
+		if (Profile.audioSource == AUDIO_SOURCE_RTL_SDR)
+			return g_receiverStartError.empty() ? g_rtlSdrSource.lastError() : g_receiverStartError;
+		if (Profile.audioSource == AUDIO_SOURCE_RTL_TCP) return g_rtlTcpSource.lastError();
+		return std::string();
+	}
 }
 
 // Routines and variables used for debugging.
@@ -380,6 +418,91 @@ void Debug_BIT_MSG(char *msg_bit);
 
 extern bool bMode_IDLE;
 extern int nDriverLoaded;
+
+bool SignalDiagnosticsGetLiveSnapshot(PdwLiveSignalSnapshot* snapshot)
+{
+	if (!snapshot) return false;
+	ZeroMemory(snapshot, sizeof(*snapshot));
+	std::vector<float> waveform;
+	const pdw::signal::SignalMetrics metrics = g_signalDiagnostics.Snapshot(&waveform, NULL);
+	snapshot->rmsLevel = metrics.rmsLevel;
+	snapshot->peakLevel = metrics.peakLevel;
+	snapshot->noiseLevel = metrics.noiseLevel;
+	snapshot->clippingPercent = metrics.clippingPercent;
+	snapshot->signalQuality = metrics.signalQuality;
+	snapshot->sampleCount = static_cast<unsigned long long>(metrics.sampleCount);
+	snapshot->sampleRate = g_activeAudioSampleRate;
+	snapshot->sourceKind = g_modernCaptureKind;
+	snapshot->configuredSource = Profile.audioSource;
+	snapshot->receiverState = static_cast<int>(ConfiguredReceiverState());
+	snapshot->captureActive = bCapturing ? 1 : 0;
+	const DWORD now = GetTickCount();
+	if (Profile.audioSource == AUDIO_SOURCE_RTL_SDR)
+	{
+		snapshot->lastIqCallbackTick = g_rtlSdrSource.lastIqCallbackTick();
+		if (snapshot->lastIqCallbackTick)
+			snapshot->lastIqAgeMs = now - snapshot->lastIqCallbackTick;
+	}
+	if (Profile.audioEnabled && Profile.audioSource != AUDIO_SOURCE_LOCAL && !bCapturing)
+	{
+		const DWORD elapsed = now - g_lastModernStartAttempt;
+		snapshot->retryInMs = elapsed >= 2000 ? 0 : 2000 - elapsed;
+	}
+	strncpy(snapshot->receiverStatus, g_receiverStatus.c_str(),
+		sizeof(snapshot->receiverStatus) - 1);
+	strncpy(snapshot->lastReceiverError, g_lastReceiverError.c_str(),
+		sizeof(snapshot->lastReceiverError) - 1);
+	snapshot->diagnosticRecording = g_diagnosticRecordingActive ? 1 : 0;
+	snapshot->diagnosticReplay = g_diagnosticReplayActive ? 1 : 0;
+
+	const std::size_t count = (std::min)(waveform.size(),
+		static_cast<std::size_t>(PDW_LIVE_SIGNAL_WAVEFORM_COUNT));
+	const std::size_t start = waveform.size() - count;
+	snapshot->waveformCount = static_cast<unsigned int>(count);
+	for (std::size_t index = 0; index < count; ++index)
+		snapshot->waveform[index] = waveform[start + index];
+	return true;
+}
+
+bool SignalDiagnosticToggleRecording(HWND owner)
+{
+	char error[384] = { 0 };
+	if (SignalDiagnosticIsRecording())
+	{
+		if (!SignalDiagnosticStopRecording(error, sizeof(error)))
+		{
+			MessageBoxA(owner, error, "PDW Signal Recording", MB_OK | MB_ICONERROR);
+			return false;
+		}
+		return true;
+	}
+	if (!bCapturing)
+	{
+		MessageBoxA(owner, "Start an audio or radio source before recording its signal.",
+			"PDW Signal Recording", MB_OK | MB_ICONINFORMATION);
+		return false;
+	}
+
+	char path[MAX_PATH] = "PDW signal.wav";
+	static const char filter[] =
+		"WAV signal recording (*.wav)\0*.wav\0SigMF recording (*.sigmf-meta)\0*.sigmf-meta\0\0";
+	OPENFILENAMEA dialog;
+	ZeroMemory(&dialog, sizeof(dialog));
+	dialog.lStructSize = sizeof(dialog);
+	dialog.hwndOwner = owner;
+	dialog.lpstrFilter = filter;
+	dialog.lpstrFile = path;
+	dialog.nMaxFile = sizeof(path);
+	dialog.lpstrDefExt = "wav";
+	dialog.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+	if (!GetSaveFileNameA(&dialog)) return false;
+	if (!SignalDiagnosticStartRecording(path, error, sizeof(error)))
+	{
+		MessageBoxA(owner, error, "PDW Signal Recording", MB_OK | MB_ICONERROR);
+		return false;
+	}
+	return true;
+}
 
 //   Start_Capturing
 //
@@ -399,16 +522,41 @@ BOOL Start_Capturing(void)
 	g_activeAudioSampleRate = static_cast<std::uint32_t>(Profile.audioSampleRate);
 	if (Profile.audioSource == AUDIO_SOURCE_RTL_TCP)
 	{
-		if (TryStartRtlTcp()) return(TRUE);
-		MessageBox(ghWnd, g_rtlTcpSource.lastError().c_str(), "PDW RTL-TCP", MB_ICONERROR);
+		g_lastModernStartAttempt = GetTickCount();
+		g_receiverStartError.clear();
+		g_receiverStatus = "Connecting to configured RTL-TCP receiver";
+		if (TryStartRtlTcp())
+		{
+			g_lastReceiverError.clear();
+			g_receiverStatus = "RTL-TCP receiver running";
+			TraceReceiverStartup(true, std::string());
+			return(TRUE);
+		}
+		g_lastReceiverError = g_rtlTcpSource.lastError();
+		g_receiverStatus = "RTL-TCP start failed; retry scheduled";
+		TraceReceiverStartup(false, g_lastReceiverError);
+		if (!g_suppressCaptureError)
+			MessageBox(ghWnd, g_lastReceiverError.c_str(), "PDW RTL-TCP", MB_ICONERROR);
 		return(FALSE);
 	}
 	if (Profile.audioSource == AUDIO_SOURCE_RTL_SDR)
 	{
-		if (TryStartRtlSdr()) return(TRUE);
+		g_lastModernStartAttempt = GetTickCount();
+		g_receiverStatus = "Opening configured RTL-SDR receiver";
+		if (TryStartRtlSdr())
+		{
+			g_lastReceiverError.clear();
+			g_receiverStatus = "RTL-SDR receiver running";
+			TraceReceiverStartup(true, std::string());
+			return(TRUE);
+		}
 		const std::string rtlError = g_receiverStartError.empty() ?
 			g_rtlSdrSource.lastError() : g_receiverStartError;
-		MessageBox(ghWnd, rtlError.c_str(), "PDW RTL-SDR", MB_ICONERROR);
+		g_lastReceiverError = rtlError;
+		g_receiverStatus = "RTL-SDR start failed; retry scheduled";
+		TraceReceiverStartup(false, rtlError);
+		if (!g_suppressCaptureError)
+			MessageBox(ghWnd, rtlError.c_str(), "PDW RTL-SDR", MB_ICONERROR);
 		return(FALSE);
 	}
 
@@ -545,6 +693,34 @@ BOOL Start_Capturing(void)
 	if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
 	if (TryStartWasapiFallback()) return(TRUE);
 	return(FALSE);
+}
+
+void SignalSourceService(void)
+{
+	if (!Profile.audioEnabled || Profile.audioSource == AUDIO_SOURCE_LOCAL ||
+		g_diagnosticReplayActive) return;
+
+	const pdw::signal::RtlTcpState receiverState = ConfiguredReceiverState();
+	const bool configuredCaptureActive = bUsingWasapiFallback &&
+		((Profile.audioSource == AUDIO_SOURCE_RTL_SDR && g_modernCaptureKind == 3) ||
+		 (Profile.audioSource == AUDIO_SOURCE_RTL_TCP && g_modernCaptureKind == 2));
+	if (configuredCaptureActive)
+	{
+		if (receiverState == pdw::signal::RTL_TCP_RUNNING) return;
+		const std::string error = ConfiguredReceiverError();
+		if (!error.empty()) g_lastReceiverError = error;
+		g_receiverStatus = std::string(ReceiverSourceName()) +
+			" capture stopped; retry scheduled";
+		TraceReceiverStartup(false, g_lastReceiverError);
+		Stop_Capturing();
+	}
+
+	if (bCapturing) return;
+	const DWORD now = GetTickCount();
+	if (now - g_lastModernStartAttempt < 2000) return;
+	g_suppressCaptureError = true;
+	Start_Capturing();
+	g_suppressCaptureError = false;
 }
 
 //   Stop_Capturing
@@ -1872,9 +2048,26 @@ namespace
 	void UpdateLiveDiagnostics(HWND dialog)
 	{
 		const pdw::signal::SignalMetrics metrics = g_signalDiagnostics.Snapshot();
-		char text[512];
+		PdwLiveSignalSnapshot receiver;
+		SignalDiagnosticsGetLiveSnapshot(&receiver);
+		char receiverDetail[520] = { 0 };
+		if (receiver.configuredSource != AUDIO_SOURCE_LOCAL)
+		{
+			if (receiver.configuredSource == AUDIO_SOURCE_RTL_SDR && receiver.lastIqCallbackTick)
+				snprintf(receiverDetail, sizeof(receiverDetail),
+					"  Receiver: %s; last IQ callback %lu ms ago%s%s",
+					receiver.receiverStatus, receiver.lastIqAgeMs,
+					receiver.lastReceiverError[0] ? "; last error: " : "",
+					receiver.lastReceiverError);
+			else
+				snprintf(receiverDetail, sizeof(receiverDetail),
+					"  Receiver: %s%s%s", receiver.receiverStatus,
+					receiver.lastReceiverError[0] ? "; last error: " : "",
+					receiver.lastReceiverError);
+		}
+		char text[1024];
 		snprintf(text, sizeof(text),
-			"Level %.0f%%  Noise %.0f%%  Clip %.2f%%  Eye %.0f%%  Signal %.0f%%  Errors %llu/%llu  FLEX A:%llu B:%llu C:%llu D:%llu",
+			"Level %.0f%%  Noise %.0f%%  Clip %.2f%%  Eye %.0f%%  Signal %.0f%%  Errors %llu/%llu  FLEX A:%llu B:%llu C:%llu D:%llu%s",
 			metrics.rmsLevel * 100.0f, metrics.noiseLevel * 100.0f,
 			metrics.clippingPercent, metrics.eyeOpening, metrics.signalQuality,
 			static_cast<unsigned long long>(metrics.correctedErrors),
@@ -1882,7 +2075,7 @@ namespace
 			static_cast<unsigned long long>(metrics.phaseErrors[0]),
 			static_cast<unsigned long long>(metrics.phaseErrors[1]),
 			static_cast<unsigned long long>(metrics.phaseErrors[2]),
-			static_cast<unsigned long long>(metrics.phaseErrors[3]));
+			static_cast<unsigned long long>(metrics.phaseErrors[3]), receiverDetail);
 		SetDlgItemText(dialog, IDC_SIGNAL_METRICS, text);
 		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_WAVEFORM), NULL, FALSE);
 		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_QUALITY_HISTORY), NULL, FALSE);
@@ -2175,7 +2368,7 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 
 					bool started = true;
 					if (Profile.audioEnabled) started = Start_Capturing() != FALSE;
-					if (!started)
+					if (!started && source == AUDIO_SOURCE_LOCAL)
 					{
 						Profile = previousProfile;
 						if (Profile.comPortEnabled) LoadDriver();

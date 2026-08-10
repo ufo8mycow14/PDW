@@ -17,7 +17,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Area | Current state | Next gate |
 | --- | --- | --- |
 | Win32 build | Clean local build passes all 23 tests; previously published fresh-clone build passed its 18-test checkpoint | Keep CI green and verify the expanded suite after push |
-| Windows interface | Legacy layout retained; tab order, High Contrast refresh, volume route, dialog centering, F1 help, and Delivery Health DPI widths improved | Light/dark, keyboard, DPI, and small-screen acceptance |
+| Windows interface | Approved 2026 command bar, live meter, modeless 11-page Settings Center, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
 | Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
 | Windows audio | WinMM and WASAPI captured from the real default device on the development machine | Live device-loss, hot-plug, and broader device-matrix acceptance |
 | Direct radio | `rtl_tcp` and optional RTL-SDR USB implemented | Multi-device live-radio matrix and recovery tests |
@@ -29,7 +29,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Delivery health | Content-free observer, dialog, history, and alerts complete at `682dfd2` | Runtime visual acceptance across themes and DPI |
 | Settings compatibility | Unknown INI keys, sections, comments, BOM, and line endings preserved at `98ff7ad` | Extend round-trip fixtures with future settings |
 | FLEX fragments | Additive non-group K/F/C alpha reassembly complete at `77e23bd`; original fragments remain authoritative | Recording-backed live acceptance; Group Mode remains legacy |
-| Release packaging | v4.5 folder/ZIP audited; fork branch, draft PR, CI, and artifact verified; v4.1 package retained | Manual acceptance before wider release |
+| Release packaging | Prior v4.5 folder/ZIP audited; current UI executable smoke-tested in the preserved Desktop test installation; v4.1 package retained | Commit/rebuild clean portable package, then complete manual acceptance |
 | x64 | Not started | Isolate legacy serial and slicer dependencies first |
 
 ## Safe integration sequence
@@ -48,6 +48,7 @@ merged.
 | 5 | INI preservation and compatibility verification | Complete at `98ff7ad` |
 | 6 | Optional FLEX fragment assembly with guaranteed legacy fallback | Complete at `77e23bd`; disabled by default |
 | 7 | PDW v4.5.0 Beta metadata, package, fork, CI, and artifact alignment | Complete; draft PR #5 |
+| 8 | Image-approved 2026 Windows navigation, live input, and Settings Center | Implemented locally; 100% Light/Dark and compact-size smoke passed |
 
 Delivery Health stores no pager addresses or decoded text and cannot alter a
 delivery result. FLEX shadow assembly cannot suppress a legacy fragment on
@@ -153,12 +154,16 @@ Priority: before stable release
 Completion gate: primary workflows are usable without clipped controls or a
 mouse, and failures provide an actionable recovery path.
 
-Current evidence: all visible interactive resource buttons now participate in
-tab order; High Contrast can return to the selected System/Light/Dark palette;
+Current evidence: all visible interactive resource buttons participate in tab
+order; High Contrast can return to the selected System/Light/Dark palette;
 current Windows volume control retains the legacy fallback; dialogs center and
 clamp within their owner's monitor; F1 help is staged in developer builds; and
-Delivery Health columns use the active DPI. Manual visual and keyboard
-acceptance at every target scale remains open and is tracked in
+Delivery Health columns use the active DPI. The image-approved 2026 shell now
+adds the six-menu information architecture, six-command icon bar, real-sample
+live meter, persistent Settings navigation, 11 destinations including **About
+me**, and resize-safe cards. Native-window smoke passed at 100% in Light and
+Dark, 1000x720, 820x600, and the 720x560 minimum. Keyboard-only, High Contrast,
+125-200% DPI, and physical-radio acceptance remain open in
 `docs/WINDOWS_UI_ACCEPTANCE.md`.
 
 ## Milestone 6 - Maintainability and x64 evaluation

@@ -15,6 +15,7 @@ set( PDW_INCLUDES
   #${CMAKE_CURRENT_SOURCE_DIR}/html.h
   ${CMAKE_CURRENT_SOURCE_DIR}/initapp.h
   ${CMAKE_CURRENT_SOURCE_DIR}/language.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/live_signal_meter.h
   ${CMAKE_CURRENT_SOURCE_DIR}/menu.h
   ${CMAKE_CURRENT_SOURCE_DIR}/misc.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mobitex.h
@@ -24,6 +25,8 @@ set( PDW_INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/printer.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sigind.h
   ${CMAKE_CURRENT_SOURCE_DIR}/sound_in.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/settings_center.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/status_bar.h
   ${CMAKE_CURRENT_SOURCE_DIR}/startup.h
   ${CMAKE_CURRENT_SOURCE_DIR}/toolbar.h
   ${CMAKE_CURRENT_SOURCE_DIR}/ui_theme.h

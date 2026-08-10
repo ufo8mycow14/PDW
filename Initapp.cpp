@@ -28,6 +28,7 @@
 #include "headers\toolbar.h"
 #include "headers\gfx.h"
 #include "headers\initapp.h"
+#include "headers\ui_theme.h"
 
 #include "headers\helper_funcs.h"
 
@@ -131,6 +132,10 @@ BOOL NEAR InitApplication(HINSTANCE hInstance)
 	if (!FileExists(szWavePathName)) CreateDirectory(szWavePathName, NULL);
 
 	GetPrivateProfileSettings(szShortAppName, szIniPathName, &Profile);
+	// Native menus choose their light/dark renderer when the main window is
+	// created, so initialise the Windows application theme before registering
+	// and constructing that window.
+	PdwThemeInitialize();
 	BuildPdwWindowTitle(szAppName, sizeof(szAppName));
 
 	// After getting user profile settings get all drawing objects(gfx.cpp)

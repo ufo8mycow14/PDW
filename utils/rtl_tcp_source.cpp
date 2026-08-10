@@ -376,7 +376,7 @@ namespace
 RtlSdrSource::RtlSdrSource()
 	: stopEvent_(NULL), readyEvent_(NULL), thread_(NULL), library_(NULL),
 	  device_(NULL), cancelFunction_(NULL), deviceIndex_(0), sink_(NULL),
-	  demodulator_(1024000, 48000), state_(RTL_TCP_STOPPED)
+	  demodulator_(1024000, 48000), state_(RTL_TCP_STOPPED), lastIqCallbackTick_(0)
 {
 	InitializeCriticalSection(&lock_);
 }
@@ -394,6 +394,7 @@ bool RtlSdrSource::Start(const RtlTcpConfig& config, unsigned int deviceIndex, A
 	config_ = config;
 	deviceIndex_ = deviceIndex;
 	sink_ = sink;
+	InterlockedExchange(&lastIqCallbackTick_, 0);
 	demodulator_.Configure(config.sampleRate, config.audioSampleRate, config.nfmBandwidthHz);
 	stopEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	readyEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -456,6 +457,12 @@ std::string RtlSdrSource::lastError() const
 	return value;
 }
 
+DWORD RtlSdrSource::lastIqCallbackTick() const
+{
+	return static_cast<DWORD>(InterlockedCompareExchange(
+		const_cast<volatile LONG*>(&lastIqCallbackTick_), 0, 0));
+}
+
 void RtlSdrSource::SetState(RtlTcpState state, const char* error)
 {
 	EnterCriticalSection(&lock_);
@@ -475,6 +482,7 @@ void __cdecl RtlSdrSource::ReadCallback(unsigned char* buffer, std::uint32_t len
 {
 	RtlSdrSource* source = static_cast<RtlSdrSource*>(context);
 	if (!source || StopRequested(source->stopEvent_)) return;
+	InterlockedExchange(&source->lastIqCallbackTick_, static_cast<LONG>(GetTickCount()));
 	std::vector<float> audio;
 	source->demodulator_.ProcessUnsignedIq(buffer, length, audio);
 	if (source->sink_ && !audio.empty())

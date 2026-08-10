@@ -24,6 +24,13 @@ screenshots or issue reports.
 - A normal developer build places `PDW.pdf` beside the executable for F1 help.
 - Manual and Windows `/startup` launches create the correctly titled,
   responsive main window.
+- Native-window smoke automation keeps exactly one modeless Settings instance,
+  moves between General, Appearance, and Signal & radio without closing it,
+  routes a live-meter click to Signal & radio, and returns cleanly after a
+  retained modal dialog closes.
+- At 100% scale, the approved dark and light Settings layouts render at
+  1000x720; dark compact/minimum relayout renders at 820x600 and 720x560 with
+  all Signal & radio cards present and no stale text/button pixels.
 
 These checks reduce risk but do not mark the matrices below as passed.
 
@@ -35,9 +42,9 @@ different scale factors.
 
 | Surface | 100% | 125% | 150% | 200% | Required result |
 | --- | --- | --- | --- | --- | --- |
-| Main panes, toolbar, signal indicators | [ ] | [ ] | [ ] | [ ] | No overlap, missing text, inaccessible pane, or stale layout after monitor movement. |
-| Settings hub | [ ] | [ ] | [ ] | [ ] | Every category and bottom action remains visible and keyboard reachable. |
-| Radio and Signal Sources | [ ] | [ ] | [ ] | [ ] | Receiver list, source test, recording, replay, calibration, waveform and status remain usable. |
+| Main panes, toolbar, signal indicators | [x] | [ ] | [ ] | [ ] | No overlap, missing text, inaccessible pane, or stale layout after monitor movement. |
+| Settings hub | [x] | [ ] | [ ] | [ ] | Every category and bottom action remains visible and keyboard reachable. |
+| Radio and Signal Sources | [x] | [ ] | [ ] | [ ] | Receiver list, source test, recording, replay, calibration, waveform and status remain usable. |
 | Screen Options and FLEX assembly row | [ ] | [ ] | [ ] | [ ] | The full compatibility wording and Group Mode relationship remain visible. |
 | Data Outputs, all tabs | [ ] | [ ] | [ ] | [ ] | Tab pages, enable/permission controls, fields, test actions and OK/Cancel remain reachable. |
 | Delivery Health | [ ] | [ ] | [ ] | [ ] | Columns, history, acknowledgement and close controls remain readable and reachable. |
@@ -52,9 +59,9 @@ Repeat with at least one primary dialog left open while changing the state.
 | State | Main window | Settings | Data Outputs | Delivery Health | High Contrast off recovery |
 | --- | --- | --- | --- | --- | --- |
 | Follow Windows / light | [ ] | [ ] | [ ] | [ ] | [ ] |
-| Follow Windows / dark | [ ] | [ ] | [ ] | [ ] | [ ] |
-| Explicit Light | [ ] | [ ] | [ ] | [ ] | [ ] |
-| Explicit Dark | [ ] | [ ] | [ ] | [ ] | [ ] |
+| Follow Windows / dark | [x] | [x] | [ ] | [ ] | [ ] |
+| Explicit Light | [x] | [x] | [ ] | [ ] | [ ] |
+| Explicit Dark | [x] | [x] | [ ] | [ ] | [ ] |
 | High Contrast enabled | [ ] | [ ] | [ ] | [ ] | N/A |
 
 Required result: readable text and focus indication, no theme-stuck controls,
@@ -76,6 +83,14 @@ arrow keys, Space, Enter, Escape, menu accelerators and F1 only:
 - [ ] Save one reversible non-secret appearance setting and confirm it survives restart.
 
 ## Acceptance record
+
+10 August 2026, Windows development machine, 100% scale: the current working
+tree passed the main-window and Settings Light/Dark image review, repeated
+1000x720 -> 720x560 -> 1000x720 -> 820x600 relayout, single-instance Settings,
+page switching, live-meter navigation, and modal return smoke. Content-free
+captures are stored locally under `out\ui-*.png`. This record does not cover
+live radio input, High Contrast, keyboard-only completion, other dialogs, or
+125-200% scaling.
 
 For each run record Windows version/build, display resolution, scale, monitor
 arrangement, PDW commit, result, and a content-free defect description. A
