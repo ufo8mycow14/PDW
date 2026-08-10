@@ -107,6 +107,9 @@ if (-not (Test-Path -LiteralPath $vsDevCmd)) {
     throw "Visual Studio developer command script was not found at '$vsDevCmd'."
 }
 
+$cmakeGenerator = & (Join-Path $PSScriptRoot "resolve-cmake-generator.ps1")
+Write-Host "Using CMake generator '$cmakeGenerator'."
+
 function Invoke-VsDevCommand {
     param(
         [Parameter(Mandatory = $true)][string]$Command,
@@ -186,7 +189,7 @@ $libssh2Build = Join-Path $buildRoot "libssh2"
 Invoke-CMake -Description "Configuring libssh2 $($versions.libssh2) for Win32" -Arguments @(
     "-S", $libssh2Source,
     "-B", $libssh2Build,
-    "-G", "Visual Studio 17 2022",
+    "-G", $cmakeGenerator,
     "-A", "Win32",
     "-DCMAKE_INSTALL_PREFIX=$InstallRoot",
     "-DBUILD_SHARED_LIBS=OFF",
@@ -207,7 +210,7 @@ $curlBuild = Join-Path $buildRoot "curl"
 Invoke-CMake -Description "Configuring curl $($versions.curl) for Win32" -Arguments @(
     "-S", $curlSource,
     "-B", $curlBuild,
-    "-G", "Visual Studio 17 2022",
+    "-G", $cmakeGenerator,
     "-A", "Win32",
     "-DCMAKE_INSTALL_PREFIX=$InstallRoot",
     "-DCMAKE_PREFIX_PATH=$InstallRoot",

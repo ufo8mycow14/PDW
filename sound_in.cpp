@@ -14,6 +14,8 @@
 #endif
 
 #include <windows.h>
+#include <shellapi.h>
+#include <shlobj.h>
 
 #include "headers\resource.h"
 #include "headers\PDW.h"
@@ -24,10 +26,13 @@
 #include "headers\acars.h"
 #include "headers\mobitex.h"
 #include "headers\ermes.h"		// PH: new
+#include "headers\ui_theme.h"
 #include "utils\audio_signal_core.h"
 #include "utils\signal_recording_core.h"
+#include "utils\signal_diagnostics.h"
 #include "utils\wasapi_capture.h"
 #include "utils\rtl_tcp_source.h"
+#include "utils\receiver_catalog.h"
 
 #include <algorithm>
 #include <cctype>
@@ -175,8 +180,10 @@ namespace
 	pdw::signal::RtlTcpSource g_rtlTcpSource;
 	pdw::signal::RtlSdrSource g_rtlSdrSource;
 	pdw::signal::AdaptiveSlicer g_enhancedAudioSlicer;
+	pdw::signal::SignalDiagnostics g_signalDiagnostics;
 	std::uint32_t g_activeAudioSampleRate = 44100;
 	int g_modernCaptureKind = 0; // 0=none, 1=WASAPI fallback, 2=rtl_tcp, 3=RTL-SDR
+	std::string g_receiverStartError;
 	pdw::signal::SignalRecording g_diagnosticRecording;
 	std::string g_diagnosticRecordingPath;
 	bool g_diagnosticRecordingActive = false;
@@ -242,6 +249,7 @@ namespace
 	void FeedNormalizedSamples(const float* samples, std::size_t sampleCount)
 	{
 		if (!samples || sampleCount == 0) return;
+		g_signalDiagnostics.Observe(samples, sampleCount);
 		std::vector<char> pcm8(sampleCount);
 		for (std::size_t index = 0; index < sampleCount; ++index)
 		{
@@ -320,6 +328,7 @@ namespace
 		config.audioSampleRate = Profile.rtlAudioSampleRate;
 		config.gainTenthsDb = Profile.rtlGainTenthsDb;
 		config.frequencyCorrectionPpm = Profile.rtlFrequencyCorrectionPpm;
+		config.nfmBandwidthHz = static_cast<std::uint32_t>(Profile.rtlBandwidthHz);
 		config.automaticGain = Profile.rtlAutomaticGain != 0;
 		g_wasapiFallbackSink.Clear();
 		if (!g_rtlTcpSource.Start(config, &g_wasapiFallbackSink)) return false;
@@ -333,12 +342,21 @@ namespace
 
 	bool TryStartRtlSdr()
 	{
+		g_receiverStartError.clear();
 		pdw::signal::RtlTcpConfig config;
+		std::string receiverError;
+		if (!pdw::signal::ResolveRtlReceiverLibrary(Profile.rtlReceiverId,
+			config.receiverLibraryPath, receiverError))
+		{
+			g_receiverStartError = receiverError;
+			return false;
+		}
 		config.frequencyHz = Profile.rtlFrequencyHz;
 		config.sampleRate = Profile.rtlSampleRate;
 		config.audioSampleRate = Profile.rtlAudioSampleRate;
 		config.gainTenthsDb = Profile.rtlGainTenthsDb;
 		config.frequencyCorrectionPpm = Profile.rtlFrequencyCorrectionPpm;
+		config.nfmBandwidthHz = static_cast<std::uint32_t>(Profile.rtlBandwidthHz);
 		config.automaticGain = Profile.rtlAutomaticGain != 0;
 		g_wasapiFallbackSink.Clear();
 		if (!g_rtlSdrSource.Start(config, static_cast<unsigned int>(Profile.rtlDeviceIndex),
@@ -388,7 +406,9 @@ BOOL Start_Capturing(void)
 	if (Profile.audioSource == AUDIO_SOURCE_RTL_SDR)
 	{
 		if (TryStartRtlSdr()) return(TRUE);
-		MessageBox(ghWnd, g_rtlSdrSource.lastError().c_str(), "PDW RTL-SDR", MB_ICONERROR);
+		const std::string rtlError = g_receiverStartError.empty() ?
+			g_rtlSdrSource.lastError() : g_receiverStartError;
+		MessageBox(ghWnd, rtlError.c_str(), "PDW RTL-SDR", MB_ICONERROR);
 		return(FALSE);
 	}
 
@@ -649,6 +669,18 @@ void Process_ReadyBuffers(HWND hwnd)
 			}
 			AppendDiagnosticSamples(&diagnosticSamples[0], diagnosticSamples.size(),
 				static_cast<std::uint32_t>(Profile.audioSampleRate));
+			g_signalDiagnostics.Observe(&diagnosticSamples[0], diagnosticSamples.size());
+		}
+		else
+		{
+			std::vector<float> diagnosticSamples(WaveHeader[last_buff_processed].dwBufferLength);
+			for (std::size_t sample = 0; sample < diagnosticSamples.size(); ++sample)
+			{
+				const unsigned char value = static_cast<unsigned char>(
+					WaveHeader[last_buff_processed].lpData[sample]);
+				diagnosticSamples[sample] = pdw::signal::NormalizePcm8(value);
+			}
+			g_signalDiagnostics.Observe(&diagnosticSamples[0], diagnosticSamples.size());
 		}
  
 		if (Profile.monitor_paging)		// POCSAG/FLEX decoding?
@@ -792,6 +824,18 @@ bool SignalDiagnosticIsRecording(void)
 bool SignalDiagnosticIsReplaying(void)
 {
 	return g_diagnosticReplayActive;
+}
+
+void SignalDiagnosticsRecordDecodeResult(int errors)
+{
+	extern double dRX_Quality;
+	extern char phase;
+	extern int iCurrentCycle;
+	extern int iCurrentFrame;
+	int phaseIndex = -1;
+	if (flex_timer && phase >= 'A' && phase <= 'D') phaseIndex = phase - 'A';
+	g_signalDiagnostics.RecordDecodeResult(errors, phaseIndex, iCurrentCycle,
+		iCurrentFrame, static_cast<float>(dRX_Quality));
 }
 
 //   Callback_Function
@@ -1514,6 +1558,119 @@ namespace
 		void OnAudioSamples(const float*, std::size_t, std::uint32_t, bool) {}
 	};
 
+	struct ReceiverDialogState
+	{
+		std::vector<pdw::signal::ReceiverPackage> packages;
+	};
+
+	bool GetIntegerControl(HWND dialog, int control, long minimum, long maximum,
+		long& value, const char* label);
+
+	ReceiverDialogState* GetReceiverDialogState(HWND dialog)
+	{
+		return reinterpret_cast<ReceiverDialogState*>(GetWindowLongPtr(dialog, GWLP_USERDATA));
+	}
+
+	const pdw::signal::ReceiverPackage* GetSelectedReceiverPackage(HWND dialog)
+	{
+		ReceiverDialogState* state = GetReceiverDialogState(dialog);
+		if (!state) return NULL;
+		const LRESULT selection = SendDlgItemMessage(dialog, IDC_RTL_RECEIVER_PACKAGE,
+			CB_GETCURSEL, 0, 0);
+		if (selection == CB_ERR) return NULL;
+		const LRESULT packageIndex = SendDlgItemMessage(dialog, IDC_RTL_RECEIVER_PACKAGE,
+			CB_GETITEMDATA, static_cast<WPARAM>(selection), 0);
+		if (packageIndex == CB_ERR || packageIndex < 0 ||
+			static_cast<std::size_t>(packageIndex) >= state->packages.size()) return NULL;
+		return &state->packages[static_cast<std::size_t>(packageIndex)];
+	}
+
+	void RefreshReceiverDevices(HWND dialog)
+	{
+		const pdw::signal::ReceiverPackage* package = GetSelectedReceiverPackage(dialog);
+		SendDlgItemMessage(dialog, IDC_RTL_DEVICE, CB_RESETCONTENT, 0, 0);
+		std::string status;
+		std::vector<pdw::signal::RtlSdrDeviceInfo> devices;
+		if (package && package->compatible)
+			devices = pdw::signal::EnumerateRtlSdrDevices(package->libraryPath, status);
+		for (std::size_t index = 0; index < devices.size(); ++index)
+		{
+			char label[384];
+			const std::string deviceName = !devices[index].product.empty() ?
+				devices[index].product : devices[index].name;
+			snprintf(label, sizeof(label), "%u - %s", devices[index].index,
+				deviceName.empty() ? "RTL-SDR receiver" : deviceName.c_str());
+			const LRESULT item = SendDlgItemMessage(dialog, IDC_RTL_DEVICE,
+				CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
+			if (item != CB_ERR && item != CB_ERRSPACE)
+			{
+				SendDlgItemMessage(dialog, IDC_RTL_DEVICE, CB_SETITEMDATA,
+					static_cast<WPARAM>(item), devices[index].index);
+				if (devices[index].index == static_cast<unsigned int>(Profile.rtlDeviceIndex))
+					SendDlgItemMessage(dialog, IDC_RTL_DEVICE, CB_SETCURSEL,
+						static_cast<WPARAM>(item), 0);
+			}
+		}
+		if (SendDlgItemMessage(dialog, IDC_RTL_DEVICE, CB_GETCURSEL, 0, 0) == CB_ERR)
+			SetDlgItemInt(dialog, IDC_RTL_DEVICE, Profile.rtlDeviceIndex, FALSE);
+		if (package)
+		{
+			if (!package->compatible) status = package->status;
+			else if (devices.empty()) status = "Receiver package is ready. Connect a compatible USB receiver and install WinUSB if needed.";
+			else
+			{
+				char ready[160];
+				snprintf(ready, sizeof(ready), "%u compatible USB receiver%s found.",
+					static_cast<unsigned int>(devices.size()), devices.size() == 1 ? "" : "s");
+				status = ready;
+			}
+			SetDlgItemText(dialog, IDC_RTL_STATUS, status.c_str());
+		}
+	}
+
+	void RefreshReceiverPackages(HWND dialog, const char* preferredId)
+	{
+		ReceiverDialogState* state = GetReceiverDialogState(dialog);
+		if (!state) return;
+		state->packages = pdw::signal::EnumerateRtlReceiverPackages();
+		SendDlgItemMessage(dialog, IDC_RTL_RECEIVER_PACKAGE, CB_RESETCONTENT, 0, 0);
+		int selected = -1;
+		for (std::size_t index = 0; index < state->packages.size(); ++index)
+		{
+			std::string label = state->packages[index].displayName;
+			if (!state->packages[index].compatible) label += " (unavailable)";
+			const LRESULT item = SendDlgItemMessage(dialog, IDC_RTL_RECEIVER_PACKAGE,
+				CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+			if (item == CB_ERR || item == CB_ERRSPACE) continue;
+			SendDlgItemMessage(dialog, IDC_RTL_RECEIVER_PACKAGE, CB_SETITEMDATA,
+				static_cast<WPARAM>(item), static_cast<LPARAM>(index));
+			if (preferredId && state->packages[index].id == preferredId) selected = static_cast<int>(item);
+		}
+		if (selected < 0 && !state->packages.empty()) selected = 0;
+		if (selected >= 0) SendDlgItemMessage(dialog, IDC_RTL_RECEIVER_PACKAGE,
+			CB_SETCURSEL, static_cast<WPARAM>(selected), 0);
+		RefreshReceiverDevices(dialog);
+	}
+
+	bool GetDeviceControl(HWND dialog, int& deviceIndex)
+	{
+		const LRESULT selection = SendDlgItemMessage(dialog, IDC_RTL_DEVICE, CB_GETCURSEL, 0, 0);
+		if (selection != CB_ERR)
+		{
+			const LRESULT data = SendDlgItemMessage(dialog, IDC_RTL_DEVICE, CB_GETITEMDATA,
+				static_cast<WPARAM>(selection), 0);
+			if (data != CB_ERR && data >= 0 && data <= 255)
+			{
+				deviceIndex = static_cast<int>(data);
+				return true;
+			}
+		}
+		long parsed = 0;
+		if (!GetIntegerControl(dialog, IDC_RTL_DEVICE, 0, 255, parsed, "USB device index")) return false;
+		deviceIndex = static_cast<int>(parsed);
+		return true;
+	}
+
 	void SetUnsignedControl(HWND dialog, int control, unsigned int value)
 	{
 		char text[32];
@@ -1545,6 +1702,9 @@ namespace
 		const BOOL rtlAny = source == AUDIO_SOURCE_RTL_TCP || source == AUDIO_SOURCE_RTL_SDR;
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_HOST), rtlTcp);
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_PORT), rtlTcp);
+		EnableWindow(GetDlgItem(dialog, IDC_RTL_RECEIVER_PACKAGE), source == AUDIO_SOURCE_RTL_SDR);
+		EnableWindow(GetDlgItem(dialog, IDC_RTL_RECEIVER_ADD), source == AUDIO_SOURCE_RTL_SDR);
+		EnableWindow(GetDlgItem(dialog, IDC_RTL_RECEIVER_FOLDER), TRUE);
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_DEVICE), source == AUDIO_SOURCE_RTL_SDR);
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_FREQUENCY), rtlAny);
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_SAMPLE_RATE), rtlAny);
@@ -1552,20 +1712,22 @@ namespace
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_AUTOMATIC_GAIN), rtlAny);
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_GAIN), rtlAny && !IsDlgButtonChecked(dialog, IDC_RTL_AUTOMATIC_GAIN));
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_PPM), rtlAny);
+		EnableWindow(GetDlgItem(dialog, IDC_RTL_BANDWIDTH), rtlAny);
 	}
 
 	bool ReadRtlDialog(HWND dialog, pdw::signal::RtlTcpConfig& config, int& deviceIndex)
 	{
 		char host[RTL_TCP_HOST_LEN+1];
 		GetDlgItemText(dialog, IDC_RTL_HOST, host, sizeof(host));
-		long port, frequency, iqRate, audioRate, gain, ppm, device;
+		long port, frequency, iqRate, audioRate, gain, ppm, bandwidth;
 		if (!GetIntegerControl(dialog, IDC_RTL_PORT, 1, 65535, port, "Port") ||
 			!GetIntegerControl(dialog, IDC_RTL_FREQUENCY, 100000, 2000000000L, frequency, "Frequency") ||
 			!GetIntegerControl(dialog, IDC_RTL_SAMPLE_RATE, 240000, 3200000, iqRate, "IQ sample rate") ||
 			!GetIntegerControl(dialog, IDC_RTL_AUDIO_RATE, 8000, 192000, audioRate, "Audio sample rate") ||
 			!GetIntegerControl(dialog, IDC_RTL_GAIN, -1000, 1000, gain, "Gain") ||
 			!GetIntegerControl(dialog, IDC_RTL_PPM, -1000, 1000, ppm, "Frequency correction") ||
-			!GetIntegerControl(dialog, IDC_RTL_DEVICE, 0, 255, device, "USB device index"))
+			!GetIntegerControl(dialog, IDC_RTL_BANDWIDTH, 5000, 25000, bandwidth, "NFM bandwidth") ||
+			!GetDeviceControl(dialog, deviceIndex))
 			return false;
 		if (audioRate > iqRate)
 		{
@@ -1581,8 +1743,8 @@ namespace
 		config.audioSampleRate = static_cast<std::uint32_t>(audioRate);
 		config.gainTenthsDb = static_cast<int>(gain);
 		config.frequencyCorrectionPpm = static_cast<int>(ppm);
+		config.nfmBandwidthHz = static_cast<std::uint32_t>(bandwidth);
 		config.automaticGain = IsDlgButtonChecked(dialog, IDC_RTL_AUTOMATIC_GAIN) != 0;
-		deviceIndex = static_cast<int>(device);
 		return true;
 	}
 
@@ -1621,17 +1783,160 @@ namespace
 		if (selected) SetDlgItemText(dialog, control, path);
 		return selected != FALSE;
 	}
+
+	bool AddReceiverPackage(HWND dialog)
+	{
+		char path[MAX_PATH] = {0};
+		static const char filter[] =
+			"RTL-SDR receiver DLL (rtlsdr.dll;librtlsdr.dll)\0rtlsdr.dll;librtlsdr.dll\0Windows DLL (*.dll)\0*.dll\0\0";
+		OPENFILENAMEA fileDialog = {0};
+		fileDialog.lStructSize = sizeof(fileDialog);
+		fileDialog.hwndOwner = dialog;
+		fileDialog.lpstrFilter = filter;
+		fileDialog.lpstrFile = path;
+		fileDialog.nMaxFile = sizeof(path);
+		fileDialog.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+		if (!GetOpenFileNameA(&fileDialog)) return false;
+
+		pdw::signal::ReceiverPackage imported;
+		std::string error;
+		if (!pdw::signal::ImportRtlReceiverPackage(path, std::string(), imported, error))
+		{
+			MessageBox(dialog, error.c_str(), "PDW Add Receiver", MB_ICONERROR);
+			return false;
+		}
+		RefreshReceiverPackages(dialog, imported.id.c_str());
+		SetDlgItemText(dialog, IDC_RTL_STATUS,
+			"Receiver package imported. Its DLLs are now kept together in PDW's Receivers folder.");
+		return true;
+	}
+
+	std::string SelectedReceiverId(HWND dialog)
+	{
+		const pdw::signal::ReceiverPackage* package = GetSelectedReceiverPackage(dialog);
+		return package ? package->id : std::string();
+	}
+
+	void UpdateLiveDiagnostics(HWND dialog)
+	{
+		const pdw::signal::SignalMetrics metrics = g_signalDiagnostics.Snapshot();
+		char text[512];
+		snprintf(text, sizeof(text),
+			"Level %.0f%%  Noise %.0f%%  Clip %.2f%%  Eye %.0f%%  Signal %.0f%%  Errors %llu/%llu  FLEX A:%llu B:%llu C:%llu D:%llu",
+			metrics.rmsLevel * 100.0f, metrics.noiseLevel * 100.0f,
+			metrics.clippingPercent, metrics.eyeOpening, metrics.signalQuality,
+			static_cast<unsigned long long>(metrics.correctedErrors),
+			static_cast<unsigned long long>(metrics.uncorrectableErrors),
+			static_cast<unsigned long long>(metrics.phaseErrors[0]),
+			static_cast<unsigned long long>(metrics.phaseErrors[1]),
+			static_cast<unsigned long long>(metrics.phaseErrors[2]),
+			static_cast<unsigned long long>(metrics.phaseErrors[3]));
+		SetDlgItemText(dialog, IDC_SIGNAL_METRICS, text);
+		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_WAVEFORM), NULL, FALSE);
+		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_QUALITY_HISTORY), NULL, FALSE);
+	}
+
+	void DrawSignalDiagnosticControl(const DRAWITEMSTRUCT* item)
+	{
+		if (!item) return;
+		RECT bounds = item->rcItem;
+		HBRUSH background = CreateSolidBrush(PdwThemeSurfaceColor());
+		FillRect(item->hDC, &bounds, background);
+		DeleteObject(background);
+		HPEN grid = CreatePen(PS_SOLID, 1, PdwThemeBorderColor());
+		HGDIOBJ previousPen = SelectObject(item->hDC, grid);
+		const int middle = (bounds.top + bounds.bottom) / 2;
+		MoveToEx(item->hDC, bounds.left, middle, NULL);
+		LineTo(item->hDC, bounds.right, middle);
+		DeleteObject(SelectObject(item->hDC, previousPen));
+
+		std::vector<float> waveform, history;
+		g_signalDiagnostics.Snapshot(&waveform, &history);
+		const std::vector<float>& values = item->CtlID == IDC_SIGNAL_WAVEFORM ? waveform : history;
+		if (values.size() < 2) return;
+		HPEN plot = CreatePen(PS_SOLID, 1, item->CtlID == IDC_SIGNAL_WAVEFORM ?
+			PdwThemeAccentColor() : RGB(16, 150, 80));
+		previousPen = SelectObject(item->hDC, plot);
+		for (std::size_t index = 0; index < values.size(); ++index)
+		{
+			const int x = bounds.left + 1 + static_cast<int>((bounds.right - bounds.left - 2) *
+				index / (values.size() - 1));
+			const float normalized = item->CtlID == IDC_SIGNAL_WAVEFORM ?
+				(values[index] + 1.0f) * 0.5f : values[index] / 100.0f;
+			const int y = bounds.bottom - 2 - static_cast<int>((bounds.bottom - bounds.top - 3) *
+				(std::max)(0.0f, (std::min)(1.0f, normalized)));
+			if (index == 0) MoveToEx(item->hDC, x, y, NULL);
+			else LineTo(item->hDC, x, y);
+		}
+		DeleteObject(SelectObject(item->hDC, previousPen));
+	}
+
+	bool CalibrateReplayRecording(HWND dialog)
+	{
+		char path[MAX_PATH] = {0};
+		GetDlgItemText(dialog, IDC_SIGNAL_REPLAY_PATH, path, sizeof(path));
+		if (!path[0])
+		{
+			MessageBox(dialog, "Choose a WAV or SigMF replay recording first.",
+				"PDW Signal Calibration", MB_ICONINFORMATION);
+			return false;
+		}
+		pdw::signal::SignalRecording recording;
+		std::string error;
+		const std::string lowered = LowercasePath(path);
+		const bool loaded = EndsWith(lowered, ".wav") ?
+			pdw::signal::ReadWavMono(path, recording, error) :
+			pdw::signal::ReadSigMfReal32(SigMfBasePath(path), recording, error);
+		if (!loaded)
+		{
+			MessageBox(dialog, error.c_str(), "PDW Signal Calibration", MB_ICONERROR);
+			return false;
+		}
+		if (recording.samples.size() < 256)
+		{
+			MessageBox(dialog, "The recording is too short for calibration.",
+				"PDW Signal Calibration", MB_ICONERROR);
+			return false;
+		}
+		const pdw::signal::CalibrationResult result =
+			pdw::signal::CalibrateLegacySlicer(recording.samples);
+		char message[768];
+		snprintf(message, sizeof(message),
+			"PDW tested all 1,000 custom threshold, centering and resync combinations against this recording.\n\n"
+			"Suggested threshold: %d\nSuggested centering: %d\nSuggested resync: %d\n"
+			"Signal score: %.1f%%\nDC offset: %.3f\nNoise: %.3f%s\n\n"
+			"This signal-based A/B test does not replace protocol frame/error validation. Apply it as PDW's Custom audio configuration? All legacy presets remain available.",
+			result.thresholdIndex, result.centeringIndex, result.resyncIndex,
+			result.score, result.measuredDcOffset, result.measuredNoise,
+			result.clippingDetected ? "\nClipping was detected; reduce receiver gain or Windows input level." : "");
+		if (MessageBox(dialog, message, "PDW Signal Calibration",
+			MB_ICONINFORMATION | MB_YESNO | MB_DEFBUTTON2) != IDYES) return true;
+		for (int index = 0; index < AUDIO_CUSTOM_RATE_COUNT; ++index)
+		{
+			Profile.audioThreshold[index] = result.thresholdIndex;
+			Profile.audioCentering[index] = result.centeringIndex;
+			Profile.audioResync[index] = result.resyncIndex;
+		}
+		Profile.audioConfig = 0;
+		SetAudioConfig(Profile.audioConfig);
+		WriteSettings();
+		SetDlgItemText(dialog, IDC_SIGNAL_DIAGNOSTIC_STATUS,
+			"Calibration applied as Custom; legacy receiver presets remain available in Interface settings.");
+		return true;
+	}
 }
 
-BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
+BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg)
 	{
 		case WM_INITDIALOG:
+			SetWindowLongPtr(hDlg, GWLP_USERDATA,
+				reinterpret_cast<LONG_PTR>(new ReceiverDialogState()));
 			CenterWindow(hDlg);
-			SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_ADDSTRING, 0, (LPARAM)"Local audio or serial (automatic fallback)");
-			SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_ADDSTRING, 0, (LPARAM)"RTL-TCP network radio");
-			SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_ADDSTRING, 0, (LPARAM)"RTL-SDR USB (optional DLL)");
+			SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_ADDSTRING, 0, (LPARAM)"Legacy discriminator, local audio or serial");
+			SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_ADDSTRING, 0, (LPARAM)"RTL-TCP compatible network receiver");
+			SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_ADDSTRING, 0, (LPARAM)"Direct RTL-SDR USB receiver");
 			SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_SETCURSEL, Profile.audioSource, 0);
 			SetDlgItemText(hDlg, IDC_RTL_HOST, Profile.rtlTcpHost);
 			SetUnsignedControl(hDlg, IDC_RTL_PORT, static_cast<unsigned int>(Profile.rtlTcpPort));
@@ -1640,15 +1945,16 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
 			SetUnsignedControl(hDlg, IDC_RTL_AUDIO_RATE, Profile.rtlAudioSampleRate);
 			SetDlgItemInt(hDlg, IDC_RTL_GAIN, Profile.rtlGainTenthsDb, TRUE);
 			SetDlgItemInt(hDlg, IDC_RTL_PPM, Profile.rtlFrequencyCorrectionPpm, TRUE);
+			SetDlgItemInt(hDlg, IDC_RTL_BANDWIDTH, Profile.rtlBandwidthHz, FALSE);
 			SetDlgItemInt(hDlg, IDC_RTL_DEVICE, Profile.rtlDeviceIndex, FALSE);
 			CheckDlgButton(hDlg, IDC_RTL_AUTOMATIC_GAIN, Profile.rtlAutomaticGain ? BST_CHECKED : BST_UNCHECKED);
+			RefreshReceiverPackages(hDlg, Profile.rtlReceiverId);
 			EnableRtlControls(hDlg, Profile.audioSource);
 			SetDlgItemText(hDlg, IDC_SIGNAL_RECORD_PATH, "PDW-signal.wav");
 			SetDlgItemText(hDlg, IDC_SIGNAL_REPLAY_PATH, "PDW-signal.wav");
 			UpdateDiagnosticControls(hDlg);
 			SetTimer(hDlg, 1, 250, NULL);
-			if (Profile.audioSource == AUDIO_SOURCE_RTL_SDR && !pdw::signal::IsRtlSdrLibraryAvailable())
-				SetDlgItemText(hDlg, IDC_RTL_STATUS, "RTL-SDR DLL not found. Legacy and RTL-TCP inputs remain available.");
+			UpdateLiveDiagnostics(hDlg);
 			return TRUE;
 
 		case WM_COMMAND:
@@ -1666,6 +1972,22 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
 					EnableRtlControls(hDlg, static_cast<int>(SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_GETCURSEL, 0, 0)));
 					return TRUE;
 
+				case IDC_RTL_RECEIVER_PACKAGE:
+					if (HIWORD(wParam) == CBN_SELCHANGE) RefreshReceiverDevices(hDlg);
+					return TRUE;
+
+				case IDC_RTL_RECEIVER_ADD:
+					AddReceiverPackage(hDlg);
+					return TRUE;
+
+				case IDC_RTL_RECEIVER_FOLDER:
+				{
+					const std::string folder = pdw::signal::GetReceiverRootDirectory();
+					SHCreateDirectoryExA(hDlg, folder.c_str(), NULL);
+					ShellExecuteA(hDlg, "open", folder.c_str(), NULL, NULL, SW_SHOWNORMAL);
+					return TRUE;
+				}
+
 				case IDC_RTL_TEST:
 				{
 					const int source = static_cast<int>(SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_GETCURSEL, 0, 0));
@@ -1682,6 +2004,14 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
 					SignalSourceTestSink sink;
 					if (source == AUDIO_SOURCE_RTL_SDR)
 					{
+						const pdw::signal::ReceiverPackage* package = GetSelectedReceiverPackage(hDlg);
+						if (!package || !package->compatible)
+						{
+							SetDlgItemText(hDlg, IDC_RTL_STATUS,
+								package ? package->status.c_str() : "Select a compatible receiver package first.");
+							return TRUE;
+						}
+						config.receiverLibraryPath = package->libraryPath;
 						pdw::signal::RtlSdrSource test;
 						if (test.Start(config, static_cast<unsigned int>(deviceIndex), &sink))
 						{
@@ -1753,6 +2083,10 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
 					UpdateDiagnosticControls(hDlg);
 					return TRUE;
 
+				case IDC_SIGNAL_CALIBRATE:
+					CalibrateReplayRecording(hDlg);
+					return TRUE;
+
 				case IDOK:
 				{
 					const int source = static_cast<int>(SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_GETCURSEL, 0, 0));
@@ -1760,9 +2094,7 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
 					int deviceIndex = Profile.rtlDeviceIndex;
 					if (source != AUDIO_SOURCE_LOCAL && !ReadRtlDialog(hDlg, config, deviceIndex)) return TRUE;
 
-					const int previousSource = Profile.audioSource;
-					const int previousAudioEnabled = Profile.audioEnabled;
-					const int previousComEnabled = Profile.comPortEnabled;
+					const PROFILE previousProfile = Profile;
 					if (bCapturing) Stop_Capturing();
 					if (source != AUDIO_SOURCE_LOCAL) UnloadDriver();
 					Profile.audioSource = source;
@@ -1778,19 +2110,24 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
 						Profile.rtlAudioSampleRate = config.audioSampleRate;
 						Profile.rtlGainTenthsDb = config.gainTenthsDb;
 						Profile.rtlFrequencyCorrectionPpm = config.frequencyCorrectionPpm;
+						Profile.rtlBandwidthHz = static_cast<int>(config.nfmBandwidthHz);
 						Profile.rtlAutomaticGain = config.automaticGain ? 1 : 0;
 						Profile.rtlDeviceIndex = deviceIndex;
+						if (source == AUDIO_SOURCE_RTL_SDR)
+						{
+							const std::string receiverId = SelectedReceiverId(hDlg);
+							strncpy(Profile.rtlReceiverId, receiverId.c_str(), sizeof(Profile.rtlReceiverId)-1);
+							Profile.rtlReceiverId[sizeof(Profile.rtlReceiverId)-1] = '\0';
+						}
 					}
 
 					bool started = true;
 					if (Profile.audioEnabled) started = Start_Capturing() != FALSE;
 					if (!started)
 					{
-						Profile.audioSource = previousSource;
-						Profile.audioEnabled = previousAudioEnabled;
-						Profile.comPortEnabled = previousComEnabled;
-						if (previousComEnabled) LoadDriver();
-						else if (previousAudioEnabled) Start_Capturing();
+						Profile = previousProfile;
+						if (Profile.comPortEnabled) LoadDriver();
+						else if (Profile.audioEnabled) Start_Capturing();
 						return TRUE;
 					}
 					SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC)NULL);
@@ -1809,9 +2146,23 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
 			EndDialog(hDlg, FALSE);
 			return TRUE;
 
+		case WM_NCDESTROY:
+			delete GetReceiverDialogState(hDlg);
+			SetWindowLongPtr(hDlg, GWLP_USERDATA, 0);
+			return FALSE;
+
 		case WM_TIMER:
 			UpdateDiagnosticControls(hDlg);
+			UpdateLiveDiagnostics(hDlg);
 			return TRUE;
+
+		case WM_DRAWITEM:
+			if (wParam == IDC_SIGNAL_WAVEFORM || wParam == IDC_SIGNAL_QUALITY_HISTORY)
+			{
+				DrawSignalDiagnosticControl(reinterpret_cast<const DRAWITEMSTRUCT*>(lParam));
+				return TRUE;
+			}
+			break;
 
 		case WM_DESTROY:
 			KillTimer(hDlg, 1);

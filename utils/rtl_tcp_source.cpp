@@ -57,21 +57,28 @@ bool SendCommand(SOCKET socketValue, unsigned char command, std::uint32_t value)
 RtlTcpConfig::RtlTcpConfig()
 	: host("127.0.0.1"), port(1234), frequencyHz(148000000),
 	  sampleRate(1024000), audioSampleRate(48000), gainTenthsDb(0),
-	  frequencyCorrectionPpm(0), automaticGain(true)
+	  frequencyCorrectionPpm(0), nfmBandwidthHz(12000), automaticGain(true)
 {
 }
 
 RtlFmDemodulator::RtlFmDemodulator(std::uint32_t iqSampleRate,
-	std::uint32_t audioSampleRate)
+	std::uint32_t audioSampleRate, std::uint32_t nfmBandwidthHz)
 {
-	Configure(iqSampleRate, audioSampleRate);
+	Configure(iqSampleRate, audioSampleRate, nfmBandwidthHz);
 }
 
-void RtlFmDemodulator::Configure(std::uint32_t iqSampleRate, std::uint32_t audioSampleRate)
+void RtlFmDemodulator::Configure(std::uint32_t iqSampleRate, std::uint32_t audioSampleRate,
+	std::uint32_t nfmBandwidthHz)
 {
 	iqSampleRate_ = iqSampleRate ? iqSampleRate : 1024000;
 	audioSampleRate_ = audioSampleRate && audioSampleRate <= iqSampleRate_
 		? audioSampleRate : 48000;
+	nfmBandwidthHz_ = (std::max)(static_cast<std::uint32_t>(5000),
+		(std::min)(static_cast<std::uint32_t>(25000), nfmBandwidthHz));
+	const float cutoff = (std::min)(static_cast<float>(nfmBandwidthHz_),
+		static_cast<float>(iqSampleRate_) * 0.45f);
+	lowPassAlpha_ = 1.0f - std::exp(-2.0f * 3.14159265358979323846f * cutoff /
+		static_cast<float>(iqSampleRate_));
 	Reset();
 }
 
@@ -83,6 +90,7 @@ void RtlFmDemodulator::Reset()
 	accumulator_ = 0.0f;
 	accumulatorCount_ = 0;
 	havePrevious_ = false;
+	lowPassState_ = 0.0f;
 }
 
 void RtlFmDemodulator::ProcessUnsignedIq(const unsigned char* iqBytes,
@@ -101,7 +109,8 @@ void RtlFmDemodulator::ProcessUnsignedIq(const unsigned char* iqBytes,
 			const float cross = previousI_ * currentQ - previousQ_ * currentI;
 			const float dot = previousI_ * currentI + previousQ_ * currentQ;
 			const float discriminator = static_cast<float>(std::atan2(cross, dot) / 3.14159265358979323846);
-			accumulator_ += discriminator;
+			lowPassState_ += lowPassAlpha_ * (discriminator - lowPassState_);
+			accumulator_ += lowPassState_;
 			accumulatorCount_++;
 			resamplePhase_ += audioSampleRate_;
 			if (resamplePhase_ >= iqSampleRate_)
@@ -302,7 +311,8 @@ bool RtlTcpSource::ConnectAndReceive()
 
 	SetState(RTL_TCP_RUNNING, NULL);
 	SetEvent(readyEvent_);
-	RtlFmDemodulator demodulator(config_.sampleRate, config_.audioSampleRate);
+	RtlFmDemodulator demodulator(config_.sampleRate, config_.audioSampleRate,
+		config_.nfmBandwidthHz);
 	std::vector<unsigned char> iqBytes(32768);
 	std::vector<float> audio;
 	bool discontinuity = true;
@@ -334,6 +344,7 @@ bool RtlTcpSource::ConnectAndReceive()
 namespace
 {
 	typedef int (__cdecl *RtlOpenFunction)(void**, std::uint32_t);
+	typedef std::uint32_t (__cdecl *RtlDeviceCountFunction)();
 	typedef int (__cdecl *RtlCloseFunction)(void*);
 	typedef int (__cdecl *RtlSetUnsignedFunction)(void*, std::uint32_t);
 	typedef int (__cdecl *RtlSetIntegerFunction)(void*, int);
@@ -341,8 +352,16 @@ namespace
 		void*, std::uint32_t, std::uint32_t);
 	typedef int (__cdecl *RtlCancelAsyncFunction)(void*);
 
-	HMODULE LoadRtlLibrary()
+	HMODULE LoadRtlLibrary(const std::string& configuredPath)
 	{
+		if (!configuredPath.empty())
+		{
+			HMODULE configured = LoadLibraryExA(configuredPath.c_str(), NULL,
+				LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+			if (!configured && GetLastError() == ERROR_INVALID_PARAMETER)
+				configured = LoadLibraryExA(configuredPath.c_str(), NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+			return configured;
+		}
 		const char* names[] = { "rtlsdr.dll", "librtlsdr.dll" };
 		for (std::size_t index = 0; index < sizeof(names) / sizeof(names[0]); ++index)
 		{
@@ -375,7 +394,7 @@ bool RtlSdrSource::Start(const RtlTcpConfig& config, unsigned int deviceIndex, A
 	config_ = config;
 	deviceIndex_ = deviceIndex;
 	sink_ = sink;
-	demodulator_.Configure(config.sampleRate, config.audioSampleRate);
+	demodulator_.Configure(config.sampleRate, config.audioSampleRate, config.nfmBandwidthHz);
 	stopEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	readyEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (!stopEvent_ || !readyEvent_)
@@ -464,7 +483,7 @@ void __cdecl RtlSdrSource::ReadCallback(unsigned char* buffer, std::uint32_t len
 
 DWORD RtlSdrSource::DeviceThread()
 {
-	library_ = LoadRtlLibrary();
+	library_ = LoadRtlLibrary(config_.receiverLibraryPath);
 	if (!library_)
 	{
 		SetState(RTL_TCP_FAILED, "Compatible rtlsdr.dll or librtlsdr.dll was not found.");
@@ -474,6 +493,7 @@ DWORD RtlSdrSource::DeviceThread()
 
 #define PDW_RTL_FUNCTION(type, name) reinterpret_cast<type>(GetProcAddress(library_, name))
 	RtlOpenFunction openDevice = PDW_RTL_FUNCTION(RtlOpenFunction, "rtlsdr_open");
+	RtlDeviceCountFunction getDeviceCount = PDW_RTL_FUNCTION(RtlDeviceCountFunction, "rtlsdr_get_device_count");
 	RtlCloseFunction closeDevice = PDW_RTL_FUNCTION(RtlCloseFunction, "rtlsdr_close");
 	RtlSetUnsignedFunction setFrequency = PDW_RTL_FUNCTION(RtlSetUnsignedFunction, "rtlsdr_set_center_freq");
 	RtlSetUnsignedFunction setSampleRate = PDW_RTL_FUNCTION(RtlSetUnsignedFunction, "rtlsdr_set_sample_rate");
@@ -485,7 +505,7 @@ DWORD RtlSdrSource::DeviceThread()
 	RtlCancelAsyncFunction cancelAsync = PDW_RTL_FUNCTION(RtlCancelAsyncFunction, "rtlsdr_cancel_async");
 #undef PDW_RTL_FUNCTION
 
-	if (!openDevice || !closeDevice || !setFrequency || !setSampleRate || !setGainMode ||
+	if (!getDeviceCount || !openDevice || !closeDevice || !setFrequency || !setSampleRate || !setGainMode ||
 		!setGain || !setCorrection || !resetBuffer || !readAsync || !cancelAsync)
 	{
 		SetState(RTL_TCP_FAILED, "RTL-SDR DLL is missing required API functions.");
@@ -494,9 +514,21 @@ DWORD RtlSdrSource::DeviceThread()
 		library_ = NULL;
 		return 1;
 	}
+	const std::uint32_t deviceCount = getDeviceCount();
+	if (deviceCount == 0 || deviceIndex_ >= deviceCount)
+	{
+		SetState(RTL_TCP_FAILED, deviceCount == 0 ?
+			"No compatible RTL-SDR USB receiver was detected. Connect it and install WinUSB for that receiver if required." :
+			"The selected RTL-SDR USB device index is not available. Choose a connected receiver from the list.");
+		SetEvent(readyEvent_);
+		FreeLibrary(library_);
+		library_ = NULL;
+		return 1;
+	}
 
 	void* device = NULL;
 	int result = openDevice(&device, deviceIndex_);
+	const bool deviceOpened = result == 0 && device != NULL;
 	if (result == 0) result = setSampleRate(device, config_.sampleRate);
 	if (result == 0) result = setFrequency(device, config_.frequencyHz);
 	if (result == 0) result = setCorrection(device, config_.frequencyCorrectionPpm);
@@ -506,7 +538,14 @@ DWORD RtlSdrSource::DeviceThread()
 	if (result != 0)
 	{
 		if (device) closeDevice(device);
-		SetState(RTL_TCP_FAILED, "RTL-SDR device could not be opened or configured.");
+		char configurationError[256];
+		if (deviceOpened)
+			snprintf(configurationError, sizeof(configurationError),
+				"RTL-SDR receiver opened but rejected a tuner setting (error %d). Check frequency, IQ rate, gain and PPM.", result);
+		else
+			snprintf(configurationError, sizeof(configurationError),
+				"RTL-SDR receiver could not be opened (error %d). Check its WinUSB driver and close other SDR programs using it.", result);
+		SetState(RTL_TCP_FAILED, configurationError);
 		SetEvent(readyEvent_);
 		FreeLibrary(library_);
 		library_ = NULL;
@@ -532,15 +571,16 @@ DWORD RtlSdrSource::DeviceThread()
 	return 0;
 }
 
-bool IsRtlSdrLibraryAvailable(std::string* loadedPath)
+bool IsRtlSdrLibraryAvailable(const std::string& libraryPath, std::string* loadedPath)
 {
-	HMODULE library = LoadRtlLibrary();
+	HMODULE library = LoadRtlLibrary(libraryPath);
 	if (library)
 	{
 		const bool compatible = GetProcAddress(library, "rtlsdr_get_device_count") != NULL &&
 			GetProcAddress(library, "rtlsdr_open") != NULL &&
 			GetProcAddress(library, "rtlsdr_read_async") != NULL;
-		if (compatible && loadedPath) *loadedPath = "RTL-SDR application DLL";
+		if (compatible && loadedPath) *loadedPath = libraryPath.empty() ?
+			"RTL-SDR application DLL" : libraryPath;
 		FreeLibrary(library);
 		if (compatible) return true;
 	}

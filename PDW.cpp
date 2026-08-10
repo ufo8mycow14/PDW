@@ -688,8 +688,10 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.rtlAudioSampleRate	= 48000;
 	Profile.rtlGainTenthsDb		= 0;
 	Profile.rtlFrequencyCorrectionPpm = 0;
+	Profile.rtlBandwidthHz		= 12000;
 	Profile.rtlAutomaticGain	= 1;
 	Profile.rtlDeviceIndex		= 0;
+	strcpy(Profile.rtlReceiverId, "rtl-sdr-standard");
 	memset(Profile.audioThreshold, 0, sizeof(Profile.audioThreshold));
 	memset(Profile.audioResync, 0, sizeof(Profile.audioResync));
 	memset(Profile.audioCentering, 0, sizeof(Profile.audioCentering));
@@ -9746,8 +9748,10 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->rtlAudioSampleRate		= (unsigned int) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlAudioSampleRate"), pProfile->rtlAudioSampleRate, lpszIniPathName);
 	pProfile->rtlGainTenthsDb			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlGainTenthsDb"), pProfile->rtlGainTenthsDb, lpszIniPathName);
 	pProfile->rtlFrequencyCorrectionPpm = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlFrequencyCorrectionPpm"), pProfile->rtlFrequencyCorrectionPpm, lpszIniPathName);
+	pProfile->rtlBandwidthHz			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlBandwidthHz"), pProfile->rtlBandwidthHz, lpszIniPathName);
 	pProfile->rtlAutomaticGain			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlAutomaticGain"), pProfile->rtlAutomaticGain, lpszIniPathName);
 	pProfile->rtlDeviceIndex			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlDeviceIndex"), pProfile->rtlDeviceIndex, lpszIniPathName);
+	GetPrivateProfileString(lpszAppTitle, TEXT("RtlReceiverId"), "rtl-sdr-standard", pProfile->rtlReceiverId, sizeof(pProfile->rtlReceiverId), lpszIniPathName);
 	pProfile->audioThreshold[INDEX512]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Threshold512"), pProfile->audioThreshold[INDEX512], lpszIniPathName);
 	pProfile->audioThreshold[INDEX1200]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Threshold1200"), pProfile->audioThreshold[INDEX1200], lpszIniPathName);
 	pProfile->audioThreshold[INDEX1600]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Threshold1600"), pProfile->audioThreshold[INDEX1600], lpszIniPathName);
@@ -9770,6 +9774,8 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	if (pProfile->rtlAudioSampleRate < 8000 || pProfile->rtlAudioSampleRate > 192000 ||
 		pProfile->rtlAudioSampleRate > pProfile->rtlSampleRate) pProfile->rtlAudioSampleRate = 48000;
 	if (pProfile->rtlDeviceIndex < 0) pProfile->rtlDeviceIndex = 0;
+	if (pProfile->rtlBandwidthHz < 5000 || pProfile->rtlBandwidthHz > 25000) pProfile->rtlBandwidthHz = 12000;
+	if (!pProfile->rtlReceiverId[0]) strcpy(pProfile->rtlReceiverId, "rtl-sdr-standard");
 	for (int audioIndex = 0; audioIndex < AUDIO_CUSTOM_RATE_COUNT; audioIndex++)
 	{
 		if (pProfile->audioThreshold[audioIndex] < 0) pProfile->audioThreshold[audioIndex] = 0;
@@ -10295,8 +10301,10 @@ void WriteSettings()
 		fprintf(pFile, "RtlAudioSampleRate=%u\n",		Profile.rtlAudioSampleRate);
 		fprintf(pFile, "RtlGainTenthsDb=%i\n",		Profile.rtlGainTenthsDb);
 		fprintf(pFile, "RtlFrequencyCorrectionPpm=%i\n", Profile.rtlFrequencyCorrectionPpm);
+		fprintf(pFile, "RtlBandwidthHz=%i\n",			Profile.rtlBandwidthHz);
 		fprintf(pFile, "RtlAutomaticGain=%i\n",		Profile.rtlAutomaticGain);
 		fprintf(pFile, "RtlDeviceIndex=%i\n",			Profile.rtlDeviceIndex);
+		fprintf(pFile, "RtlReceiverId=%s\n",			Profile.rtlReceiverId);
 		fprintf(pFile, "Threshold512=%i\n",				Profile.audioThreshold[INDEX512]);
 		fprintf(pFile, "Threshold1200=%i\n",			Profile.audioThreshold[INDEX1200]);
 		fprintf(pFile, "Threshold1600=%i\n",			Profile.audioThreshold[INDEX1600]);

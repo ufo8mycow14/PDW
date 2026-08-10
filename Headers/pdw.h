@@ -14,6 +14,7 @@
 #define PDW_WINDOW_TITLE_LEN 63
 #define AUDIO_CUSTOM_RATE_COUNT 4
 #define RTL_TCP_HOST_LEN 255
+#define RTL_RECEIVER_ID_LEN 63
 #define PUBLISH_PATH_LEN 511
 #define PUBLISH_URL_LEN 1023
 #define PUBLISH_ALIAS_LEN 127
@@ -283,8 +284,10 @@ typedef struct
 	unsigned int rtlAudioSampleRate;
 	int rtlGainTenthsDb;
 	int rtlFrequencyCorrectionPpm;
+	int rtlBandwidthHz;
 	int rtlAutomaticGain;
 	int rtlDeviceIndex;
+	char rtlReceiverId[RTL_RECEIVER_ID_LEN+1];
 	int audioThreshold[AUDIO_CUSTOM_RATE_COUNT];
 	int audioResync[AUDIO_CUSTOM_RATE_COUNT];
 	int audioCentering[AUDIO_CUSTOM_RATE_COUNT];

@@ -23,8 +23,10 @@ set( PDW_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/audio_signal_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/decoder_candidate_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/signal_recording_core.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/signal_diagnostics.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/wasapi_capture.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/rtl_tcp_source.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/receiver_catalog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/publishing.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/publishing_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/Debug.cpp

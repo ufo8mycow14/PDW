@@ -27,8 +27,9 @@ jobs:
       - name: Configure CMake (Win32 / Release)
         shell: pwsh
         run: |
+          $generator = .\scripts\resolve-cmake-generator.ps1
           cmake -S . -B build `
-            -G "Visual Studio 17 2022" `
+            -G "$generator" `
             -A Win32 `
             -DCMAKE_BUILD_TYPE=Release `
             -DPDW_DEPENDENCY_ROOT="${{ github.workspace }}\out\dependencies\x86"
@@ -36,7 +37,7 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          cmake --build build --config Release --target PDW PDWNotificationTests PDWAudioSignalTests PDWDecoderCandidateTests PDWSignalRecordingTests PDWWasapiCaptureTests PDWRtlTcpTests PDWPublishingCoreTests
+          cmake --build build --config Release --target PDW PDWNotificationTests PDWAudioSignalTests PDWDecoderCandidateTests PDWSignalRecordingTests PDWSignalDiagnosticsTests PDWWasapiCaptureTests PDWRtlTcpTests PDWReceiverCatalogTests PDWPublishingCoreTests
 
       - name: Test
         shell: pwsh
@@ -45,9 +46,9 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-Win32-Release
+          name: PDW-v4.1.0-Beta-Win32
           path: |
-            build\Release\PDW.exe
+            build\Release\PDW v4.1.0 Beta.exe
             License
             THIRD_PARTY_NOTICES.md
             out\dependencies\x86\pdw-dependencies.lock

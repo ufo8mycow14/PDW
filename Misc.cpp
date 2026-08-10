@@ -2710,6 +2710,7 @@ void CountBiterrors(int errors)
 		noerrors=0;
 	}
 	dRX_Quality = 100 - ((double)(nErrors*100)/nErrorChecks);
+	SignalDiagnosticsRecordDecodeResult(errors);
 }
 
 

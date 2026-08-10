@@ -38,6 +38,7 @@ bool SignalDiagnosticStartReplay(const char *path, char *error, size_t errorSize
 void SignalDiagnosticStopReplay(void);
 bool SignalDiagnosticIsRecording(void);
 bool SignalDiagnosticIsReplaying(void);
+void SignalDiagnosticsRecordDecodeResult(int errors);
 
 #endif
 

@@ -112,6 +112,8 @@ add_executable(PDW WIN32
   ${PDW_SRCS}
 )
 
+set_target_properties(PDW PROPERTIES OUTPUT_NAME "PDW v4.1.0 Beta")
+
 target_include_directories(PDW PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/Headers"
@@ -148,6 +150,18 @@ target_link_libraries(PDW PRIVATE
 	Mmdevapi.lib
 	Uuid.lib
 )
+
+# Receiver support is deliberately data-driven and optional. Copying the
+# catalogue beside each build keeps native radio DLLs together without adding
+# a load-time dependency that could prevent legacy PDW inputs from starting.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Receivers")
+	add_custom_command(TARGET PDW POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${CMAKE_CURRENT_SOURCE_DIR}/Receivers"
+			"$<TARGET_FILE_DIR:PDW>/Receivers"
+		COMMENT "Copying optional receiver catalogue"
+	)
+endif()
 
 include(CTest)
 
@@ -209,6 +223,21 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME signal-recording-core COMMAND PDWSignalRecordingTests)
 
+	add_executable(PDWSignalDiagnosticsTests
+		tests/signal_diagnostics_tests.cpp
+		utils/audio_signal_core.cpp
+		utils/signal_diagnostics.cpp
+	)
+	target_include_directories(PDWSignalDiagnosticsTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWSignalDiagnosticsTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME signal-diagnostics-core COMMAND PDWSignalDiagnosticsTests)
+
 	add_executable(PDWWasapiCaptureTests
 		tests/wasapi_capture_tests.cpp
 		utils/audio_signal_core.cpp
@@ -242,6 +271,28 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(PDWRtlTcpTests PRIVATE Ws2_32.lib)
 	add_test(NAME rtl-tcp-core COMMAND PDWRtlTcpTests)
+
+	add_library(PDWMockRtlSdr SHARED
+		tests/mock_rtlsdr.cpp
+	)
+	set_target_properties(PDWMockRtlSdr PROPERTIES PREFIX "")
+
+	add_executable(PDWReceiverCatalogTests
+		tests/receiver_catalog_tests.cpp
+		utils/receiver_catalog.cpp
+	)
+	add_dependencies(PDWReceiverCatalogTests PDWMockRtlSdr)
+	target_include_directories(PDWReceiverCatalogTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_definitions(PDWReceiverCatalogTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+	target_compile_options(PDWReceiverCatalogTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWReceiverCatalogTests PRIVATE Shell32.lib)
+	add_test(NAME receiver-catalog COMMAND PDWReceiverCatalogTests $<TARGET_FILE:PDWMockRtlSdr>)
 
 	add_executable(PDWPublishingCoreTests
 		tests/publishing_core_tests.cpp

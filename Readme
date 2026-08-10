@@ -12,7 +12,7 @@ preserved.
 
 ## Development status
 
-Version 4.0.0 Beta is the first application-focused modernization of the
+Version 4.1.0 Beta is the first application-focused modernization of the
 open-source release. Decoder behaviour is intentionally
 being preserved while the Windows build, safety, configuration, and interface
 are updated in small, testable changes. See [CHANGELOG.md](CHANGELOG.md) and
@@ -41,7 +41,8 @@ ctest --test-dir build -C Release --output-on-failure
 The dependency script downloads official source archives, verifies their
 SHA-256 checksums, and builds the pinned Win32 static dependencies under
 `out\dependencies\x86`. It currently pins OpenSSL 3.5.7, curl 8.21.0, and
-libssh2 1.11.1. The executable is written to `build\Release\PDW.exe`. GitHub
+libssh2 1.11.1. The executable is written to
+`build\Release\PDW v4.1.0 Beta.exe`. GitHub
 Actions performs the same dependency and Win32 Release build for every push
 and pull request to `master`.
 
@@ -56,7 +57,7 @@ WindowTitle=North Dispatch
 ```
 
 After PDW restarts, the main window and system-tray tooltip display
-`North Dispatch - PDW v4.0.0 Beta`. The value is retained when PDW saves its
+`North Dispatch - PDW v4.1.0 Beta`. The value is retained when PDW saves its
 settings. PDW still permits only one running instance per application folder;
 use a separate folder and configuration for each concurrent instance.
 
@@ -103,14 +104,22 @@ server hardening, privacy behaviour, and ntfy/Pushover phone-test steps.
 Open **Settings > Decoder and input > Radio and replay**. The original local
 audio/serial choice remains available and still tries WinMM first; WASAPI is an
 automatic fallback when that legacy audio format cannot be opened. The same
-dialog can select a reconnecting `rtl_tcp` receiver or an optional RTL-SDR USB
-device when a compatible `rtlsdr.dll` is available beside PDW.
+dialog can select a reconnecting `rtl_tcp` receiver or direct RTL-SDR USB.
+The distribution keeps its standard RTL2832U/V3/V4/V4L support files together
+under `Receivers`, lists connected devices, and can import another compatible
+32-bit receiver DLL package without removing the side-by-side legacy fallback.
 
 Use **Record** to save the normalized signal as 16-bit mono WAV or SigMF
 `rf32_le`. Use **Replay** to send a WAV or SigMF recording through PDW's normal
 protocol routines. Replay temporarily suspends the current live source and
 restores that exact audio, radio, or serial source when replay finishes or is
 stopped. Existing `.rec` recording/playback remains unchanged.
+
+The dialog also provides adjustable NFM bandwidth, live waveform and quality
+history, signal/noise/clipping/eye metrics, FLEX phase error totals, and a
+recording calibration action. Calibration compares all custom threshold,
+centering and resync combinations and applies a suggestion only after user
+confirmation; the original receiver presets are retained.
 
 ## Publish decoded messages to a website or webhook
 

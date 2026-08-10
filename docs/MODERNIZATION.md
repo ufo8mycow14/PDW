@@ -7,7 +7,7 @@ boundary at a time.
 
 ## Non-negotiable compatibility boundaries
 
-- Ship one `PDW.exe`, one settings experience, and one consolidated message
+- Ship one `PDW v4.1.0 Beta.exe`, one settings experience, and one consolidated message
   stream. Do not create separate legacy/enhanced editions or helper services.
 - Do not alter protocol algorithms without representative signal recordings
   and before/after decoder-output comparisons.
@@ -71,7 +71,7 @@ Current foundation:
 - Replace obsolete WinHelp integration with maintained documentation.
 - Improve configuration discoverability while retaining INI compatibility.
 
-Implemented in 4.0.0 Beta: event-driven WASAPI fallback and recovery, a shared
+Implemented in 4.1.0 Beta: event-driven WASAPI fallback and recovery, a shared
 normalized sample sink for modern inputs, actual-device smoke coverage, and a
 visually verified Radio and Signal Sources dialog. WinMM remains first choice.
 
@@ -109,10 +109,15 @@ representative licensed/redacted fixtures rather than being enabled on faith.
   remain available.
 - Add WAV and SigMF capture/replay for reproducible diagnostics and testing.
 
-Implemented in 4.0.0 Beta: reconnecting `rtl_tcp`, optional dynamically loaded
-RTL-SDR USB input, normalized WAV/SigMF recording and replay, automatic prior
-input restoration, and no mandatory radio DLL. All enter the same in-process
-decoder boundary; no helper service or separate PDW edition is created.
+Implemented in 4.1.0 Beta: reconnecting `rtl_tcp`, a dynamically loaded
+receiver catalogue, bundled standard RTL2832U/V3/V4/V4L support, connected
+device enumeration, validated custom 32-bit librtlsdr package import,
+normalized WAV/SigMF recording and replay, adjustable NFM bandwidth, live
+waveform/quality/error diagnostics, and recording-based calibration across
+all 1,000 legacy custom slicer combinations. Prior input is restored
+automatically and the default remains the legacy local source. All inputs enter
+the same in-process decoder boundary; no helper service or separate PDW edition
+is created.
 
 ## Phase 7: publishing and web integration
 
@@ -129,7 +134,7 @@ decoder boundary; no helper service or separate PDW edition is created.
 - Store credentials in Windows Credential Manager; support HTTPS validation,
   bearer/API tokens, HMAC signing, batching, and rate limiting.
 
-Implemented in 4.0.0 Beta: opt-in filtered/all-message profiles, jurisdiction
+Implemented in 4.1.0 Beta: opt-in filtered/all-message profiles, jurisdiction
 acknowledgement, published-copy aliasing/address masking/message omission,
 responsive HTML plus JSON/JSONL/RSS/Atom, generic HTTPS JSON webhook delivery,
 Windows Credential Manager bearer/HMAC secrets, certificate verification,

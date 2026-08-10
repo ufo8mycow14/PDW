@@ -28,7 +28,9 @@ struct RtlTcpConfig
 	std::uint32_t audioSampleRate;
 	int gainTenthsDb;
 	int frequencyCorrectionPpm;
+	std::uint32_t nfmBandwidthHz;
 	bool automaticGain;
+	std::string receiverLibraryPath;
 
 	RtlTcpConfig();
 };
@@ -37,10 +39,12 @@ class RtlFmDemodulator
 {
 public:
 	RtlFmDemodulator(std::uint32_t iqSampleRate = 1024000,
-		std::uint32_t audioSampleRate = 48000);
+		std::uint32_t audioSampleRate = 48000,
+		std::uint32_t nfmBandwidthHz = 12000);
 
 	void Reset();
-	void Configure(std::uint32_t iqSampleRate, std::uint32_t audioSampleRate);
+	void Configure(std::uint32_t iqSampleRate, std::uint32_t audioSampleRate,
+		std::uint32_t nfmBandwidthHz = 12000);
 	void ProcessUnsignedIq(const unsigned char* iqBytes,
 		std::size_t byteCount,
 		std::vector<float>& audio);
@@ -54,6 +58,9 @@ private:
 	float accumulator_;
 	unsigned int accumulatorCount_;
 	bool havePrevious_;
+	std::uint32_t nfmBandwidthHz_;
+	float lowPassAlpha_;
+	float lowPassState_;
 };
 
 enum RtlTcpState
@@ -133,7 +140,8 @@ private:
 
 // Optional in-process support is loaded dynamically so absence of rtlsdr.dll
 // cannot prevent PDW or any legacy input from starting.
-bool IsRtlSdrLibraryAvailable(std::string* loadedPath = NULL);
+bool IsRtlSdrLibraryAvailable(const std::string& libraryPath = std::string(),
+	std::string* loadedPath = NULL);
 
 } // namespace signal
 } // namespace pdw

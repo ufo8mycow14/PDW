@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.0.0 Beta
+## 4.1.0 Beta
 
 Beta release.
 
@@ -27,7 +27,7 @@ Beta release.
 - A task-oriented six-menu layout, text toolbar, grouped Settings hub, and
   System/Light/Dark appearance modes.
 - Current Windows Common Controls styling and per-monitor DPI awareness.
-- Updated About metadata crediting Kieran O'Rourke for the v4.0.0 beta work.
+- Updated About metadata crediting Kieran O'Rourke for the v4.1.0 beta work.
 - A **Start PDW with Windows** setting. Automatic sign-in launches wait five
   seconds so Windows can finish loading audio devices and other services;
   manual launches remain immediate.
@@ -46,6 +46,14 @@ Beta release.
   pause/rate controls, and DeadLetter retention.
 - Synthetic signal, recording, radio-demodulation, candidate-consolidation,
   capture-conversion, and publishing-format tests.
+- A portable receiver catalogue with a bundled 32-bit RTL-SDR standard pack,
+  connected-device names, legacy side-by-side DLL fallback, safe custom
+  librtlsdr package import, and an optional WinUSB setup tool kept in the same
+  `Receivers` directory.
+- Adjustable 5-25 kHz NFM low-pass bandwidth for direct and RTL-TCP inputs.
+- Live waveform, level/noise/clipping/eye metrics, quality history, FLEX phase
+  error totals, and recording-based comparison of all 1,000 custom legacy
+  threshold/centering/resync combinations.
 
 ### Changed
 
@@ -80,6 +88,9 @@ Beta release.
   and all legacy protocol parsers remain available in the same executable.
 - Publishing and radio inputs are disabled or unselected by default. Publishing
   cannot be enabled without the operator's jurisdiction acknowledgement.
+- Receiver packages remain dynamically loaded only after selection. The
+  default source remains the legacy local input, and every legacy input preset
+  remains available after optional recording calibration.
 
 ## 3.2b01
 

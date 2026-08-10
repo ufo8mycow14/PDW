@@ -20,13 +20,32 @@ Official sources and license information:
 OpenSSL continues to provide TLS for PDW's existing SMTP code. The file
 transfer feature uses libcurl with Windows Schannel for FTPS and libssh2 with
 Windows CNG for SFTP. The dependency build is defined in
-`scripts/build-dependencies.ps1`; no prebuilt third-party binaries are checked
-into the repository.
+`scripts/build-dependencies.ps1`.
+
+## Optional receiver components
+
+Receiver components are separate optional programs/libraries kept below
+`Receivers`; they are not statically linked into `PDW v4.1.0 Beta.exe` and their absence
+cannot prevent legacy PDW inputs from starting.
+
+| Component | Version | SHA-256 distributed binary/archive | License |
+| --- | --- | --- | --- |
+| RTL-SDR Blog `rtlsdr.dll` (x86) | 1.4.0 | DLL `E14010C2A0DFDE1C85C13D761484509A600FEC4DE6CD2C026C0878DE11155A02`; release archive `7EF33F1304647F65E5E0FDE43637A73D54F076E91E651A3CECC4F55A17FD9815` | GNU GPL v2 |
+| Zadig | 2.9 (libwdi 1.5.1) | `4ECAA95DF3DA3621486A043AEF8B3050B8BAFE7C901402871E816229EF82039B` | GNU GPL v3 |
+
+The unmodified matching source archives and complete licence texts are kept
+beside each binary. Official sources:
+
+- RTL-SDR Blog: <https://github.com/rtlsdrblog/rtl-sdr-blog/releases/tag/V1.4.0>
+- Zadig/libwdi: <https://github.com/pbatard/libwdi/releases/tag/v1.5.1>
+
+Zadig changes Windows USB drivers and is never launched automatically by PDW.
+Users must verify the selected USB device before installing WinUSB.
 
 ## Optional external notification service
 
 The Apprise feature is an HTTPS client integration and does not link or package
-Apprise code in `PDW.exe`. The validated external deployment is Apprise API
+Apprise code in `PDW v4.1.0 Beta.exe`. The validated external deployment is Apprise API
 1.5.1 (MIT License) with Apprise 1.12.0 (BSD 2-Clause License). Operators host,
 secure, license, and update that service independently:
 
