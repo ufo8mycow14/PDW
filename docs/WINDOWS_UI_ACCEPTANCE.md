@@ -34,7 +34,7 @@ screenshots or issue reports.
 - The main command bar remains 54 pixels high with all six icon labels visible,
   while Pane 1 begins at pixel 55, on the first settled frame, after a display
   change, and through repeated restore/maximize cycles.
-- The merged General > Backup / Restore route keeps all 11 Settings
+- The merged General > Backup / Restore route keeps all 10 Settings
   destinations, opens an unclipped 769x440 dark dialog, disables Settings while
   modal, and restores Settings interaction when closed without changing data.
 
@@ -106,7 +106,7 @@ restore/maximize cycles. This closes the clipped-label/column-header overlap at
 
 10 August 2026 merged-backup regression: General > Backup / Restore rendered
 at 769x440 in the Windows-following dark palette with all explanatory text and
-actions visible. Native-window checks counted all 11 Settings destinations and
+actions visible. Native-window checks counted all 10 Settings destinations and
 confirmed correct modal disable/re-enable behavior. Export and restore were not
 run during this visual smoke; cryptographic round-trip and failure behavior are
 covered by the configuration-backup core suite.

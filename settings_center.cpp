@@ -65,8 +65,7 @@ namespace
 		{ "Signal & radio", "Select, test and diagnose the live signal source." },
 		{ "Filters", "Control which decoded messages are highlighted or routed." },
 		{ "Notifications", "Email, push notifications and Windows alerts." },
-		{ "Transfers & publishing", "Securely transfer files and publish approved output." },
-		{ "Data outputs", "Configure MQTT, databases, Telnet and other integrations." },
+		{ "Data outputs", "Transfer, publish, or route approved decoded output." },
 		{ "Health & diagnostics", "Check decoder statistics, diagnostics and delivery health." },
 		{ "About me", "PDW version, credits and help." }
 	};
@@ -89,8 +88,8 @@ namespace
 		{ PDW_SETTINGS_FILTERS, IDM_FILTEROPTIONS, "Filter options", "Set default matching, display and filter-file behaviour." },
 		{ PDW_SETTINGS_NOTIFICATIONS, IDM_APPRISE, "Push and Windows notifications", "Route filtered messages to Apprise or Windows notifications." },
 		{ PDW_SETTINGS_NOTIFICATIONS, IDM_MAIL, "Email", "Configure filtered-message email delivery." },
-		{ PDW_SETTINGS_TRANSFERS, IDM_FTP, "File transfer", "Continuously upload selected files using FTP, FTPS or SFTP." },
-		{ PDW_SETTINGS_TRANSFERS, IDM_PUBLISHING, "Publish to web", "Maintain approved feeds, web files and HTTPS webhooks." },
+		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_FTP, "File transfer", "Continuously upload selected files using FTP, FTPS or SFTP." },
+		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_PUBLISHING, "Publish to web", "Maintain approved feeds, web files and HTTPS webhooks." },
 		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_DATA_OUTPUTS, "Data outputs", "Configure privacy-aware MQTT, database and Telnet destinations." },
 		{ PDW_SETTINGS_HEALTH, IDM_OUTPUT_HEALTH, "Delivery health", "Review destination state, failures and pending alerts." },
 		{ PDW_SETTINGS_HEALTH, IDM_MONSTAT, "Decoder statistics", "Review message counts, errors and current decoder activity." },
@@ -563,11 +562,6 @@ namespace
 					left + Scale(4), top + Scale(12), left + s - Scale(4), top + Scale(12));
 				MoveToEx(dc, left + Scale(3), top + Scale(12), NULL); LineTo(dc, left + s - Scale(3), top + Scale(12));
 				MoveToEx(dc, left + Scale(7), top + Scale(16), NULL); LineTo(dc, left + Scale(11), top + Scale(16));
-				break;
-			case PDW_SETTINGS_TRANSFERS:
-				MoveToEx(dc, left + Scale(1), top + Scale(9), NULL); LineTo(dc, left + s - Scale(1), top + Scale(2));
-				LineTo(dc, left + Scale(12), top + s - Scale(1)); LineTo(dc, left + Scale(8), top + Scale(11));
-				LineTo(dc, left + Scale(1), top + Scale(9));
 				break;
 			case PDW_SETTINGS_DATA_OUTPUTS:
 				Ellipse(dc, left + Scale(2), top + Scale(2), left + s - Scale(2), top + Scale(7));
