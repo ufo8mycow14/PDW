@@ -23,6 +23,10 @@ while Win32 remains available for older receiver drivers and serial hardware.
   decoder, WinMM, serial, slicer, filter, or output path.
 - Centralized current executable naming and aligned product, resource,
   manifest, workflow artifact, branch, and package identity to PDW v4.6.0 Beta.
+- Removed obsolete VC6/VS2017 project state, generated resource caches, a
+  duplicate v3.1 runtime archive, unused source variants, and unreferenced
+  bitmaps. CMake is now the only maintained project definition for x64 and
+  Win32.
 
 ### Compatibility
 

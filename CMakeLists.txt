@@ -90,8 +90,6 @@ find_library(PDW_OPENSSL_SSL_LIBRARY NAMES libssl ssl
 find_library(PDW_OPENSSL_CRYPTO_LIBRARY NAMES libcrypto crypto
   PATHS "${PDW_DEPENDENCY_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
 
-list(APPEND PDW_INCLUDES resrc1.h)
-
 list(APPEND PDW_SRCS
   Flex.cpp
   Gfx.cpp

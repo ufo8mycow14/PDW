@@ -15,6 +15,8 @@ stay authoritative, and enhancements must be additive or fail independently.
 - Win32 executable: `out\build-win32\Release\PDW v4.6.0 Beta.exe`
 - x64 executable: `out\build-x64\Release\PDW v4.6.0 Beta.exe`
 - Windows file version: `4.6.0.0`
+- Maintained project definition: root `CMakeLists.txt` only
+- File-retention evidence: `docs\REPOSITORY_AUDIT.md`
 - Writable fork remote: `fork` (`ufo8mycow14/PDW`)
 - Authoritative upstream: `origin` (`Discriminator/PDW`)
 - Audit-only comparison remote: `spiral`; push is disabled
@@ -70,6 +72,14 @@ No wholesale source or UI merge was taken from Spiral. The current PDW menus,
 themes, receiver workflow, and dialog implementations remain the compatibility
 base. The approved 2026 command bar, modeless Settings Center, and live-input
 surface now provide the primary navigation over those retained commands.
+
+The repository file audit found no Visual Basic source. Obsolete VC6 and
+VS2017 project metadata, generated IDE/resource caches, the redundant v3.1
+runtime ZIP, four unused source/resource metadata files, and two unreferenced
+bitmaps were removed. The manual and licensed receiver/driver materials remain
+because current help, Win32 hardware support, or redistribution obligations use
+them. CMake now lists the complete maintained header and embedded GFX sets for
+both architectures. See `docs/REPOSITORY_AUDIT.md`.
 
 ## Approved 2026 Windows interface
 
@@ -130,9 +140,9 @@ Verified executable metadata:
 - file version: `4.6.0.0`;
 - product version: `4.6.0 Beta`;
 - Win32 PE machine: `0x014C`;
-- Win32 SHA-256: `60DC5C166A51D312C76435D5F032A5B0D21AC418A48B69E6FF6DE554FBC36D12`;
+- Win32 SHA-256: `B36C73F148E0681A385698ED750D741FD7E35562D6DAA496CE249F76169DB040`;
 - x64 PE machine: `0x8664`;
-- x64 SHA-256: `EE688513E7F61826DB1D93D817E0A3488C5A4D152D4AEE5C37B027F07068C0E8`.
+- x64 SHA-256: `AF8E899EE3F81135C2B493F3333508C916417F0028594EA90CAFDF564730F6A0`.
 
 Both executables created a responsive main window titled **PDW v4.6.0 Beta**
 when launched with the sanitized portable profile. Automated native-window
@@ -218,12 +228,13 @@ content, and non-empty INI secret fields.
 The prior v4.1 and v4.5 release folders are retained as rollback evidence and
 are not overwritten by the architecture-specific v4.6 packages.
 
-The clean v4.6 package audit verified 334 Win32 and 326 x64 manifest entries
-with zero missing, changed, or unlisted files. It found no private runtime
-artifacts and no non-empty INI secrets. The Win32 package retains the bundled
-x86 RTL-SDR DLL and legacy VxD assets; the x64 package contains neither. The
-Desktop test installation is a separate local state and is not automatically
-replaced by package generation or fork publication.
+The repository cleanup supersedes the earlier 334-entry Win32 and 326-entry
+x64 package manifests. Both packages must be regenerated from the committed
+audited tree before their new counts are recorded. The package rules still
+require zero missing, changed, unlisted, private-runtime, or non-empty-secret
+files; Win32 retains the bundled x86 RTL-SDR DLL and legacy VxD assets while
+x64 contains neither. The Desktop test installation is a separate local state
+and is not automatically replaced by package generation or fork publication.
 
 ## Desktop live-radio test installation
 

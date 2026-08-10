@@ -29,7 +29,8 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Delivery health | Content-free observer, dialog, history, and alerts complete at `682dfd2` | Runtime visual acceptance across themes and DPI |
 | Settings compatibility | Unknown INI keys, sections, comments, BOM, and line endings preserved at `98ff7ad` | Extend round-trip fixtures with future settings |
 | FLEX fragments | Additive non-group K/F/C alpha reassembly complete at `77e23bd`; original fragments remain authoritative | Recording-backed live acceptance; Group Mode remains legacy |
-| Release packaging | Clean v4.6 Win32 and x64 folders/ZIPs generated; 660 manifest entries independently audited with no mismatch, unlisted file, private runtime file, or INI secret | Retain prior packages as rollback evidence and repeat the audit for any release-candidate commit |
+| Repository hygiene | File-by-file x64/Win32 audit complete; obsolete VC6/VS2017 state, caches, duplicate archive, and unused code/assets removed; CMake is authoritative | Repeat the audit when adding native dependencies or release-only assets |
+| Release packaging | The prior package audit is superseded by the repository cleanup; architecture-aware generation and rejection rules remain implemented | Regenerate and independently audit Win32 and x64 packages from the committed cleanup tree |
 | x64 | Native Release build, 24 tests, metadata, manifest extraction, package audit, and UI smoke pass locally; receiver DLL architecture is validated before load | Complete PR CI and physical receiver acceptance while keeping Win32 available |
 
 ## Safe integration sequence
@@ -182,6 +183,8 @@ Priority: after regression coverage
   boundaries, while retaining Win32 for required legacy hardware.
 - Validate in-process receiver DLL architecture before load and keep `rtl_tcp`
   available as an architecture-neutral receiver path.
+- Keep `docs/REPOSITORY_AUDIT.md` aligned with the CMake targets and portable
+  package rules; do not restore generated IDE project/user files.
 
 ## Release gates
 

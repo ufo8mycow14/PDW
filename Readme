@@ -64,6 +64,12 @@ Configuration and decoder behaviour are shared between the builds. Native DLLs m
 
 Install Visual Studio 2022 Desktop development with C++, CMake, Perl and `tar`, then build the pinned dependencies and application for the required architecture:
 
+`CMakeLists.txt` is the only maintained project definition. Open the repository
+as a CMake project in Visual Studio; obsolete VC6 and hand-maintained VS2017
+solution files are deliberately not retained. See
+[`docs/REPOSITORY_AUDIT.md`](docs/REPOSITORY_AUDIT.md) for the file-by-file
+x64/Win32 boundary.
+
 ```powershell
 .\scripts\build-dependencies.ps1 -Architecture x64
 cmake -S . -B out\build-x64 -A x64
