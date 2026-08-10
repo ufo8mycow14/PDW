@@ -92,7 +92,7 @@ Verified executable metadata:
 - filename: `PDW v4.5.0 Beta.exe`;
 - file version: `4.5.0.0`;
 - product version: `4.5.0 Beta`;
-- SHA-256: `C225F206F298D29FA25E8E0B0CD0DF6C964E6048AECC39C410E8B3505296B300`.
+- SHA-256: `D947E13539EF8748737B5CA09561FC89506CD4348ED080F9AFEBEC5DEFE2ABC1`.
 
 A real startup smoke test created a main window titled **PDW v4.5.0 Beta**.
 The app remained running until the exact smoke-test process was stopped. The
