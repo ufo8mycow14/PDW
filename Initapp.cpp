@@ -130,6 +130,7 @@ BOOL NEAR InitApplication(HINSTANCE hInstance)
 	if (!FileExists(szWavePathName)) CreateDirectory(szWavePathName, NULL);
 
 	GetPrivateProfileSettings(szShortAppName, szIniPathName, &Profile);
+	BuildPdwWindowTitle(szAppName, sizeof(szAppName));
 
 	// After getting user profile settings get all drawing objects(gfx.cpp)
 	if (!(Get_Drawing_Objects())) return(FALSE);

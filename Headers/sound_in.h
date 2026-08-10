@@ -11,6 +11,7 @@
 #define INDEX3200	4
 
 extern bool bCapturing;
+extern bool bUsingWasapiFallback;
 extern char high_audio;
 extern char low_audio;
 extern long BaudRate;
@@ -30,6 +31,13 @@ void ERMES_To_Bits  (char *lpAudioBuffer, long LenAudioBuffer); // PH: test
 void Reset_ATB(void);
 void SetAudioConfig(int sac_type);
 int Get_Percent(int x,int percent);
+BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+bool SignalDiagnosticStartRecording(const char *path, char *error, size_t errorSize);
+bool SignalDiagnosticStopRecording(char *error, size_t errorSize);
+bool SignalDiagnosticStartReplay(const char *path, char *error, size_t errorSize);
+void SignalDiagnosticStopReplay(void);
+bool SignalDiagnosticIsRecording(void);
+bool SignalDiagnosticIsReplaying(void);
 
 #endif
 

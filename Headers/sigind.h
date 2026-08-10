@@ -2,6 +2,7 @@
 #define SIGIND_H
 
 void DrawSigInd(HWND hwnd);
+void DrawToolbarIndicators(HDC hdc);
 void FreeSigInd(void);
 BOOL LoadSigInd(HINSTANCE hThisInstance);
 void UpdateSigInd(int direction_flg);

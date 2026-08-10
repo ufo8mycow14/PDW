@@ -15,8 +15,9 @@
 #include "headers\language.h"
 #include "headers\sound_in.h"
 #include "headers\helper_funcs.h"
+#include "headers\notification.h"
+#include "headers\publishing.h"
 #include "utils\binary.h"
-#include "utils\smtp.h"
 
 #define FILTER_PARAM_LEN	500
 #define MAXIMUM_GROUPSIZE	1000
@@ -188,15 +189,15 @@ void display_show_char(PaneStruct *pane, char cin)
 	{
 		if (cin == 0)
 		{
-			message_buffer[iMessageIndex] = '·';
-			mobitex_buffer[iMessageIndex] = '·';
+			message_buffer[iMessageIndex] = 'Â·';
+			mobitex_buffer[iMessageIndex] = 'Â·';
 		}
 		else if ((cin > 0) && (cin < 32))
 		{
 			message_buffer[iMessageIndex] = cin+32;
 			mobitex_buffer[iMessageIndex] = cin;		// Keep original characters
 		}
-		else if ((cin > 126) && (cin != '»'))
+		else if ((cin > 126) && (cin != 'Â»'))
 		{
 			message_buffer[iMessageIndex] = ' ';
 			mobitex_buffer[iMessageIndex] = cin;		// Keep original characters
@@ -211,7 +212,7 @@ void display_show_char(PaneStruct *pane, char cin)
 	{
 		if (cin == '\n')
 		{
-			cin = '»';	// PH: Convert 'new line' to '»'
+			cin = 'Â»';	// PH: Convert 'new line' to 'Â»'
 		}
 		else if (cin > 127)
 		{
@@ -956,7 +957,7 @@ void ShowMessage()
 								}
 							}
 						}
-						else if (ch == '»')		// Check for linefeed character '»'
+						else if (ch == 'Â»')		// Check for linefeed character 'Â»'
 						{
 							if (Profile.Linefeed)
 							{
@@ -1314,19 +1315,21 @@ void ShowMessage()
 		memset(message_buffer, 0, sizeof(message_buffer));
 	}
 
-	if (Profile.SMTP)
-	{
-		SendMail(0, bMATCH, bMONITOR_ONLY,
-					bMATCH ? Profile.filters[iMatch].smtp : 0,	// if no iMatch, smtp=0
-					Current_MSG[MSG_CAPCODE],
-					Current_MSG[MSG_TIME],
-					Current_MSG[MSG_DATE],
-					Current_MSG[MSG_MODE],
-					Current_MSG[MSG_TYPE],
-					Current_MSG[MSG_BITRATE],
-					iMOBITEX ? Current_MSG[MSG_MOBITEX] : Current_MSG[MSG_MESSAGE],
-					szCurrentLabel[0]);
-	}
+	DecodedMessageNotificationContext notification;
+	notification.filterMatched = bMATCH;
+	notification.monitorOnly = bMONITOR_ONLY;
+	notification.filtered = bFILTERED;
+	notification.selectedForEmail = bMATCH ? Profile.filters[iMatch].smtp : 0;
+	notification.address = Current_MSG[MSG_CAPCODE];
+	notification.time = Current_MSG[MSG_TIME];
+	notification.date = Current_MSG[MSG_DATE];
+	notification.mode = Current_MSG[MSG_MODE];
+	notification.messageType = Current_MSG[MSG_TYPE];
+	notification.bitrate = Current_MSG[MSG_BITRATE];
+	notification.message = iMOBITEX ? Current_MSG[MSG_MOBITEX] : Current_MSG[MSG_MESSAGE];
+	notification.filterLabel = szCurrentLabel[0];
+	NotificationPublishDecodedMessage(notification);
+	PublishingPublishDecodedMessage(notification);
 
 	if (Current_MSG[MSG_MOBITEX][0]) Current_MSG[MSG_MOBITEX][0] = '\0';
 
@@ -2119,7 +2122,7 @@ void CollectLogfileLine(char *string, bool bFilter)
 					{
 						for (int pos=0; Current_MSG[MSG_MOBITEX][pos]!=0; pos++)
 						{
-							if (Current_MSG[MSG_MOBITEX][pos] == '»')
+							if (Current_MSG[MSG_MOBITEX][pos] == 'Â»')
 							{
 								strcat(szLogFileLine, "\n");
 								for (int i=0; i<spacing+1; i++) strcat(szLogFileLine, " ");
@@ -2132,11 +2135,11 @@ void CollectLogfileLine(char *string, bool bFilter)
 						strcat(szLogFileLine, Current_MSG[MSG_MESSAGE]);
 					}
 				}
-				else if ((strstr(Current_MSG[MSG_MESSAGE], "»") != 0) && Profile.Linefeed)
+				else if ((strstr(Current_MSG[MSG_MESSAGE], "Â»") != 0) && Profile.Linefeed)
 				{
 					for (int pos=0; Current_MSG[MSG_MESSAGE][pos]!=0; pos++)
 					{
-						if (Current_MSG[MSG_MESSAGE][pos] == '»')
+						if (Current_MSG[MSG_MESSAGE][pos] == 'Â»')
 						{
 							strcat(szLogFileLine, "\n");
 							for (int i=0; i<spacing+1; i++) strcat(szLogFileLine, " ");

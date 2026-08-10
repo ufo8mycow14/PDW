@@ -1,23 +1,157 @@
-PDW - POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder
+# PDW Paging Decoder
 
-Copyright (c) 2001 - 2004 Jason Petty
-Copyright (c) 2004 - 2010 Peter Hunt
-Open sourced 2013 - GNU GENERAL PUBLIC LICENSE
+PDW is a native Windows decoder for POCSAG, FLEX, ACARS, MOBITEX, and
+ERMES signals. It accepts input from a supported serial interface or a Windows
+audio capture device and provides monitoring, filtering, logging, alerts, and
+statistics.
 
-Originally, PDW has been developed with Visual C++ 6.0. The current version can be compiled 
-using CMake and Visual Studio 2012. 
+PDW was originally developed with Microsoft Visual C++ 6.0. The active build
+uses CMake and the Microsoft Visual C++ toolchain. The decoder remains a
+32-bit application while its legacy slicer and serial integration are being
+preserved.
 
-PDW discussion forum: http://www.discriminator.nl/forum/
+## Development status
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+Version 4.0.0 Beta is the first application-focused modernization of the
+open-source release. Decoder behaviour is intentionally
+being preserved while the Windows build, safety, configuration, and interface
+are updated in small, testable changes. See [CHANGELOG.md](CHANGELOG.md) and
+[docs/MODERNIZATION.md](docs/MODERNIZATION.md).
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+## Build on Windows
 
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+Prerequisites:
+
+- Windows 10 or Windows 11
+- Visual Studio 2022 with **Desktop development with C++**
+- A current Windows SDK
+- CMake 3.20 or newer
+- Perl 5 (Strawberry Perl or ActivePerl)
+- PowerShell 7 or Windows PowerShell 5.1
+
+From a Developer PowerShell for Visual Studio:
+
+```powershell
+.\scripts\build-dependencies.ps1
+cmake -S . -B build -G "Visual Studio 17 2022" -A Win32
+cmake --build build --config Release --target PDW PDWNotificationTests
+ctest --test-dir build -C Release --output-on-failure
+```
+
+The dependency script downloads official source archives, verifies their
+SHA-256 checksums, and builds the pinned Win32 static dependencies under
+`out\dependencies\x86`. It currently pins OpenSSL 3.5.7, curl 8.21.0, and
+libssh2 1.11.1. The executable is written to `build\Release\PDW.exe`. GitHub
+Actions performs the same dependency and Win32 Release build for every push
+and pull request to `master`.
+
+## Name separate PDW instances
+
+PDW supports an optional instance name in `pdw.ini`. This is useful when
+separate PDW folders monitor different receivers or paging systems.
+
+```ini
+[PDW]
+WindowTitle=North Dispatch
+```
+
+After PDW restarts, the main window and system-tray tooltip display
+`North Dispatch - PDW v4.0.0 Beta`. The value is retained when PDW saves its
+settings. PDW still permits only one running instance per application folder;
+use a separate folder and configuration for each concurrent instance.
+
+## Start PDW with Windows
+
+Open **Settings > Appearance and startup** and select **Start PDW with
+Windows** to launch the current PDW installation automatically when you sign
+in. Clear the same checkbox to disable it. Automatic launches wait five
+seconds to allow Windows and connected devices to settle; opening PDW
+manually is not delayed.
+
+## Publish files by FTP, FTPS, or SFTP
+
+Open **Settings > Connections and automation > File transfer** to select one or more files for continuous
+upload to a hosting account. PDW supports FTP, explicit FTPS, implicit FTPS,
+and password-authenticated SFTP. Server details, the remote folder, selected
+files, and an interval in seconds can be saved. Transfers run in the
+background, and `FileTransfer.log` records their results.
+
+The hosting password is stored in Windows Credential Manager rather than
+`pdw.ini`. FTPS verifies the server certificate against the Windows trust
+store. SFTP requires the hosting provider's SHA-256 SSH host-key fingerprint,
+which protects against connecting to an impersonating server. Classic FTP is
+not encrypted and should be used only when the hosting provider offers no
+secure option. See [docs/FTP_UPLOAD.md](docs/FTP_UPLOAD.md) for setup and
+security details.
+
+## Send filtered messages through Apprise
+
+Open **Settings > Connections and automation > Push notifications** to configure an authenticated HTTPS Apprise API and
+select **Enable Apprise**. Every message that reaches PDW's filtered-message
+output is queued in the background; rejected, duplicate, monitor-only, and
+unfiltered messages are not sent. SMTP/email remains independently enabled
+under its existing menu option.
+
+The endpoint, destination URLs, and API credentials are stored in Windows
+Credential Manager and masked in the dialog. PDW does not bundle Python or
+silently select a hosted notification service. See
+[docs/APPRISE_NOTIFICATIONS.md](docs/APPRISE_NOTIFICATIONS.md) for architecture,
+server hardening, privacy behaviour, and ntfy/Pushover phone-test steps.
+
+## Radio input, signal recording, and replay
+
+Open **Settings > Decoder and input > Radio and replay**. The original local
+audio/serial choice remains available and still tries WinMM first; WASAPI is an
+automatic fallback when that legacy audio format cannot be opened. The same
+dialog can select a reconnecting `rtl_tcp` receiver or an optional RTL-SDR USB
+device when a compatible `rtlsdr.dll` is available beside PDW.
+
+Use **Record** to save the normalized signal as 16-bit mono WAV or SigMF
+`rf32_le`. Use **Replay** to send a WAV or SigMF recording through PDW's normal
+protocol routines. Replay temporarily suspends the current live source and
+restores that exact audio, radio, or serial source when replay finishes or is
+stopped. Existing `.rec` recording/playback remains unchanged.
+
+## Publish decoded messages to a website or webhook
+
+Open **Settings > Connections and automation > Publish to web**. Publishing is
+off by default and cannot be enabled until the operator acknowledges that they
+must check permissions, privacy obligations, radio laws, and publication laws
+in their own country or jurisdiction.
+
+PDW can maintain `messages.json`, `messages.jsonl`, `messages.rss`,
+`messages.atom`, and a responsive `index.html` in a chosen folder. Those files
+can be uploaded with PDW's existing FTP/FTPS/SFTP feature. PDW can also deliver
+each event to a generic HTTPS JSON webhook with optional bearer-token and HMAC
+authentication stored in Windows Credential Manager. Address masking, source
+aliasing, and message omission modify only the published copy; the decoded
+message shown and logged by PDW is not changed. Delivery is asynchronous, can
+be paused or rate-limited, retries with backoff, and retains repeated failures
+under `PublishQueue\DeadLetter`.
+
+See [docs/PUBLISHING.md](docs/PUBLISHING.md) and
+[docs/SIGNAL_SOURCES.md](docs/SIGNAL_SOURCES.md) for setup and safety details.
+
+## Repository layout
+
+- `PDW.cpp` and protocol-specific `.cpp` files contain the application and
+  decoders.
+- `Headers/` contains application headers and the canonical version metadata.
+- `utils/` contains serial, notification, SMTP, and supporting code.
+- `GFX/` and `Rsrc.rc` contain the native Windows resources.
+- `scripts/` contains the reproducible third-party dependency build.
+- `docs/` contains operator and modernization guidance.
+
+Third-party component versions, source locations, checksums, and licenses are
+listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## License
+
+Copyright (c) 2001-2004 Jason Petty
+
+Copyright (c) 2004-2010 Peter Hunt
+
+Open sourced in 2013 under the GNU General Public License, version 3 or later.
+See [License](License).
+
+Project site and discussion forum: <https://www.discriminator.nl/pdw/>

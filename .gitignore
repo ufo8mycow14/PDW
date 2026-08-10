@@ -1,2 +1,12 @@
 .vs/
 .idea/
+build/
+out/
+CMakePresets.json.user
+/FileTransfer.log
+/Apprise.log
+/Published/
+/PublishQueue/
+/PDW-signal.wav
+/PDW-signal.sigmf-meta
+/PDW-signal.sigmf-data

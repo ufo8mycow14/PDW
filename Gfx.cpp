@@ -29,6 +29,7 @@
 #include "headers\initapp.h"
 #include "headers\misc.h"
 #include "headers\acars.h"
+#include "headers\ui_theme.h"
 
 int PL1_SCount=0;		// pane1 label scroll position
 int PL2_SCount=0;		// pane2 label scroll position
@@ -101,6 +102,9 @@ HPEN SysPEN[16]; // This holds general purpose system pens
 // Note: The pane1/pane2 title bars are created on the main window above each pane.
 void DrawTitleBarGfx(HWND hwnd)
 {
+	// Common Controls v6 can expose the window before WM_CREATE has finished
+	// calculating the decoder font metrics.
+	if (!cxChar || !pdw_font[FONT_LABELS]) return;
 	SetMessageItemPositionsWidth();
 	DrawPaneLabels(hwnd, PANE1 | PANE2 | PANERXQUAL);
 }
@@ -366,25 +370,6 @@ void DrawPaneLabels(HWND hwnd, int pane)
 
 	if (pane & PANERXQUAL)	// DRAW RX-Quality
 	{
-		if (dRX_Quality && dRX_Quality < 90)
-		{
-			SelectObject(hdc, black_brush);
-			Rectangle(hdc, r.right-75, r.top+5, r.right-50, r.top+27);
-
-			if (hdc_mem = CreateCompatibleDC(hdc))
-			{
-				SelectObject(hdc_mem, hbm_exclam);
-				BitBlt(hdc, r.right-75, r.top+5, bme.bmWidth, bme.bmHeight, hdc_mem, 0, 0, SRCPAINT);
-				DeleteDC(hdc_mem);
-			}
-		}
-		else
-		{
-			SelectObject(hdc, null_pen);
-			SelectObject(hdc, lgray_brush);
-			Rectangle(hdc, r.right-75, r.top+5, r.right-49, r.top+28);
-		}
-
 		/* Set new font/pen */
 		SelectObject(hdc,pdw_font[FONT_RXQUAL]);
 
@@ -447,17 +432,19 @@ bool GetLogFONTS(void)
 		{
 			case FONT_LABELS:
 
-			lstrcpy(logfont.lfFaceName, "Verdana");
-			logfont.lfHeight = -11;
+			lstrcpy(logfont.lfFaceName, "Segoe UI Variable Text");
+			logfont.lfHeight = -13;
 			logfont.lfWeight = FW_NORMAL;
+			logfont.lfQuality = CLEARTYPE_QUALITY;
 			
 			break;
 
 			case FONT_RXQUAL:
 
-			lstrcpy(logfont.lfFaceName, "Verdana");
-			logfont.lfHeight = -11;
-			logfont.lfWeight = FW_BOLD;
+			lstrcpy(logfont.lfFaceName, "Segoe UI Variable Text");
+			logfont.lfHeight = -13;
+			logfont.lfWeight = FW_SEMIBOLD;
+			logfont.lfQuality = CLEARTYPE_QUALITY;
 
 			break;
 
@@ -601,8 +588,11 @@ void SetAPEN(HDC hdc, int fpen, int bpen)	// This simplifies pen color selection
 // This always uses the default 3Dface system color(gray-default) for the background pen color.
 void SetAPEN_SYS(HDC hdc, int fpen)
 {
-	SetTextColor(hdc,GetNearestColor(hdc, RGB(rgbColor[fpen][0], rgbColor[fpen][1],rgbColor[fpen][2])));
-	SetBkColor(hdc,  GetNearestColor(hdc, sys_3d_face_cr));
+	COLORREF text = fpen == BLACK ? PdwThemeTextColor() :
+		RGB(rgbColor[fpen][0], rgbColor[fpen][1], rgbColor[fpen][2]);
+	SetTextColor(hdc, GetNearestColor(hdc, text));
+	SetBkColor(hdc, GetNearestColor(hdc, PdwThemeHeaderColor()));
+	SetBkMode(hdc, TRANSPARENT);
 }
 
 // Draw a filled 3D style box inside hwnd.
@@ -611,33 +601,19 @@ void SetAPEN_SYS(HDC hdc, int fpen)
 // Fill color is light gray.
 void Draw3D_Box(HDC hdc, int x, int y, int w, int h, int item)
 {
-	// Fill box
-	SelectObject(hdc,null_pen);
-	SelectObject(hdc,lgray_brush);
-	Rectangle(hdc,x,(y+1),(x+w)+1,(y+h)+1);
-
-	// Draw line to go round box
-	SelectObject(hdc,SysPEN[WHITE]);
-
-	if (item)	// Only if not first item
-	{
-		MoveToEx(hdc, x,(y+h),NULL);
-		LineTo(hdc,x,y);				// left line
-	}
-
-	MoveToEx(hdc,x,y,NULL);				// Starting point
-	LineTo(hdc,(x+w),y);				// top line
-
-	SelectObject(hdc,SysPEN[BLACK]);
-	LineTo(hdc,(x+w),(y+h));			// right line
-
-	if (item >= 0)	// Only if not last item
-	{
-		// Add gray line to right edges
-		SelectObject(hdc,SysPEN[DARKGRAY]);
-		MoveToEx(hdc,(x+w)-1,(y+h)-1,NULL);
-		LineTo(hdc,(x+w)-1,(y));
-	}
+	(void)item;
+	RECT box = { x, y, x + w, y + h + 1 };
+	HBRUSH fill = CreateSolidBrush(PdwThemeHeaderColor());
+	HPEN border = CreatePen(PS_SOLID, 1, PdwThemeBorderColor());
+	FillRect(hdc, &box, fill);
+	HPEN oldPen = reinterpret_cast<HPEN>(SelectObject(hdc, border));
+	MoveToEx(hdc, x, y + h, NULL);
+	LineTo(hdc, x + w, y + h);
+	MoveToEx(hdc, x + w - 1, y, NULL);
+	LineTo(hdc, x + w - 1, y + h);
+	SelectObject(hdc, oldPen);
+	DeleteObject(border);
+	DeleteObject(fill);
 }
 
 // Draw unfilled-inverted 3D style box inside hwnd.

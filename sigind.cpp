@@ -24,6 +24,7 @@
 #include "headers\gfx.h"
 #include "headers\initapp.h"
 #include "headers\sigind.h"
+#include "headers\ui_theme.h"
 
 #define MAX_SI_POS        20	// 0-12. Max positions available to signal indicator.
 #define AUDIO_POINT_VALUE 2	// Used for working out samples per signal
@@ -76,67 +77,24 @@ int sip[21][4] =	{//from: x,  y, To: x,  y
 // Get signal indicator bitmap resource
 BOOL LoadSigInd(HINSTANCE hThisInstance)
 {
-	if (!(got_sigind))
-	{
-		if (hbm_sigind = LoadBitmap(hThisInstance,MAKEINTRESOURCE((WORD)IDS_SIGIND)))
-		{
-			if (GetObject(hbm_sigind, sizeof(bms), &bms)) got_sigind=TRUE;
-			else DeleteObject(hbm_sigind);
-		}
-	}
+	(void)hThisInstance;
+	// The original indicator was a fixed bitmap with a white background.
+	// It is now rendered with theme-aware GDI shapes.
+	got_sigind = TRUE;
 	return(got_sigind);
 }
 
 // Free bitmap object
 void FreeSigInd(void)
 {
-	if (got_sigind) DeleteObject(hbm_sigind);
+	got_sigind = FALSE;
 }
 
 // Draw signal indicator on toolbar
 void DrawSigInd(HWND hwnd)
 {
-	HDC hdc;
-	RECT r;
-	int x=5,y=4;
 	si_index=0;  // this is used by UpdateSigInd().
-	extern double dRX_Quality;
-
-	if (got_sigind)
-	{
-		hdc = GetDC(hwnd);
-		SelectObject(hdc,null_pen);
-
-		if (old_rect_flg)
-		{  // erase last display of bitmap
-			SelectObject(hdc,lgray_brush);
-			Rectangle(hdc,old_rect.right-(bms.bmWidth+x),y,old_rect.right-(x-1),bms.bmHeight+y+1);
-		}
-
-		GetClientRect(hwnd, &r);
-		GetClientRect(hwnd, &old_rect);
-		old_rect_flg=TRUE;
-
-		// need black background for bitmap
-		SelectObject(hdc,black_brush);
-		Rectangle(hdc,r.right-(bms.bmWidth+x),y,r.right-(x-1),bms.bmHeight+y+1);
-
-		// Keep record of bitmaps current location
-		sig_rect.left	= r.right-(bms.bmWidth+x);
-		sig_rect.top	= y;
-		sig_rect.bottom	= bms.bmHeight + y;
-		sig_rect.right	= r.right-(x-1);
-
-		// draw bitmap
-		if (hdcMemory = CreateCompatibleDC(hdc))
-		{
-			SelectObject(hdcMemory, hbm_sigind);
-			BitBlt(hdc,sig_rect.left,sig_rect.top, bms.bmWidth, bms.bmHeight, hdcMemory, 0, 0, SRCPAINT);
-			DeleteDC(hdcMemory);
-		}
-		ReleaseDC(hwnd,hdc);
-		show_sigind(0, 0);	// show sigind needle
-	}
+	if (got_sigind) show_sigind(0, 0);
 }
 
 // Update signal indicator on toolbar.
@@ -192,33 +150,78 @@ void UpdateSigInd(int direction_flg)
 // Draw signal indicator needle.
 // Draw needle at new_pos.
 // old_pos is used to erase previous line.
+void DrawToolbarIndicators(HDC hdc)
+{
+	RECT client;
+	GetClientRect(hToolbar, &client);
+	extern double dRX_Quality;
+
+	RECT status = { client.right - 75, 4, client.right - 50, 28 };
+	HBRUSH statusBackground = CreateSolidBrush(PdwThemeSurfaceColor());
+	HPEN statusBorder = CreatePen(PS_SOLID, 1, PdwThemeBorderColor());
+	HGDIOBJ oldBrush = SelectObject(hdc, statusBackground);
+	HGDIOBJ oldPen = SelectObject(hdc, statusBorder);
+	RoundRect(hdc, status.left, status.top, status.right, status.bottom, 5, 5);
+
+	if (dRX_Quality && dRX_Quality < 90)
+	{
+		SetBkMode(hdc, TRANSPARENT);
+		SetTextColor(hdc, RGB(255, 185, 0));
+		if (PdwThemeUiSemiboldFont()) SelectObject(hdc, PdwThemeUiSemiboldFont());
+		TextOut(hdc, client.right - 66, 7, "!", 1);
+	}
+	else if (dRX_Quality == 0)
+	{
+		SetBkMode(hdc, TRANSPARENT);
+		SetTextColor(hdc, PdwThemeMutedTextColor());
+		if (PdwThemeUiSemiboldFont()) SelectObject(hdc, PdwThemeUiSemiboldFont());
+		TextOut(hdc, client.right - 68, 7, "Q", 1);
+	}
+	else
+	{
+		HPEN goodPen = CreatePen(PS_SOLID, 2, RGB(16, 124, 16));
+		SelectObject(hdc, goodPen);
+		MoveToEx(hdc, client.right - 68, 16, NULL);
+		LineTo(hdc, client.right - 64, 20);
+		LineTo(hdc, client.right - 57, 11);
+		SelectObject(hdc, statusBorder);
+		DeleteObject(goodPen);
+	}
+
+	RECT gauge = { client.right - 47, 4, client.right - 5, 28 };
+	HBRUSH background = CreateSolidBrush(PdwThemeSurfaceColor());
+	HPEN border = CreatePen(PS_SOLID, 1, PdwThemeBorderColor());
+	SelectObject(hdc, background);
+	SelectObject(hdc, border);
+	RoundRect(hdc, gauge.left, gauge.top, gauge.right, gauge.bottom, 5, 5);
+
+	int activeBars = min(5, max(0, (si_index + 3) / 4));
+	for (int i = 0; i < 5; ++i)
+	{
+		int height = 4 + i * 3;
+		RECT bar = { gauge.left + 6 + i * 6, gauge.bottom - 5 - height,
+			gauge.left + 10 + i * 6, gauge.bottom - 5 };
+		HBRUSH barBrush = CreateSolidBrush(i < activeBars ?
+			PdwThemeAccentColor() : PdwThemeBorderColor());
+		FillRect(hdc, &bar, barBrush);
+		DeleteObject(barBrush);
+	}
+
+	SelectObject(hdc, oldBrush);
+	SelectObject(hdc, oldPen);
+	DeleteObject(statusBackground);
+	DeleteObject(statusBorder);
+	DeleteObject(background);
+	DeleteObject(border);
+}
+
 void show_sigind(int new_pos,int old_pos)
 {
-	HDC hdc;
-	int x,y;
-
-	hdc = GetDC(ghWnd);
-
-	// erase old line.
-	SelectObject(hdc,SysPEN[WHITE]);
-	x = sig_rect.left+sip[old_pos][0];
-	y = sig_rect.top+sip[old_pos][1];
-	MoveToEx(hdc,x,y,NULL);
-
-	x = sig_rect.left+sip[old_pos][2];
-	y = sig_rect.top+sip[old_pos][3];
-	LineTo(hdc,x,y);
-
-	// Draw new line.
-	SelectObject(hdc,SysPEN[RED]);
-	x = sig_rect.left+sip[new_pos][0];
-	y = sig_rect.top+sip[new_pos][1];
-	MoveToEx(hdc,x,y,NULL);
-
-	x = sig_rect.left+sip[new_pos][2];
-	y = sig_rect.top+sip[new_pos][3];
-	LineTo(hdc,x,y);
-
-	ReleaseDC(ghWnd,hdc);
+	(void)new_pos;
+	(void)old_pos;
+	if (!hToolbar) return;
+	HDC hdc = GetDC(hToolbar);
+	DrawToolbarIndicators(hdc);
+	ReleaseDC(hToolbar, hdc);
 }
 

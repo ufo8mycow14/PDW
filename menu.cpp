@@ -33,6 +33,22 @@
 #include "headers\language.h"
 #include "headers\menu.h"
 
+namespace
+{
+	HMENU FindMenuContainingCommand(HMENU menu, UINT command)
+	{
+		if (!menu) return NULL;
+		int count = GetMenuItemCount(menu);
+		for (int i = 0; i < count; ++i)
+		{
+			if (GetMenuItemID(menu, i) == command) return menu;
+			HMENU child = GetSubMenu(menu, i);
+			HMENU found = FindMenuContainingCommand(child, command);
+			if (found) return found;
+		}
+		return NULL;
+	}
+}
 
 // Check/uncheck the specified menu item.
 // submenu_no = menu (position)containing the item to check/uncheck.
@@ -40,26 +56,10 @@
 // item_checked = whether to check or uncheck the item.
 void check_menu_item(int submenu_no,UINT item_id,BOOL item_checked)
 {
-	HMENU hmenu = NULL;
-	HMENU hsubmenu = NULL;   
-	MENUITEMINFO miInfo;
-
-	hmenu    = GetMenu(ghWnd);
-	hsubmenu = GetSubMenu(hmenu, submenu_no);         
-
-	miInfo.cbSize = sizeof(MENUITEMINFO);  
-	miInfo.fMask = MIIM_CHECKMARKS | MIIM_STATE;
-	miInfo.fType = 0; 
-	miInfo.fState = item_checked ? MFS_CHECKED : MFS_UNCHECKED; 
-	miInfo.wID = 0; 
-	miInfo.hSubMenu = NULL; 
-	miInfo.hbmpChecked = NULL; 
-	miInfo.hbmpUnchecked = NULL; 
-	miInfo.dwItemData = 0; 
-	miInfo.dwTypeData = 0; 
-	miInfo.cch = 0; 
-
-	SetMenuItemInfo(hsubmenu, item_id, FALSE, &miInfo);
+	(void)submenu_no;
+	HMENU hmenu = GetMenu(ghWnd);
+	if (!hmenu) return;
+	CheckMenuItem(hmenu, item_id, MF_BYCOMMAND | (item_checked ? MF_CHECKED : MF_UNCHECKED));
 }
 
 // Checks/Unchecks menu items based on profile settings.
@@ -90,6 +90,9 @@ void set_menu_items(void)
 	}
 	check_menu_item(4, IDM_FILTERFILE_EN,     Profile.filterfile_enabled);
 	check_menu_item(4, IDM_FILTERCOMMANDFILE, Profile.filter_cmd_file_enabled);
+	check_menu_item(0, IDM_THEME_SYSTEM, Profile.uiTheme == 0);
+	check_menu_item(0, IDM_THEME_LIGHT, Profile.uiTheme == 1);
+	check_menu_item(0, IDM_THEME_DARK, Profile.uiTheme == 2);
 
 	// Check correct Langauge item.
 	// Also set the current language table.
@@ -129,8 +132,9 @@ void set_lang_menu(void)
   /* get handle of main menu */
    hmenu = GetMenu(ghWnd);
 
-  /* get handle of 1st popup menu */
-   hsubmenu = GetSubMenu(hmenu, 7); 
+  /* Find the character-set submenu by command ID so menu regrouping is safe. */
+   hsubmenu = FindMenuContainingCommand(hmenu, IDM_ENGLISH);
+   if (!hsubmenu) return;
 
   /* get number of items in the popup */
           count = GetMenuItemCount(hsubmenu);

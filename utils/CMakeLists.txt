@@ -9,6 +9,8 @@ set( PDW_INCLUDES
   #${CMAKE_CURRENT_SOURCE_DIR}/debug.h
   #${CMAKE_CURRENT_SOURCE_DIR}/globals.h
   #${CMAKE_CURRENT_SOURCE_DIR}/ipcnfg.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/notification_core.h
+	${CMAKE_CURRENT_SOURCE_DIR}/publishing_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/rs232.h
   ${CMAKE_CURRENT_SOURCE_DIR}/smtp.h
   ${CMAKE_CURRENT_SOURCE_DIR}/smtp_int.h
@@ -17,12 +19,22 @@ set( PDW_INCLUDES
 )
 
 set( PDW_SRCS
-  ${PDW_SRCS}
+	${PDW_SRCS}
+	${CMAKE_CURRENT_SOURCE_DIR}/audio_signal_core.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/decoder_candidate_core.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/signal_recording_core.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/wasapi_capture.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/rtl_tcp_source.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/publishing.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/publishing_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/Debug.cpp
   #${CMAKE_CURRENT_SOURCE_DIR}/OSTYPE.C
   ${CMAKE_CURRENT_SOURCE_DIR}/Ostype.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/binary.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/ftp.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/ipcnfg.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/notification.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/notification_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/rs232.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/smtp.cpp
   

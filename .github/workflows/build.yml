@@ -12,7 +12,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Cache Win32 dependencies
+        uses: actions/cache@v5
+        with:
+          path: out/dependencies/x86
+          key: pdw-win32-dependencies-${{ hashFiles('scripts/build-dependencies.ps1') }}
+
+      - name: Build pinned Win32 dependencies
+        shell: pwsh
+        run: .\scripts\build-dependencies.ps1
 
       - name: Configure CMake (Win32 / Release)
         shell: pwsh
@@ -20,16 +30,26 @@ jobs:
           cmake -S . -B build `
             -G "Visual Studio 17 2022" `
             -A Win32 `
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release `
+            -DPDW_DEPENDENCY_ROOT="${{ github.workspace }}\out\dependencies\x86"
 
       - name: Build
         shell: pwsh
         run: |
-          cmake --build build --config Release --target PDW
+          cmake --build build --config Release --target PDW PDWNotificationTests PDWAudioSignalTests PDWDecoderCandidateTests PDWSignalRecordingTests PDWWasapiCaptureTests PDWRtlTcpTests PDWPublishingCoreTests
+
+      - name: Test
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PDW-Win32-Release
-          path: build\Release\PDW.exe
+          path: |
+            build\Release\PDW.exe
+            License
+            THIRD_PARTY_NOTICES.md
+            out\dependencies\x86\pdw-dependencies.lock
+            out\dependencies\x86\licenses\*
           if-no-files-found: error
