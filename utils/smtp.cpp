@@ -9,6 +9,7 @@
 #include <atomic>
 #include <string>
 #include "..\headers\pdw.h"
+#include "..\headers\output_health.h"
 #include "smtp_int.h"
 #include "smtp.h"
 #include "smtp_message_core.h"
@@ -42,6 +43,24 @@ static int  nBufferdMailEnd ;
 static int  nBufferedMailCount ;
 static unsigned int nDroppedMailCount ;
 static SRWLOCK MailQueueLock = SRWLOCK_INIT;
+static std::atomic<DWORD> lastHealthFailureTick(0);
+
+static void RecordSmtpFailureRateLimited(const char *summary)
+{
+	const DWORD now = GetTickCount();
+	DWORD last = lastHealthFailureTick.load();
+	if (last != 0 && (DWORD)(now-last) < 30000UL)
+		return;
+	if (lastHealthFailureTick.compare_exchange_strong(last, now))
+		OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_FAILURE, summary);
+}
+
+static void RecordSmtpSuccess()
+{
+	lastHealthFailureTick.store(0);
+	OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_SUCCESS,
+		"SMTP server accepted the queued message.");
+}
 
 static byte dtable[256];
 
@@ -1328,11 +1347,13 @@ int xSendMail(THEMAIL *pMail)
 		OUTPUTDEBUGMSG((("No From address specified")));
 		AddResponse("xSendMail(): No From address specified\n");
 		MailQueueCommit();
+		RecordSmtpFailureRateLimited("SMTP message was discarded because the From address is invalid.");
 		return (0);
 	}
 	if (!pMail->smtp_server || !pMail->smtp_server[0]) {
 		AddResponse("xSendMail(): No SMTP server specified\n");
 		MailQueueCommit();
+		RecordSmtpFailureRateLimited("SMTP message was discarded because no server is configured.");
 		return (0);
 	}
 	const int smtpPort = pMail->smtp_port > 0 ? pMail->smtp_port : MAILSEND_SMTP_PORT;
@@ -1341,6 +1362,7 @@ int xSendMail(THEMAIL *pMail)
 	sfd = smtpConnect(pMail->smtp_server, smtpPort);
 	if(sfd == INVALID_SOCKET)
 	{
+		RecordSmtpFailureRateLimited("SMTP server connection failed; queued message will be retried.");
 		return(0) ;
 	}
 	else nSMTPsessions++;		// PH: Counts # of sessions
@@ -1354,6 +1376,7 @@ int xSendMail(THEMAIL *pMail)
 							if(!(rc = smtpEom(sfd))) {
 								nSMTPemails++;
 								MailQueueCommit();
+								RecordSmtpSuccess();
 								smtpQuit(sfd); // best effort after the server accepted DATA
 							}
 						}
@@ -1365,6 +1388,8 @@ int xSendMail(THEMAIL *pMail)
 
 	// close the network connection
 	smtpDisconnect(sfd);
+	if (rc != 0)
+		RecordSmtpFailureRateLimited("SMTP transaction failed; queued message will be retried.");
 	return(rc == 0 ? 1 : 0);
 }
 
@@ -1526,6 +1551,8 @@ int SendMail(HWND hResponse, bool bMatch, bool bMonitor_only, int iSeparateSMTP,
 		{
 			nSMTPerrors++;
 			AddResponse("SendMail(): SMTP queue is full; message was not queued\n");
+			OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_DROPPED,
+				"SMTP queue is full; newest message was not queued.");
 			return -1;
 		}
 	}
@@ -1540,7 +1567,13 @@ int MailInit(char *szMailHost, char *szMailHeloDomain, char *szMailFrom, char *s
 	// them so a concurrent connect/authentication cannot dereference half-updated
 	// or null values during Apply/exit.
 	if(!StopMailWorker())
+	{
+		OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_FAILURE,
+			"SMTP worker did not stop while applying configuration.");
 		return -1;
+	}
+
+	OutputHealthSetEnabled(OUTPUT_HEALTH_SMTP, (nOptions & MAIL_OPTION_ENABLE) != 0);
 
 	memset(&mail, 0, sizeof(mail)) ;
 	mail.from = szMailFrom ;
@@ -1555,6 +1588,14 @@ int MailInit(char *szMailHost, char *szMailHeloDomain, char *szMailFrom, char *s
 	mail.options = nOptions ;
 	responseWindow.store(NULL);
 	if(!StartMail(nOptions))
+	{
+		OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_FAILURE,
+			"SMTP background worker could not start.");
 		return -1;
+	}
+	if ((nOptions & MAIL_OPTION_ENABLE) &&
+		(!szMailHost || !szMailHost[0] || !szMailFrom || !smtpSafeMailbox(szMailFrom) || iMailPort <= 0))
+		OutputHealthRecord(OUTPUT_HEALTH_SMTP, OUTPUT_HEALTH_FAILURE,
+			"Enabled SMTP settings are incomplete or invalid.");
 	return(0) ;
 }

@@ -22,6 +22,7 @@
 #include "headers\pdw.h"
 #include "headers\initapp.h"
 #include "headers\notification.h"
+#include "headers\output_health.h"
 #include "headers\publishing.h"
 #include "publishing_core.h"
 #include "curl_runtime.h"
@@ -398,6 +399,8 @@ namespace
 			{
 				if (!task.spoolPath.empty()) DeleteFileA(task.spoolPath.c_str());
 				SetStatus(task.test ? "Webhook test delivered successfully." : "Publishing delivery completed.");
+				OutputHealthRecord(OUTPUT_HEALTH_PUBLISHING, OUTPUT_HEALTH_SUCCESS,
+					task.test ? "Publishing test delivered successfully." : "Publishing delivery completed.");
 				WipeTaskSecrets(task);
 			}
 			else
@@ -407,6 +410,8 @@ namespace
 				{
 					DeadLetter(task);
 					SetStatus("Publishing failed after five attempts; the event was moved to DeadLetter.");
+					OutputHealthRecord(OUTPUT_HEALTH_PUBLISHING, OUTPUT_HEALTH_FAILURE,
+						"Publishing failed after five attempts; event moved to DeadLetter.");
 					WipeTaskSecrets(task);
 				}
 				else
@@ -431,6 +436,8 @@ namespace
 		{
 			WipeTaskSecrets(task);
 			SetStatus("Publishing worker is unavailable; the message remains in PDW's legacy outputs.");
+			OutputHealthRecord(OUTPUT_HEALTH_PUBLISHING, OUTPUT_HEALTH_DROPPED,
+				"Publishing worker is unavailable; legacy outputs were unaffected.");
 			return;
 		}
 		EnterCriticalSection(&g_lock);
@@ -439,6 +446,8 @@ namespace
 			LeaveCriticalSection(&g_lock);
 			WipeTaskSecrets(task);
 			SetStatus("Publishing queue is full; new events are being retained only in PDW's legacy outputs.");
+			OutputHealthRecord(OUTPUT_HEALTH_PUBLISHING, OUTPUT_HEALTH_DROPPED,
+				"Publishing queue is full; optional delivery was not queued.");
 			return;
 		}
 		g_queue.push_back(task);
@@ -517,17 +526,25 @@ void PublishingManagerInitialize(void)
 	if (g_initialized) return;
 	InitializeCriticalSection(&g_lock);
 	g_initialized = true;
+	const Config startupConfig = ProfileConfig();
+	OutputHealthSetEnabled(OUTPUT_HEALTH_PUBLISHING,
+		startupConfig.enabled && startupConfig.acknowledged && !startupConfig.paused &&
+		(startupConfig.staticEnabled || startupConfig.webhookEnabled));
 	InterlockedExchange(&g_stopping, 0);
 	g_workEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 	g_stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (!g_workEvent || !g_stopEvent)
 	{
 		SetStatus("Publishing could not create its worker events; legacy outputs remain available.");
+		OutputHealthRecord(OUTPUT_HEALTH_PUBLISHING, OUTPUT_HEALTH_FAILURE,
+			"Publishing worker events could not be created.");
 		return;
 	}
 	if (!CurlRuntimeAcquire())
 	{
 		SetStatus("Publishing could not initialize HTTPS support; legacy outputs remain available.");
+		OutputHealthRecord(OUTPUT_HEALTH_PUBLISHING, OUTPUT_HEALTH_FAILURE,
+			"Publishing HTTPS support could not initialize.");
 		return;
 	}
 	g_curlInitialized = true;
@@ -538,6 +555,8 @@ void PublishingManagerInitialize(void)
 	if (!g_thread)
 	{
 		SetStatus("Publishing could not start its worker; legacy outputs remain available.");
+		OutputHealthRecord(OUTPUT_HEALTH_PUBLISHING, OUTPUT_HEALTH_FAILURE,
+			"Publishing worker could not start.");
 		return;
 	}
 	if (!g_queue.empty()) SetEvent(g_workEvent);
@@ -575,6 +594,9 @@ void PublishingSettingsChanged(void)
 	EnterCriticalSection(&g_lock);
 	g_config = config;
 	LeaveCriticalSection(&g_lock);
+	OutputHealthSetEnabled(OUTPUT_HEALTH_PUBLISHING,
+		config.enabled && config.acknowledged && !config.paused &&
+		(config.staticEnabled || config.webhookEnabled));
 	if (!config.enabled) SetStatus("Publishing is disabled.");
 	else if (!config.acknowledged) SetStatus("Publishing cannot start until the jurisdiction and permission acknowledgement is accepted.");
 	else if (!config.staticEnabled && !config.webhookEnabled) SetStatus("Choose static files, an HTTPS webhook, or both.");

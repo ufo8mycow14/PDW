@@ -33,6 +33,8 @@ set( PDW_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/receiver_catalog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/message_router.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/mysql_odbc_output.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/output_health.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/output_health_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/publishing.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/publishing_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/smtp_message_core.cpp

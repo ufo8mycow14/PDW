@@ -32,6 +32,7 @@
 #define SIGNAL_SOURCE_DLGBOX       128
 #define PUBLISHING_DLGBOX          129
 #define DATA_OUTPUTS_DLGBOX        130
+#define OUTPUT_HEALTH_DLGBOX       131
 
 #define IDM_LOGFILE                201
 #define IDM_EXIT                   202
@@ -57,6 +58,7 @@
 #define IDM_SIGNAL_SOURCES         239
 #define IDM_PUBLISHING             246
 #define IDM_DATA_OUTPUTS           247
+#define IDM_OUTPUT_HEALTH          248
 
 #define IDM_FILTERS                240
 #define IDM_FILTEROPTIONS          241
@@ -594,6 +596,16 @@
 #define IDC_OUTPUT_MQTT_CLEAR_PASSWORD 1488
 #define IDC_OUTPUT_MYSQL_CLEAR_PASSWORD 1489
 #define IDC_SETTINGS_DATA_OUTPUTS  1490
+#define IDC_HEALTH_SUMMARY         1500
+#define IDC_HEALTH_LIST            1501
+#define IDC_HEALTH_HISTORY         1502
+#define IDC_HEALTH_ALERTS          1503
+#define IDC_HEALTH_THRESHOLD       1504
+#define IDC_HEALTH_APPLY           1505
+#define IDC_HEALTH_ACKNOWLEDGE     1506
+#define IDC_HEALTH_REFRESH         1507
+#define IDC_SETTINGS_OUTPUT_HEALTH 1508
+#define IDC_OUTPUT_OPEN_HEALTH     1509
 
 #define IDS_SIGIND                1250
 #define IDS_EXCLAM                1251

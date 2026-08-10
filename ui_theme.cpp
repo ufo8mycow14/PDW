@@ -402,6 +402,7 @@ BOOL FAR PASCAL SettingsHubDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
 				case IDC_SETTINGS_TRANSFER: OpenSetting(hDlg, IDM_FTP); return TRUE;
 				case IDC_SETTINGS_PUBLISH: OpenSetting(hDlg, IDM_PUBLISHING); return TRUE;
 				case IDC_SETTINGS_DATA_OUTPUTS: OpenSetting(hDlg, IDM_DATA_OUTPUTS); return TRUE;
+				case IDC_SETTINGS_OUTPUT_HEALTH: OpenSetting(hDlg, IDM_OUTPUT_HEALTH); return TRUE;
 				case IDC_SETTINGS_SCROLLBACK: OpenSetting(hDlg, IDM_SCROLLBACK); return TRUE;
 				case IDOK:
 				case IDCANCEL:

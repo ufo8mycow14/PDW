@@ -124,6 +124,7 @@ add_executable(PDW WIN32
 set_source_files_properties(
   utils/data_outputs.cpp
   utils/decoded_event.cpp
+  utils/output_health.cpp
   PROPERTIES COMPILE_OPTIONS "/W4;/WX"
 )
 
@@ -418,6 +419,20 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(PDWMysqlOdbcOutputTests PRIVATE Odbc32.lib)
 	add_test(NAME mysql-odbc-disabled COMMAND PDWMysqlOdbcOutputTests)
+
+	add_executable(PDWOutputHealthCoreTests
+		tests/output_health_core_tests.cpp
+		utils/output_health_core.cpp
+	)
+	target_include_directories(PDWOutputHealthCoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWOutputHealthCoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME output-health-core COMMAND PDWOutputHealthCoreTests)
 
 	add_executable(PDWWasapiDeviceSmoke EXCLUDE_FROM_ALL
 		tests/wasapi_device_smoke.cpp

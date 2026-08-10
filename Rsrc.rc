@@ -138,6 +138,8 @@ BEGIN
             MENUITEM "&File transfer...",       IDM_FTP
 			MENUITEM "Publish to &web...",       IDM_PUBLISHING
 			MENUITEM "&Data outputs...",         IDM_DATA_OUTPUTS
+			MENUITEM SEPARATOR
+			MENUITEM "Delivery &health...",       IDM_OUTPUT_HEALTH
         END
         POPUP "&Character set"
         BEGIN
@@ -1098,7 +1100,8 @@ BEGIN
     PUSHBUTTON      "Publish to web...",IDC_SETTINGS_PUBLISH,268,242,82,20
     PUSHBUTTON      "Data outputs...",IDC_SETTINGS_DATA_OUTPUTS,356,242,94,20
 
-    LTEXT           "Changes are saved in PDW's existing configuration, with secrets kept in Windows Credential Manager.",IDC_STATIC,16,282,350,22
+    LTEXT           "Changes use PDW's existing configuration; secrets stay in Windows Credential Manager.",IDC_STATIC,16,282,270,22
+    PUSHBUTTON      "Output health...",IDC_SETTINGS_OUTPUT_HEALTH,294,293,88,20
     DEFPUSHBUTTON   "Close",IDOK,390,293,64,20
 END
 
@@ -1276,8 +1279,32 @@ BEGIN
     LTEXT           "Native Windows notification support is loaded only when enabled or tested. Turning this off leaves PDW's existing tray behaviour unchanged.",IDC_OUTPUT_TOAST_NOTE,30,250,490,36
 
     LTEXT           "Data outputs are disabled.",IDC_OUTPUT_STATUS,14,368,532,52
+    PUSHBUTTON      "Delivery health...",IDC_OUTPUT_OPEN_HEALTH,14,432,90,20
     DEFPUSHBUTTON   "Save",IDOK,424,432,58,20
     PUSHBUTTON      "Cancel",IDCANCEL,488,432,58,20
+END
+
+OUTPUT_HEALTH_DLGBOX DIALOGEX 0, 0, 720, 438
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Delivery Health and History"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    LTEXT           "Runtime delivery health contains operational outcomes only; pager addresses and decoded message text are never stored here.",IDC_STATIC,12,10,696,18
+    LTEXT           "No output alerts are pending.",IDC_HEALTH_SUMMARY,12,30,696,20
+    CONTROL         "",IDC_HEALTH_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP,10,54,700,166
+
+    GROUPBOX        "Recent output activity (newest first)",IDC_STATIC,10,228,700,136
+    LISTBOX         IDC_HEALTH_HISTORY,20,244,680,110,LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_HSCROLL | WS_TABSTOP
+
+    GROUPBOX        "Alerts",IDC_STATIC,10,370,430,56
+    CONTROL         "Alert after",IDC_HEALTH_ALERTS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,20,386,66,12
+    EDITTEXT        IDC_HEALTH_THRESHOLD,90,383,34,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "consecutive failures (1 to 20) using taskbar flash and warning sound",IDC_STATIC,130,386,292,22
+    PUSHBUTTON      "Apply",IDC_HEALTH_APPLY,360,403,58,18
+
+    PUSHBUTTON      "Acknowledge alerts",IDC_HEALTH_ACKNOWLEDGE,454,386,104,20
+    PUSHBUTTON      "Refresh",IDC_HEALTH_REFRESH,564,386,66,20
+    DEFPUSHBUTTON   "Close",IDOK,636,386,66,20
 END
 
 FTP_DLGBOX DIALOGEX 0, 0, 440, 350

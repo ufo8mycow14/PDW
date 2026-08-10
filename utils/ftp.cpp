@@ -21,6 +21,7 @@
 #include "headers\pdw.h"
 #include "headers\ftp.h"
 #include "headers\initapp.h"
+#include "headers\output_health.h"
 #include "curl_runtime.h"
 
 using namespace std;
@@ -624,12 +625,16 @@ namespace
 			snprintf(status, sizeof(status), "Last upload succeeded at %02u:%02u:%02u (%u file(s)).",
 				(unsigned int) now.wHour, (unsigned int) now.wMinute, (unsigned int) now.wSecond, uploaded);
 			AppendFtpLog("Upload completed successfully (%u file(s))", uploaded);
+			OutputHealthRecord(OUTPUT_HEALTH_FTP, OUTPUT_HEALTH_SUCCESS,
+				"Scheduled file-transfer upload completed successfully.");
 		}
 		else
 		{
 			snprintf(status, sizeof(status), "Last upload had errors at %02u:%02u:%02u (%u uploaded, %u failed). See FileTransfer.log.",
 				(unsigned int) now.wHour, (unsigned int) now.wMinute, (unsigned int) now.wSecond, uploaded, failed);
 			AppendFtpLog("Upload completed with errors (%u uploaded, %u failed)", uploaded, failed);
+			OutputHealthRecord(OUTPUT_HEALTH_FTP, OUTPUT_HEALTH_FAILURE,
+				"File-transfer upload completed with one or more errors.");
 		}
 		status[sizeof(status)-1] = '\0';
 		SetFtpStatus(status);
@@ -907,6 +912,7 @@ void FtpInitialize(void)
 	if (g_ftpInitialized) return;
 	InitializeCriticalSection(&g_ftpStateLock);
 	g_ftpInitialized = true;
+	OutputHealthSetEnabled(OUTPUT_HEALTH_FTP, Profile.ftpEnabled != 0);
 	InterlockedExchange(&g_uploadInProgress, 0);
 	InterlockedExchange(&g_shuttingDown, 0);
 	g_curlInitialized = CurlRuntimeAcquire();
@@ -916,6 +922,9 @@ void FtpInitialize(void)
 		CopyText(g_ftpStatus, sizeof(g_ftpStatus), "This build is missing one or more required transfer protocols.");
 	else
 		CopyText(g_ftpStatus, sizeof(g_ftpStatus), "The file-transfer library could not be initialized.");
+	if (Profile.ftpEnabled && (!g_curlInitialized || !SelectedProtocolIsAvailable(Profile.ftpProtocol)))
+		OutputHealthRecord(OUTPUT_HEALTH_FTP, OUTPUT_HEALTH_FAILURE,
+			"Enabled file-transfer support could not initialize the selected protocol.");
 	FtpSettingsChanged();
 }
 
@@ -949,6 +958,7 @@ void FtpShutdown(void)
 void FtpSettingsChanged(void)
 {
 	if (!g_ftpInitialized) return;
+	OutputHealthSetEnabled(OUTPUT_HEALTH_FTP, Profile.ftpEnabled != 0);
 	InterlockedIncrement(&g_settingsGeneration);
 	unsigned int interval = Profile.ftpIntervalSeconds;
 	if (interval < FTP_MIN_INTERVAL || interval > FTP_MAX_INTERVAL) interval = 60;
@@ -983,6 +993,8 @@ bool FtpQueueUploadNow(void)
 	if (!g_curlInitialized)
 	{
 		SetFtpStatus("The file-transfer library is unavailable in this PDW build.");
+		OutputHealthRecord(OUTPUT_HEALTH_FTP, OUTPUT_HEALTH_FAILURE,
+			"File-transfer library is unavailable.");
 		return false;
 	}
 
@@ -990,6 +1002,8 @@ bool FtpQueueUploadNow(void)
 	if (!ValidateProfile(error))
 	{
 		SetFtpStatus(error.c_str());
+		OutputHealthRecord(OUTPUT_HEALTH_FTP, OUTPUT_HEALTH_FAILURE,
+			"Enabled file-transfer settings are incomplete or invalid.");
 		return false;
 	}
 
@@ -997,6 +1011,8 @@ bool FtpQueueUploadNow(void)
 	if (!ReadSavedPassword(password))
 	{
 		SetFtpStatus("No hosting password is saved. Open Options > File Transfer to enter it.");
+		OutputHealthRecord(OUTPUT_HEALTH_FTP, OUTPUT_HEALTH_FAILURE,
+			"File-transfer password is not available in Windows Credential Manager.");
 		return false;
 	}
 
@@ -1013,6 +1029,8 @@ bool FtpQueueUploadNow(void)
 		WipeString(password);
 		InterlockedExchange(&g_uploadInProgress, 0);
 		SetFtpStatus("PDW could not allocate memory for the file upload.");
+		OutputHealthRecord(OUTPUT_HEALTH_FTP, OUTPUT_HEALTH_DROPPED,
+			"File-transfer upload could not be queued due to memory allocation failure.");
 		return false;
 	}
 
@@ -1040,6 +1058,8 @@ bool FtpQueueUploadNow(void)
 		delete task;
 		InterlockedExchange(&g_uploadInProgress, 0);
 		SetFtpStatus("PDW could not start the file-upload worker thread.");
+		OutputHealthRecord(OUTPUT_HEALTH_FTP, OUTPUT_HEALTH_DROPPED,
+			"File-transfer upload worker could not start.");
 		return false;
 	}
 

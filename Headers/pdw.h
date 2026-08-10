@@ -286,6 +286,9 @@ typedef struct
 	int windowsToastEnabled;
 	int windowsToastIncludeMessage;
 
+	int outputHealthAlertsEnabled;
+	unsigned int outputHealthFailureThreshold;
+
 	COLORREF color_background;
 	COLORREF color_address;
 	COLORREF color_timestamp;

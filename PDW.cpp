@@ -313,6 +313,7 @@
 #include "headers\ftp.h"
 #include "headers\data_outputs.h"
 #include "headers\notification.h"
+#include "headers\output_health.h"
 #include "headers\publishing.h"
 #include "headers\ui_theme.h"
 #include "headers\version.h"
@@ -579,6 +580,8 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.telnetPort = 8024;
 	Profile.windowsToastEnabled = 0;
 	Profile.windowsToastIncludeMessage = 0;
+	Profile.outputHealthAlertsEnabled = 1;
+	Profile.outputHealthFailureThreshold = 3;
 
 	Profile.FlexTIME			= 0;	// Flag for FlexTIME as systemtime
 	Profile.FlexGroupMode		= 0;
@@ -755,6 +758,11 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 		return (FALSE);
 	}
 
+	OutputHealthInitialize(ghWnd);
+	OutputHealthConfigure(Profile.outputHealthAlertsEnabled,
+		Profile.outputHealthFailureThreshold);
+	OutputHealthSetEnabled(OUTPUT_HEALTH_SMTP,
+		(Profile.nMailOptions & MAIL_OPTION_ENABLE) != 0);
 	FtpInitialize();
 	NotificationManagerInitialize();
 	PublishingManagerInitialize();
@@ -1613,6 +1621,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 									 hWnd, (DLGPROC) DataOutputsDlgProc, 0L);
 				break;
 
+				case IDM_OUTPUT_HEALTH:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(OUTPUT_HEALTH_DLGBOX),
+									 hWnd, (DLGPROC) OutputHealthDlgProc, 0L);
+				break;
+
 				case IDM_RELOAD:
 
 				if (FileExists(szFilterPathName))
@@ -1947,6 +1960,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			NotificationManagerShutdown();
 			FtpShutdown();
 			MailInit(NULL, NULL, NULL, NULL, NULL, NULL, 0, 0);
+			OutputHealthShutdown();
 
 			if (pLogFile)    { fclose(pLogFile);    pLogFile = NULL; }
 			if (pFilterFile) { fclose(pFilterFile); pFilterFile = NULL; }
@@ -1983,6 +1997,22 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			if (pd_raw_fp) { fclose(pd_raw_fp); pd_raw_fp = NULL; }	// pocsag/flex debug data file.
 
 			PostQuitMessage(0);
+			break;
+		}
+
+		case OUTPUT_HEALTH_ALERT_MESSAGE:
+		{
+			if (Profile.outputHealthAlertsEnabled && OutputHealthGetPendingAlertCount())
+			{
+				FLASHWINFO flashInfo = {};
+				flashInfo.cbSize = sizeof(flashInfo);
+				flashInfo.hwnd = hWnd;
+				flashInfo.dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG;
+				flashInfo.uCount = 3;
+				flashInfo.dwTimeout = 0;
+				FlashWindowEx(&flashInfo);
+				MessageBeep(MB_ICONWARNING);
+			}
 			break;
 		}
 
@@ -10009,6 +10039,10 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 
 	pProfile->windowsToastEnabled = (INT) GetPrivateProfileInt("WindowsToast", TEXT("Enable"), 0, lpszIniPathName);
 	pProfile->windowsToastIncludeMessage = (INT) GetPrivateProfileInt("WindowsToast", TEXT("IncludeMessage"), 0, lpszIniPathName);
+	pProfile->outputHealthAlertsEnabled = (INT) GetPrivateProfileInt("OutputHealth", TEXT("AlertsEnabled"), 1, lpszIniPathName);
+	pProfile->outputHealthFailureThreshold = (unsigned int) GetPrivateProfileInt("OutputHealth", TEXT("FailureThreshold"), 3, lpszIniPathName);
+	if (pProfile->outputHealthFailureThreshold < 1 || pProfile->outputHealthFailureThreshold > 20)
+		pProfile->outputHealthFailureThreshold = 3;
 	if (pProfile->dataOutputsEnabled && !pProfile->dataOutputsPermissionAcknowledged)
 		pProfile->dataOutputsEnabled = 0;
 
@@ -10597,6 +10631,10 @@ void WriteSettings()
 		fprintf(pFile, "\n[WindowsToast]\n");
 		fprintf(pFile, "Enable=%i\n", Profile.windowsToastEnabled);
 		fprintf(pFile, "IncludeMessage=%i\n", Profile.windowsToastIncludeMessage);
+
+		fprintf(pFile, "\n[OutputHealth]\n");
+		fprintf(pFile, "AlertsEnabled=%i\n", Profile.outputHealthAlertsEnabled);
+		fprintf(pFile, "FailureThreshold=%u\n", Profile.outputHealthFailureThreshold);
 
 		fprintf(pFile, "\n[Filter]\n");
 		fprintf(pFile, "FilterFileEnabled=%i\n",		Profile.filterfile_enabled);

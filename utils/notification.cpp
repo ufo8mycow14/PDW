@@ -22,6 +22,7 @@
 #include "headers\pdw.h"
 #include "headers\initapp.h"
 #include "headers\notification.h"
+#include "headers\output_health.h"
 #include "notification_core.h"
 #include "curl_runtime.h"
 #include "smtp.h"
@@ -579,6 +580,8 @@ namespace
 		{
 			SetStatus(error);
 			AppendSanitizedLog(task.event, "configuration-unavailable");
+			OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_FAILURE,
+				"Saved Apprise configuration could not be read.");
 			FinishTask(task);
 			WipeConfig(config);
 			return;
@@ -588,6 +591,8 @@ namespace
 		{
 			SetStatus(error);
 			AppendSanitizedLog(task.event, "configuration-invalid");
+			OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_FAILURE,
+				"Apprise configuration is invalid.");
 			FinishTask(task);
 			WipeConfig(config);
 			return;
@@ -616,15 +621,25 @@ namespace
 			string status = NotificationSanitizedHttpStatus(outcome.httpStatus);
 			SetStatus(status);
 			if (outcome.httpStatus == 200)
+			{
 				AppendSanitizedLog(task.event, task.test ? "test-delivered" : "delivered");
+				OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_SUCCESS,
+					task.test ? "Apprise test delivered." : "Apprise notification delivered.");
+			}
 			else
+			{
 				AppendSanitizedLog(task.event, "http-failure");
+				OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_FAILURE,
+					"Apprise returned a non-success HTTP status after retries.");
+			}
 		}
 		else if (outcome.curlCode == CURLE_PEER_FAILED_VERIFICATION ||
 			outcome.curlCode == CURLE_SSL_CACERT || outcome.curlCode == CURLE_SSL_CONNECT_ERROR)
 		{
 			SetStatus("Apprise HTTPS certificate validation failed.");
 			AppendSanitizedLog(task.event, "tls-failure");
+			OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_FAILURE,
+				"Apprise HTTPS certificate validation failed.");
 		}
 		else if (outcome.curlCode == CURLE_ABORTED_BY_CALLBACK &&
 			InterlockedCompareExchange(&g_shuttingDown, 0, 0))
@@ -635,6 +650,8 @@ namespace
 		{
 			SetStatus("Apprise could not be reached within the delivery timeout.");
 			AppendSanitizedLog(task.event, "network-failure");
+			OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_FAILURE,
+				"Apprise could not be reached after bounded retries.");
 		}
 
 		FinishTask(task);
@@ -674,7 +691,12 @@ namespace
 	bool QueueTask(AppriseTask &task)
 	{
 		if (!g_notificationInitialized || g_workerThread == NULL ||
-			InterlockedCompareExchange(&g_shuttingDown, 0, 0)) return false;
+			InterlockedCompareExchange(&g_shuttingDown, 0, 0))
+		{
+			OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_DROPPED,
+				"Apprise worker is unavailable; notification was not queued.");
+			return false;
+		}
 
 		bool queued = false;
 		EnterCriticalSection(&g_notificationLock);
@@ -687,7 +709,12 @@ namespace
 		LeaveCriticalSection(&g_notificationLock);
 
 		if (queued) SetEvent(g_workEvent);
-		else SetStatus("The Apprise queue is full; the newest notification was not queued.");
+		else
+		{
+			SetStatus("The Apprise queue is full; the newest notification was not queued.");
+			OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_DROPPED,
+				"Apprise queue is full; newest notification was not queued.");
+		}
 		return queued;
 	}
 
@@ -756,6 +783,7 @@ void NotificationManagerInitialize(void)
 	if (g_notificationInitialized) return;
 	InitializeCriticalSection(&g_notificationLock);
 	g_notificationInitialized = true;
+	OutputHealthSetEnabled(OUTPUT_HEALTH_APPRISE, Profile.appriseEnabled != 0);
 	InterlockedExchange(&g_shuttingDown, 0);
 
 	g_workEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -763,6 +791,8 @@ void NotificationManagerInitialize(void)
 	if (g_workEvent == NULL || g_stopEvent == NULL)
 	{
 		SetStatus("PDW could not initialize the Apprise worker events.");
+		OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_FAILURE,
+			"Apprise worker events could not be created.");
 		return;
 	}
 
@@ -770,6 +800,8 @@ void NotificationManagerInitialize(void)
 	if (!g_curlInitialized)
 	{
 		SetStatus("PDW could not initialize the HTTPS notification client.");
+		OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_FAILURE,
+			"Apprise HTTPS client could not initialize.");
 		return;
 	}
 
@@ -777,6 +809,8 @@ void NotificationManagerInitialize(void)
 	if (worker == 0)
 	{
 		SetStatus("PDW could not start the Apprise background worker.");
+		OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_FAILURE,
+			"Apprise background worker could not start.");
 		return;
 	}
 	g_workerThread = (HANDLE) worker;
@@ -822,6 +856,7 @@ void NotificationManagerShutdown(void)
 void NotificationSettingsChanged(void)
 {
 	if (!g_notificationInitialized) return;
+	OutputHealthSetEnabled(OUTPUT_HEALTH_APPRISE, Profile.appriseEnabled != 0);
 	if (!Profile.appriseEnabled)
 	{
 		InterlockedExchange(&g_appriseEnabled, 0);
@@ -840,6 +875,8 @@ void NotificationSettingsChanged(void)
 	{
 		InterlockedExchange(&g_appriseEnabled, 0);
 		SetStatus(error);
+		OutputHealthRecord(OUTPUT_HEALTH_APPRISE, OUTPUT_HEALTH_FAILURE,
+			"Enabled Apprise configuration is incomplete or invalid.");
 	}
 	WipeConfig(config);
 }

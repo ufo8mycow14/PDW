@@ -21,6 +21,7 @@
 #include "headers\data_outputs.h"
 #include "headers\resource.h"
 #include "headers\notification.h"
+#include "headers\output_health.h"
 #include "headers\pdw.h"
 #include "headers\initapp.h"
 #include "data_output_core.h"
@@ -201,6 +202,28 @@ namespace
 		return g_toastState;
 	}
 
+	int HealthDestinationForTarget(int target)
+	{
+		if (target == TARGET_MQTT) return OUTPUT_HEALTH_MQTT;
+		if (target == TARGET_SQLITE) return OUTPUT_HEALTH_SQLITE;
+		if (target == TARGET_MYSQL) return OUTPUT_HEALTH_MYSQL_ODBC;
+		if (target == TARGET_TELNET) return OUTPUT_HEALTH_TELNET;
+		return OUTPUT_HEALTH_WINDOWS_TOAST;
+	}
+
+	void RecordDroppedTargets(int targets)
+	{
+		static const int knownTargets[] = {
+			TARGET_MQTT, TARGET_SQLITE, TARGET_MYSQL, TARGET_TELNET, TARGET_TOAST
+		};
+		OutputHealthRecord(OUTPUT_HEALTH_DATA_ROUTER, OUTPUT_HEALTH_DROPPED,
+			"Optional-output queue is full; newest event was not queued.");
+		for (std::size_t index = 0; index < _countof(knownTargets); ++index)
+			if (targets & knownTargets[index])
+				OutputHealthRecord(HealthDestinationForTarget(knownTargets[index]),
+					OUTPUT_HEALTH_DROPPED, "Optional-output queue was full before delivery.");
+	}
+
 	void SetAdapterStatus(int target, bool success, const std::string& status, bool count = true)
 	{
 		EnterCriticalSection(&g_lock);
@@ -212,6 +235,9 @@ namespace
 			else ++state.failed;
 		}
 		LeaveCriticalSection(&g_lock);
+		if (count)
+			OutputHealthRecord(HealthDestinationForTarget(target),
+				success ? OUTPUT_HEALTH_SUCCESS : OUTPUT_HEALTH_FAILURE, status.c_str());
 	}
 
 	std::string CredentialTarget(const char* name)
@@ -440,6 +466,7 @@ namespace
 			WipeTask(task);
 			return false;
 		}
+		const int targets = task.test ? task.targets : EnabledTargets(SnapshotConfig());
 		bool queued = false;
 		EnterCriticalSection(&g_lock);
 		if (g_queue.size() < MAX_QUEUE)
@@ -454,7 +481,13 @@ namespace
 		}
 		LeaveCriticalSection(&g_lock);
 		WipeTask(task);
-		if (queued && g_workEvent) SetEvent(g_workEvent);
+		if (queued)
+		{
+			OutputHealthRecord(OUTPUT_HEALTH_DATA_ROUTER, OUTPUT_HEALTH_SUCCESS,
+				"Optional-output event queued.");
+			if (g_workEvent) SetEvent(g_workEvent);
+		}
+		else RecordDroppedTargets(targets);
 		return queued;
 	}
 
@@ -854,6 +887,13 @@ void DataOutputSettingsChanged(void)
 	g_config = config;
 	++g_configGeneration;
 	LeaveCriticalSection(&g_lock);
+	const bool ready = config.enabled && config.acknowledged;
+	OutputHealthSetEnabled(OUTPUT_HEALTH_DATA_ROUTER, ready && EnabledTargets(config));
+	OutputHealthSetEnabled(OUTPUT_HEALTH_MQTT, ready && config.mqttEnabled);
+	OutputHealthSetEnabled(OUTPUT_HEALTH_SQLITE, ready && config.sqliteEnabled);
+	OutputHealthSetEnabled(OUTPUT_HEALTH_MYSQL_ODBC, ready && config.mysqlEnabled);
+	OutputHealthSetEnabled(OUTPUT_HEALTH_TELNET, ready && config.telnetEnabled);
+	OutputHealthSetEnabled(OUTPUT_HEALTH_WINDOWS_TOAST, ready && config.toastEnabled);
 
 	g_telnet.Stop();
 	if (!config.enabled) SetManagerStatus("Data outputs are disabled; legacy outputs are unchanged.");
@@ -869,6 +909,9 @@ void DataOutputSettingsChanged(void)
 			g_telnet.Start(config.telnetBindAddress, static_cast<unsigned short>(config.telnetPort),
 				config.telnetAllowRemote, error);
 		SetAdapterStatus(TARGET_TELNET, started, started ? g_telnet.Status() : "Telnet JSON: " + error, false);
+		if (!started)
+			OutputHealthRecord(OUTPUT_HEALTH_TELNET, OUTPUT_HEALTH_FAILURE,
+				"Telnet JSON listener could not start on the configured endpoint.");
 	}
 	else SetAdapterStatus(TARGET_TELNET, true, "Disabled.", false);
 	if (!config.mqttEnabled) SetAdapterStatus(TARGET_MQTT, true, "Disabled.", false);
@@ -994,6 +1037,10 @@ BOOL FAR PASCAL DataOutputsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 		case WM_COMMAND:
 			switch (LOWORD(wParam))
 			{
+				case IDC_OUTPUT_OPEN_HEALTH:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(OUTPUT_HEALTH_DLGBOX),
+						hDlg, (DLGPROC) OutputHealthDlgProc, 0L);
+					return TRUE;
 				case IDC_OUTPUT_ENABLE:
 				case IDC_OUTPUT_ACK:
 				case IDC_OUTPUT_MQTT_ENABLE:
