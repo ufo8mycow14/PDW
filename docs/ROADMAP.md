@@ -51,7 +51,7 @@ wholesale merged.
 | 7 | PDW v4.5.0 Beta metadata, package, fork, CI, and artifact alignment | Complete; PR #5 merged into fork `master` |
 | 8 | Image-approved 2026 Windows navigation, live input, and Settings Center | Complete in fork `master`; 100% Light/Dark and compact-size smoke passed |
 | 9 | PDW v4.6.0 Beta native x64 plus retained Win32 release alignment | Clean local dual gates and package audit complete; draft PR #6 opened for CI/review |
-| 10 | PDW v4.6.1 Beta repository, security, legacy-retention, and release-identity enforcement | Local audit, clean dual builds, 24/24 tests per architecture, optional smoke builds, metadata, manifest, About and UI smoke pass; package/fork gates pending |
+| 10 | PDW v4.6.1 Beta repository, security, legacy-retention, and release-identity enforcement | Local audit, clean dual builds/tests/smoke, metadata, About, UI and package gates pass; draft PR #7 opened and CI review pending |
 
 Delivery Health stores no pager addresses or decoded text and cannot alter a
 delivery result. FLEX shadow assembly cannot suppress a legacy fragment on

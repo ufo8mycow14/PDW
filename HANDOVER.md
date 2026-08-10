@@ -30,16 +30,17 @@ Important integration checkpoints:
 - `98ff7ad` - INI preservation;
 - `77e23bd` - legacy-safe FLEX fragment reassembly.
 
-Fork publication state before the v4.6.1 push:
+Fork publication state:
 
 - v4.5 PR #5 was merged into fork `master` on 10 August 2026;
-- previous pushed branch: `fork/pdw-v4.6.0-beta`;
-- previous draft PR: `https://github.com/ufo8mycow14/PDW/pull/6`;
-- local v4.6.1 branch and replacement draft PR are pending final dual gates;
+- pushed branch: `fork/pdw-v4.6.1-beta`;
+- draft PR: `https://github.com/ufo8mycow14/PDW/pull/7`;
+- v4.6.0 draft PR #6 is closed as superseded, with its branch retained as
+  rollback history;
 - the first v4.6 release commit is `14e9591`; GitHub checks run on every PR
   update and the PR is the authoritative current CI state;
-- the repository audit and its package-evidence sync remain on this same v4.6
-  release branch rather than creating a separate legacy-cleanup edition;
+- the repository audit, release rules, and package-evidence sync remain on the
+  v4.6.1 release branch rather than creating a separate legacy-cleanup edition;
 - superseded v4.1 draft PR #3 is closed, with its branch retained;
 - Win32 workflow run `31361744748` passed dependency build, application build,
   all 18 tests, and artifact upload;
