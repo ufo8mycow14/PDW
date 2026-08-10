@@ -21,7 +21,16 @@ hardware paths remain available in one executable.
   legacy path.
 - Warning-clean unit coverage for optional data outputs, delivery health, INI
   preservation, and FLEX fragment sequence, timeout, capacity, restart, and
-  truncation behavior. The Release suite now contains 18 tests.
+  truncation behavior.
+- Redistribution-safe raw-symbol POCSAG alpha, numeric, and tone-only fixtures
+  that compile the unchanged legacy decoder and check exact address, mode,
+  type, bitrate, payload, and clean-codeword error results without captured
+  pager traffic.
+- Optional, non-CI WinMM and WASAPI device smoke executables plus a maintained
+  live-input acceptance matrix.
+- CI tests for versioned publishing-job persistence, deterministic delivery
+  transitions, restart-unique event IDs, and disabled-by-default release
+  configuration. The Release suite now contains 23 tests.
 
 ### Changed
 
@@ -35,6 +44,24 @@ hardware paths remain available in one executable.
   so newly added suites cannot be silently omitted.
 - Product, executable, package, artifact, and release-branch naming is aligned
   to PDW v4.5.0 Beta.
+- Publishing now durably records the original event ID, frozen static output
+  folder, selected/completed/failed destinations, and independent retry counts
+  before enqueue. Pause and restart retain work; completed destinations are not
+  repeated; a failed destination cannot consume another destination's retries;
+  monotonic crash-state is recovered; duplicate pending IDs are suppressed;
+  and legacy version-1 or payload-only jobs remain loadable.
+- Static publishing restores its bounded rolling history after restart, repairs
+  torn JSONL tails, flushes history and rolling files before recording delivery
+  completion, and keeps queued events bound to the folder selected at intake.
+- Decoded-event IDs now include a Windows-generated GUID while retaining the
+  readable UTC prefix and filename-safe format.
+- Added keyboard tab access to five legacy checkboxes, corrected High Contrast
+  on-to-off palette refresh, retained the old volume mixer behind a current
+  Windows fallback, centered dialogs on their owner monitor, and DPI-scaled
+  Delivery Health columns.
+- Normal developer builds now copy `PDW.pdf` beside the executable so F1 help
+  works outside the portable package. Package review scans every staged INI
+  for non-empty secret fields, including indented entries.
 
 ### Compatibility
 

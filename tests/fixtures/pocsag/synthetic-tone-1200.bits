@@ -1,0 +1,5 @@
+# Synthetic POCSAG sync, one tone-only address, then idle.
+# Each row is one 32-bit word in transmission order (most-significant bit first).
+01111100110100100001010111011000 # sync 0x7CD215D8
+00000000000011111010100010111001 # address 0x000FA8B9
+01111010100010011100000110010111 # idle 0x7A89C197

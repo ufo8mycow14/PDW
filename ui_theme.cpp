@@ -291,7 +291,8 @@ LRESULT PdwThemeHandleToolbarCustomDraw(LPARAM lParam)
 
 void PdwThemeSystemSettingChanged(HWND hWnd)
 {
-	if (Profile.uiTheme != PDW_THEME_SYSTEM && !ReadHighContrast()) return;
+	const bool highContrast = ReadHighContrast();
+	if (Profile.uiTheme != PDW_THEME_SYSTEM && highContrast == g_highContrast) return;
 	RefreshPalette();
 	PdwThemeApplyToMainWindow(hWnd, hToolbar);
 	EnumThreadWindows(GetCurrentThreadId(), ApplyThreadWindow, 0);

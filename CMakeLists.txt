@@ -126,6 +126,8 @@ set_source_files_properties(
   utils/decoded_event.cpp
   utils/flex_fragment_reassembly_core.cpp
   utils/output_health.cpp
+  utils/publishing_delivery_state.cpp
+  utils/publishing_job_store.cpp
   PROPERTIES COMPILE_OPTIONS "/W4;/WX"
 )
 
@@ -182,6 +184,17 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Receivers")
 	)
 endif()
 
+# Keep F1 help functional in a normal developer build as well as in the
+# portable package, which already stages the manual under this legacy name.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pdw-manual.pdf")
+	add_custom_command(TARGET PDW POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${CMAKE_CURRENT_SOURCE_DIR}/pdw-manual.pdf"
+			"$<TARGET_FILE_DIR:PDW>/PDW.pdf"
+		COMMENT "Copying PDW manual for F1 help"
+	)
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
@@ -226,6 +239,46 @@ if(BUILD_TESTING)
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	add_test(NAME decoder-candidate-core COMMAND PDWDecoderCandidateTests)
+
+	add_executable(PDWDecodedEventTests
+		tests/decoded_event_tests.cpp
+		utils/decoded_event.cpp
+		utils/publishing_core.cpp
+	)
+	target_include_directories(PDWDecodedEventTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Headers"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWDecodedEventTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWDecodedEventTests PRIVATE Ole32.lib)
+	add_test(NAME decoded-event-identity COMMAND PDWDecodedEventTests)
+
+	# Compile the established POCSAG implementation unchanged against a
+	# synthetic raw-codeword fixture. Test-only globals capture its output
+	# without linking the Win32 presentation or network destinations.
+	add_executable(PDWPocsagFixtureTests
+		tests/pocsag_fixture_tests.cpp
+		tests/pocsag_test_environment.cpp
+		Pocsag.cpp
+	)
+	target_include_directories(PDWPocsagFixtureTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Headers"
+		"${CMAKE_CURRENT_SOURCE_DIR}/tests"
+	)
+	target_compile_definitions(PDWPocsagFixtureTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+	target_compile_options(PDWPocsagFixtureTests PRIVATE
+		/W4 /WX /wd4244
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME pocsag-fixture-regression COMMAND PDWPocsagFixtureTests
+		"${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/pocsag")
 
 	add_executable(PDWSignalRecordingTests
 		tests/signal_recording_core_tests.cpp
@@ -326,6 +379,36 @@ if(BUILD_TESTING)
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	add_test(NAME publishing-core COMMAND PDWPublishingCoreTests)
+
+	add_executable(PDWPublishingJobStoreTests
+		tests/publishing_job_store_tests.cpp
+		utils/publishing_core.cpp
+		utils/publishing_job_store.cpp
+	)
+	target_include_directories(PDWPublishingJobStoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_definitions(PDWPublishingJobStoreTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+	target_compile_options(PDWPublishingJobStoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME publishing-job-store COMMAND PDWPublishingJobStoreTests)
+
+	add_executable(PDWPublishingDeliveryStateTests
+		tests/publishing_delivery_state_tests.cpp
+		utils/publishing_delivery_state.cpp
+	)
+	target_include_directories(PDWPublishingDeliveryStateTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWPublishingDeliveryStateTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME publishing-delivery-state COMMAND PDWPublishingDeliveryStateTests)
 
 	add_executable(PDWSmtpMessageCoreTests
 		tests/smtp_message_core_tests.cpp
@@ -449,6 +532,17 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME ini-preservation COMMAND PDWIniPreservationTests)
 
+	add_executable(PDWReleaseDefaultsTests
+		tests/release_defaults_tests.cpp
+	)
+	target_compile_options(PDWReleaseDefaultsTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME release-defaults COMMAND PDWReleaseDefaultsTests
+		"${CMAKE_CURRENT_SOURCE_DIR}/packaging/PDW.INI")
+
 	add_executable(PDWFlexFragmentReassemblyTests
 		tests/flex_fragment_reassembly_core_tests.cpp
 		utils/flex_fragment_reassembly_core.cpp
@@ -477,4 +571,14 @@ if(BUILD_TESTING)
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	target_link_libraries(PDWWasapiDeviceSmoke PRIVATE Ole32.lib Mmdevapi.lib Uuid.lib)
+
+	add_executable(PDWWinmmDeviceSmoke EXCLUDE_FROM_ALL
+		tests/winmm_device_smoke.cpp
+	)
+	target_compile_options(PDWWinmmDeviceSmoke PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWWinmmDeviceSmoke PRIVATE Winmm.lib)
 endif()

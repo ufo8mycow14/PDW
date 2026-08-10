@@ -127,11 +127,18 @@ try {
         throw "Generated/private runtime files were found in the package: $($forbidden.FullName -join ', ')"
     }
 
-    $configurationText = Get-Content -LiteralPath (Join-Path $application "PDW.INI")
-    $nonEmptySecret = $configurationText | Where-Object {
-        $_ -match '(?i)^(Password|Token|Secret|ApiKey|BearerToken)\s*=\s*\S+'
+    $nonEmptySecret = Get-ChildItem -LiteralPath $staging -Recurse -Force -File -Filter *.ini |
+        ForEach-Object {
+            $iniPath = $_.FullName
+            Get-Content -LiteralPath $iniPath | ForEach-Object {
+                if ($_ -match '(?i)^\s*(Password|Token|Secret|ApiKey|BearerToken)\s*=\s*\S+') {
+                    "$iniPath`: $($Matches[1])"
+                }
+            }
+        }
+    if ($nonEmptySecret) {
+        throw "A staged INI contains a non-empty secret field: $($nonEmptySecret -join ', ')"
     }
-    if ($nonEmptySecret) { throw "The packaged INI contains a non-empty secret field." }
 
     $hashLines = Get-ChildItem -LiteralPath $staging -Recurse -Force -File |
         Sort-Object FullName |

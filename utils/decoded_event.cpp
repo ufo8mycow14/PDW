@@ -1,6 +1,7 @@
 #include "decoded_event.h"
 
 #include <windows.h>
+#include <objbase.h>
 
 #include <cstdio>
 #include <vector>
@@ -45,7 +46,21 @@ std::string CreateEventId()
 {
 	SYSTEMTIME now;
 	GetSystemTime(&now);
-	char text[80];
+	GUID guid;
+	char text[96];
+	if (SUCCEEDED(CoCreateGuid(&guid)))
+	{
+		snprintf(text, sizeof(text),
+			"%04u%02u%02uT%02u%02u%02u-%08lX-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X",
+			now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond,
+			static_cast<unsigned long>(guid.Data1), static_cast<unsigned int>(guid.Data2),
+			static_cast<unsigned int>(guid.Data3), static_cast<unsigned int>(guid.Data4[0]),
+			static_cast<unsigned int>(guid.Data4[1]), static_cast<unsigned int>(guid.Data4[2]),
+			static_cast<unsigned int>(guid.Data4[3]), static_cast<unsigned int>(guid.Data4[4]),
+			static_cast<unsigned int>(guid.Data4[5]), static_cast<unsigned int>(guid.Data4[6]),
+			static_cast<unsigned int>(guid.Data4[7]));
+		return text;
+	}
 	snprintf(text, sizeof(text), "%04u%02u%02uT%02u%02u%02u-%lu-%ld",
 		now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond,
 		static_cast<unsigned long>(GetCurrentProcessId()), InterlockedIncrement(&g_eventCounter));

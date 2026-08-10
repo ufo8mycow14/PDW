@@ -1,0 +1,3 @@
+# Legacy tone-only output uses the NUMERIC type field and TONE ONLY payload.
+# address|mode|type|bitrate|payload
+0001000|POCSAG-2|NUMERIC|1200|TONE ONLY

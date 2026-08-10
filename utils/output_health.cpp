@@ -76,6 +76,7 @@ namespace
 	void ConfigureHealthList(HWND list)
 	{
 		ListView_SetExtendedListViewStyle(list, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+		const UINT dpi = GetDpiForWindow(list);
 		struct Column { const char* title; int width; };
 		static const Column columns[] = {
 			{"Output", 118}, {"State", 72}, {"OK", 44}, {"Fail", 44}, {"Drop", 44},
@@ -86,7 +87,7 @@ namespace
 			LVCOLUMNA column = {};
 			column.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
 			column.pszText = const_cast<char*>(columns[index].title);
-			column.cx = columns[index].width;
+			column.cx = MulDiv(columns[index].width, dpi ? dpi : 96, 96);
 			column.iSubItem = index;
 			ListView_InsertColumn(list, index, &column);
 		}

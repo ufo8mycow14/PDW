@@ -16,6 +16,11 @@ PDW maintains five UTF-8 files in the selected folder:
 - `messages.atom`: an Atom feed;
 - `index.html`: a responsive standalone table for a simple website.
 
+The rolling JSON, RSS, Atom, and HTML feeds restore up to the newest 200 unique
+events from JSONL after restart. A torn final JSONL line is removed before a
+durable retry, and every static file is flushed before that destination is
+recorded complete.
+
 Point **File transfer** at these files to publish them using the existing FTP,
 certificate-verified FTPS, or host-key-verified SFTP scheduler. A web server can
 also serve the folder directly.
@@ -45,11 +50,32 @@ is explicitly intended and lawful.
 ## Queue and failure behaviour
 
 Delivery runs on a background worker and never waits in the capture/decoder
-thread. Event JSON is retained under `PublishQueue` while work is pending.
-Transient failures retry up to five times with exponential backoff. Repeated
-failures move to `PublishQueue\DeadLetter` for operator review. Pause retains
-queued work. The minimum interval setting provides simple rate limiting.
+thread. A version-2 `.pdwjob` record is atomically retained under
+`PublishQueue` before normal work is enqueued. It preserves the original event
+ID, selected destinations, completed and exhausted destinations, independent
+per-destination attempts, and the static output folder selected at intake. A
+restart therefore does not change the idempotency key, repeat a completed
+destination, reset a five-attempt limit, or silently move older queued traffic
+to a newly selected website folder. Version-1 jobs and older payload-only
+`.json` queue files remain loadable and are conservatively upgraded without
+taking their identity from the filename.
+
+Each destination retries up to five times with exponential backoff. Exhausting
+one destination does not prevent another selected destination from completing;
+the final job moves to `PublishQueue\DeadLetter` when all selected destinations
+are terminal and at least one failed. Pause retains existing and newly arriving
+queued work. Temporarily unavailable HTTPS support holds webhook work without
+consuming retries, while static work remains available. Duplicate pending event
+IDs are suppressed; malformed, oversized, duplicate, and excess recovery files
+are quarantined rather than sent. A flushed temporary record can replace an
+older final record only when its completion/failure state advances
+monotonically. The minimum interval setting provides simple rate limiting.
+Disposable-service acceptance is still required to classify terminal
+certificate/authentication failures separately from transient timeouts and
+service throttling.
 
 The generated `Published` and `PublishQueue` folders are ignored by Git to
 reduce the chance of accidentally committing private traffic. Operators must
-also secure backups, web hosting, logs, and any downstream service.
+also secure queue and dead-letter files because they can contain the selected
+published message representation and its selected static output path, as well
+as backups, web hosting, logs, and any downstream service.

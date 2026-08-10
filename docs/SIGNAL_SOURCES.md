@@ -15,6 +15,12 @@ feeds the existing protocol routines. Device loss triggers a bounded retry.
 Serial two-level and four-level slicers, inversion settings, sample-rate/audio
 configuration presets, `.rec` playback, and WAV alerts are unchanged.
 
+Optional hardware smoke executables verify the current default WinMM and
+WASAPI capture endpoints without saving any samples. They are excluded from
+the normal CI suite because audio devices vary between computers. Build and
+run instructions plus the maintained device matrix are in
+`docs/LIVE_INPUT_ACCEPTANCE.md`.
+
 ## RTL-TCP
 
 Select **RTL-TCP compatible network receiver**, enter host, port, frequency,

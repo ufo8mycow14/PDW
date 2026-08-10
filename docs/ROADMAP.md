@@ -16,15 +16,15 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 
 | Area | Current state | Next gate |
 | --- | --- | --- |
-| Win32 build | Clean local build and fresh-clone GitHub build pass all 18 tests | Keep CI green |
-| Windows interface | v4.1 themes, menus, Settings, DPI, and startup layout retained | Light/dark, keyboard, DPI, and small-screen acceptance |
-| Legacy decoding | POCSAG, FLEX, ACARS, MOBITEX, and ERMES paths retained | Recording-backed protocol regression suite |
-| Windows audio | WinMM retained; WASAPI fallback implemented | Live device-loss and hot-plug acceptance |
+| Win32 build | Clean local build passes all 23 tests; previously published fresh-clone build passed its 18-test checkpoint | Keep CI green and verify the expanded suite after push |
+| Windows interface | Legacy layout retained; tab order, High Contrast refresh, volume route, dialog centering, F1 help, and Delivery Health DPI widths improved | Light/dark, keyboard, DPI, and small-screen acceptance |
+| Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
+| Windows audio | WinMM and WASAPI captured from the real default device on the development machine | Live device-loss, hot-plug, and broader device-matrix acceptance |
 | Direct radio | `rtl_tcp` and optional RTL-SDR USB implemented | Multi-device live-radio matrix and recovery tests |
 | Recording/diagnostics | WAV/SigMF, waveform, quality, error, and calibration tools implemented | Operator workflow and privacy review |
 | Secure transfer | FTP/FTPS/SFTP implemented | Disposable-server success and deliberate failure tests |
 | Notifications | SMTP retained; Apprise and Windows notifications added | End-to-end non-private delivery tests |
-| Web publishing | Static feeds, HTML, and HTTPS webhook implemented | Queue recovery, rate, and privacy acceptance |
+| Web publishing | Static feeds/webhook plus v2 restart-safe per-target state, frozen folders, GUID IDs, durable history, partial completion, deduplication, and monotonic recovery tests | Live rate, privacy, and terminal-vs-transient failure acceptance |
 | Optional data outputs | MQTT, SQLite, ODBC/MySQL, Telnet, and Windows notifications complete at `67454a1` | Live disposable-service testing |
 | Delivery health | Content-free observer, dialog, history, and alerts complete at `682dfd2` | Runtime visual acceptance across themes and DPI |
 | Settings compatibility | Unknown INI keys, sections, comments, BOM, and line endings preserved at `98ff7ad` | Extend round-trip fixtures with future settings |
@@ -88,6 +88,11 @@ Priority: release follow-up
 Completion gate: repeatable notes cover each supported input and PDW returns
 safely to a known input after failures and replay.
 
+Current evidence: `docs/LIVE_INPUT_ACCEPTANCE.md` records successful manual and
+five-second auto-start timing plus real default-device capture through both the
+legacy WinMM format and the WASAPI fallback. Device removal/recovery,
+`rtl_tcp`, and physical RTL-SDR acceptance remain open.
+
 ## Milestone 3 - Decoder regression evidence
 
 Priority: release blocking for future decoder changes
@@ -102,6 +107,12 @@ Priority: release blocking for future decoder changes
 
 Completion gate: CI detects decoder-output regressions. No private live traffic
 is stored in the repository.
+
+Current evidence: deterministic raw-symbol POCSAG alpha, numeric, and tone-only
+fixtures compile the unchanged `Pocsag.cpp` and check exact addresses,
+functions/modes, legacy types, bitrates, payloads, clean-codeword validation,
+and bit-error observations. Production correction, audio/WAV, FLEX, filtering,
+duplicate, ACARS, MOBITEX, and ERMES fixtures remain open.
 
 ## Milestone 4 - Secure delivery validation
 
@@ -118,6 +129,15 @@ Priority: before broad public use
 Completion gate: success and deliberate-failure evidence exists for each
 enabled output, while every optional output remains disabled by default.
 
+Current evidence: publishing tests now cover version-2 atomic state, version-1
+and payload-only compatibility, restart-unique safe IDs, frozen static paths,
+independent per-target retries, selected/completed/failed destinations,
+monotonic temporary recovery, torn-history repair, exact terminal thresholds,
+pending-ID deduplication, and malformed/oversized input. A separate
+release-default test keeps every optional destination off and privacy-sensitive
+defaults intact. Live services and terminal/transient network classification
+remain open.
+
 ## Milestone 5 - Windows usability and accessibility
 
 Priority: before stable release
@@ -132,6 +152,14 @@ Priority: before stable release
 
 Completion gate: primary workflows are usable without clipped controls or a
 mouse, and failures provide an actionable recovery path.
+
+Current evidence: all visible interactive resource buttons now participate in
+tab order; High Contrast can return to the selected System/Light/Dark palette;
+current Windows volume control retains the legacy fallback; dialogs center and
+clamp within their owner's monitor; F1 help is staged in developer builds; and
+Delivery Health columns use the active DPI. Manual visual and keyboard
+acceptance at every target scale remains open and is tracked in
+`docs/WINDOWS_UI_ACCEPTANCE.md`.
 
 ## Milestone 6 - Maintainability and x64 evaluation
 

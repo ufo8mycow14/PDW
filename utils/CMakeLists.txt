@@ -11,6 +11,7 @@ set( PDW_INCLUDES
   #${CMAKE_CURRENT_SOURCE_DIR}/ipcnfg.h
   ${CMAKE_CURRENT_SOURCE_DIR}/notification_core.h
 	${CMAKE_CURRENT_SOURCE_DIR}/publishing_core.h
+	${CMAKE_CURRENT_SOURCE_DIR}/publishing_delivery_state.h
   ${CMAKE_CURRENT_SOURCE_DIR}/rs232.h
   ${CMAKE_CURRENT_SOURCE_DIR}/smtp.h
   ${CMAKE_CURRENT_SOURCE_DIR}/smtp_int.h
@@ -39,6 +40,8 @@ set( PDW_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/output_health_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/publishing.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/publishing_core.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/publishing_delivery_state.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/publishing_job_store.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/smtp_message_core.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/sqlite_output.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/telnet_output_server.cpp

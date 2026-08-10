@@ -84,23 +84,41 @@ before safe modification. See `docs/FLEX_FRAGMENTS.md`.
 ## Verified local build state
 
 The clean Win32 Release build completed on 10 August 2026 with Visual Studio
-2022 and the pinned x86 dependency set. CTest passed **18 of 18 tests**.
+2022 and the pinned x86 dependency set. The expanded local CTest suite passes
+**23 of 23 tests**.
 
 Verified executable metadata:
 
 - filename: `PDW v4.5.0 Beta.exe`;
 - file version: `4.5.0.0`;
 - product version: `4.5.0 Beta`;
-- SHA-256: `155B6C6C038B9A7BCFDA5A616F169320E8789F02848922724E19555F37B807E7`.
+- SHA-256: `C225F206F298D29FA25E8E0B0CD0DF6C964E6048AECC39C410E8B3505296B300`.
 
 A real startup smoke test created a main window titled **PDW v4.5.0 Beta**.
 The app remained running until the exact smoke-test process was stopped. The
 native resource compiler also accepted the expanded Screen Options dialog.
 
+Follow-up acceptance on 10 August 2026 measured responsive manual main-window
+starts from 243 ms to 1,189 ms, including 422 ms after the final clean build,
+and responsive `/startup` starts from 5,141 ms to 6,906 ms. The optional hardware smoke targets
+captured 44,100 bytes through legacy WinMM at 44.1 kHz 8-bit mono and 48,000
+samples through WASAPI at 48 kHz on the final clean-build rerun. See
+`docs/LIVE_INPUT_ACCEPTANCE.md`; device removal, hot-plug, `rtl_tcp`, and
+physical RTL-SDR tests remain separate open gates.
+
 Full click-through visual automation was unavailable in the active Codex
 runtime. Light/dark, keyboard, DPI, and physical receiver acceptance therefore
 remain explicit manual gates; a successful build is not presented as that
-acceptance.
+acceptance. The repeatable matrix is in `docs/WINDOWS_UI_ACCEPTANCE.md`.
+
+The continued roadmap pass added synthetic POCSAG alpha, numeric, and tone-only
+fixtures around the unchanged legacy decoder; version-2 per-target publishing
+state with frozen static folders, monotonic crash recovery, durable feed
+history, and restart-unique IDs; release default/privacy tests; keyboard
+tab-order fixes; High Contrast recovery; current/legacy volume routing;
+owner-monitor dialog clamping; developer-build F1 help; and DPI-scaled Delivery
+Health columns. These are additive safety and evidence changes; no protocol
+algorithm or legacy input/output was removed.
 
 Rebuild commands:
 
@@ -110,6 +128,12 @@ cmake -S . -B out\build-win32 -A Win32
 cmake --build out\build-win32 --config Release --target clean
 cmake --build out\build-win32 --config Release --parallel
 ctest --test-dir out\build-win32 -C Release --output-on-failure
+
+# Optional, machine-specific live audio checks
+cmake --build out\build-win32 --config Release --target PDWWinmmDeviceSmoke
+.\out\build-win32\Release\PDWWinmmDeviceSmoke.exe
+cmake --build out\build-win32 --config Release --target PDWWasapiDeviceSmoke
+.\out\build-win32\Release\PDWWasapiDeviceSmoke.exe
 ```
 
 ## Portable release package
@@ -163,9 +187,11 @@ tested local build.
 1. Perform manual System/Light/Dark, keyboard, high-contrast, and 100-200% DPI
    checks, including Screen Options, Data Outputs, and Delivery Health.
 2. Verify WinMM/WASAPI loss and recovery, `rtl_tcp`, and supported physical
-   RTL-SDR USB devices on intended hardware.
-3. Replay licensed, synthetic, or redacted POCSAG/FLEX recordings and compare
-   legacy output; specifically exercise complete and broken FLEX chains.
+   RTL-SDR USB devices on intended hardware. Default-device capture through
+   both Windows audio paths is now recorded in `docs/LIVE_INPUT_ACCEPTANCE.md`.
+3. Extend the synthetic POCSAG alpha/numeric/tone fixtures with audio, FLEX,
+   filtering, duplicate, correction, and other protocol evidence;
+   specifically exercise complete and broken FLEX chains.
 4. Test FTP/FTPS/SFTP, SMTP, Apprise, webhook, MQTT, ODBC, Telnet, and Windows
    notification success/failure paths using disposable non-private data.
 

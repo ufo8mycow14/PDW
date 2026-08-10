@@ -30,3 +30,12 @@ two-level polarity, four-level symbol mapping, preservation of the legacy
 FLEX A/C decision, confidence, reset behaviour, POCSAG-like and FLEX-like
 signal generation, WAV/SigMF round trips, and FM discriminator/resampling
 without using captured traffic.
+
+The `pocsag/synthetic-*-1200.*` sets are the first exact legacy-decoder
+fixtures. They contain deterministic clean POCSAG words generated for this
+repository and expected output for alpha, numeric, and tone-only pages.
+`pocsag_fixture_tests.cpp` compiles the unchanged `Pocsag.cpp`, validates each
+fixture's clean BCH/parity state, feeds its raw bits through `POCSAG::frame()`,
+and checks emitted addresses, modes, legacy types, bitrates, payloads, and
+zero-error observations. They do not yet establish production error
+correction, audio-slicer, filtering, duplicate, or FLEX regression coverage.

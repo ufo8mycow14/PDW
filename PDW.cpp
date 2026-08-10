@@ -1244,7 +1244,13 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                
 				case IDM_VOLUME: // Run the PDW volume control (Note: runs windows mixer)
 
-					ShellExecute(ghWnd, NULL, "Sndvol32.exe","", "",SW_SHOWNORMAL);
+					// Current Windows uses SndVol.exe. Retain the legacy executable as
+					// a fallback for older systems that still provide Sndvol32.exe.
+					if ((INT_PTR) ShellExecute(ghWnd, NULL, "SndVol.exe", NULL, NULL,
+						SW_SHOWNORMAL) <= 32)
+					{
+						ShellExecute(ghWnd, NULL, "Sndvol32.exe", NULL, NULL, SW_SHOWNORMAL);
+					}
 
 				break;
 
@@ -9618,7 +9624,7 @@ UINT CALLBACK CenterOpenDlgBox(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 
 BOOL CenterWindow(HWND hWnd)
 {
-	RECT rRect, rParentRect;
+	RECT rRect, rParentRect, rWorkArea;
 	HWND hParentWnd;
 	int  wParent, hParent, xNew, yNew, w, h;
 
@@ -9636,19 +9642,25 @@ BOOL CenterWindow(HWND hWnd)
 	xNew = wParent/2 - w/2 + rParentRect.left;
 	yNew = hParent/2 - h/2 + rParentRect.top;
 
-	xNew = max(xNew, 0);
-	yNew = max(yNew, 0);
-
-	// Get the limits of the 'workarea' (exclude tray area for WIN95)
-	if (!SystemParametersInfo(SPI_GETWORKAREA, sizeof(RECT), &rParentRect, 0))
+	// Keep dialogs on the same monitor as their owner. The older global work
+	// area calculation could move secondary-monitor dialogs to the primary
+	// screen and could produce negative coordinates for an oversized dialog.
+	MONITORINFO monitorInfo = {};
+	monitorInfo.cbSize = sizeof(monitorInfo);
+	const HMONITOR monitor = MonitorFromWindow(hParentWnd, MONITOR_DEFAULTTONEAREST);
+	if (monitor && GetMonitorInfo(monitor, &monitorInfo))
 	{
-		rParentRect.left   = rParentRect.top = 0;
-		rParentRect.right  = GetSystemMetrics(SM_CXSCREEN);
-		rParentRect.bottom = GetSystemMetrics(SM_CYSCREEN);
+		rWorkArea = monitorInfo.rcWork;
+	}
+	else if (!SystemParametersInfo(SPI_GETWORKAREA, sizeof(RECT), &rWorkArea, 0))
+	{
+		rWorkArea.left   = rWorkArea.top = 0;
+		rWorkArea.right  = GetSystemMetrics(SM_CXSCREEN);
+		rWorkArea.bottom = GetSystemMetrics(SM_CYSCREEN);
 	}
 
-	xNew = min(xNew, rParentRect.right  - w);
-	yNew = min(yNew, rParentRect.bottom - h);
+	xNew = max(rWorkArea.left, min(xNew, max(rWorkArea.left, rWorkArea.right - w)));
+	yNew = max(rWorkArea.top, min(yNew, max(rWorkArea.top, rWorkArea.bottom - h)));
 
 	return(SetWindowPos(hWnd, NULL, xNew, yNew, 0, 0, SWP_NOSIZE | SWP_NOZORDER));
 } // end of CenterWindow
