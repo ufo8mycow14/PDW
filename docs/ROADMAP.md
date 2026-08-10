@@ -29,13 +29,13 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Delivery health | Content-free observer, dialog, history, and alerts complete at `682dfd2` | Runtime visual acceptance across themes and DPI |
 | Settings compatibility | Unknown INI keys, sections, comments, BOM, and line endings preserved at `98ff7ad` | Extend round-trip fixtures with future settings |
 | FLEX fragments | Additive non-group K/F/C alpha reassembly complete at `77e23bd`; original fragments remain authoritative | Recording-backed live acceptance; Group Mode remains legacy |
-| Repository hygiene | File-by-file x64/Win32 audit complete; obsolete VC6/VS2017 state, caches, duplicate archive, and unused code/assets removed; CMake is authoritative | Repeat the audit when adding native dependencies or release-only assets |
-| Release packaging | The prior package audit is superseded by the repository cleanup; architecture-aware generation and rejection rules remain implemented | Regenerate and independently audit Win32 and x64 packages from the committed cleanup tree |
+| Repository hygiene | File-by-file x64/Win32 audit complete; obsolete VC6/VS2017 state, caches, duplicate archive, and unused code/assets removed; CMake is authoritative | Enforce `scripts/audit-release.ps1` and repeat the review when adding native dependencies or release-only assets |
+| Release packaging | Clean post-audit packages verify 628 combined manifest entries with no mismatch, unlisted file, private runtime file, INI secret, or obsolete source; architecture-specific receiver/legacy assets are correct | Retain prior packages as rollback evidence and repeat this audit for each release-candidate commit |
 | x64 | Native Release build, 24 tests, metadata, manifest extraction, package audit, and UI smoke pass locally; receiver DLL architecture is validated before load | Complete PR CI and physical receiver acceptance while keeping Win32 available |
 
 ## Safe integration sequence
 
-The active release branch is `pdw-v4.6.0-beta`. The approved interface,
+The active release branch is `pdw-v4.6.1-beta`. The approved interface,
 defaults, and legacy behavior remain authoritative. The `spiral` remote is
 fetch-only; work is selectively adopted and independently tested rather than
 wholesale merged.
@@ -51,6 +51,7 @@ wholesale merged.
 | 7 | PDW v4.5.0 Beta metadata, package, fork, CI, and artifact alignment | Complete; PR #5 merged into fork `master` |
 | 8 | Image-approved 2026 Windows navigation, live input, and Settings Center | Complete in fork `master`; 100% Light/Dark and compact-size smoke passed |
 | 9 | PDW v4.6.0 Beta native x64 plus retained Win32 release alignment | Clean local dual gates and package audit complete; draft PR #6 opened for CI/review |
+| 10 | PDW v4.6.1 Beta repository, security, legacy-retention, and release-identity enforcement | Local audit, clean dual builds, 24/24 tests per architecture, optional smoke builds, metadata, manifest, About and UI smoke pass; package/fork gates pending |
 
 Delivery Health stores no pager addresses or decoded text and cannot alter a
 delivery result. FLEX shadow assembly cannot suppress a legacy fragment on
@@ -59,12 +60,13 @@ not changed without representative replay evidence.
 
 ## Milestone 1 - Release-state alignment
 
-Status: clean local v4.6 packages and draft-fork publication complete; PR CI
-and manual hardware acceptance remain separate gates
+Status: v4.6.1 release-identity and policy enforcement in progress; dual local
+gates, packages, fork publication, PR CI, and manual hardware acceptance remain
+separate states
 
 - Align `Headers/version.h`, executable output name, About/resource metadata,
   changelog, documentation, workflow artifact, branch, and package filename to
-  **PDW v4.6.0 Beta**.
+  **PDW v4.6.1 Beta**.
 - Keep Git, local build output, portable package, test installation, pushed
   branch, pull request, CI result, and release artifact as separate states.
 - Generate a portable package containing only required runtime files and

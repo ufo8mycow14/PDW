@@ -39,6 +39,10 @@ function Get-PeMachine([string]$Path) {
 }
 
 $SourceRoot = Resolve-RequiredDirectory $SourceRoot "Source"
+& (Join-Path $SourceRoot "scripts\audit-release.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "Repository release audit failed."
+}
 if ([string]::IsNullOrWhiteSpace($BuildDirectory)) {
     $buildName = if ($Architecture -eq "x64") { "build-x64" } else { "build-win32" }
     $BuildDirectory = Join-Path $SourceRoot "out\$buildName\Release"

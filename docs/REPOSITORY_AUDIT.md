@@ -2,7 +2,7 @@
 
 Audited: 10 August 2026
 
-This audit defines the files intentionally maintained for PDW v4.6 and later.
+This audit defines the files intentionally maintained for PDW v4.6.1 and later.
 PDW is one native C++ source tree with two CMake build targets: x64 and Win32.
 CMake is the only maintained project definition.
 
@@ -89,10 +89,17 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 - Optional WinMM and WASAPI hardware-smoke targets compile for both
   architectures.
 - PE machine values are Win32 `0x014C` and x64 `0x8664`; both executables
-  report file version `4.6.0.0` and product version `4.6.0 Beta`.
-- Both embedded manifests report `4.6.0.0`, architecture-neutral assembly
+  report file version `4.6.1.0` and product version `4.6.1 Beta`.
+- Both embedded manifests report `4.6.1.0`, architecture-neutral assembly
   metadata, and Per-Monitor V2 DPI awareness.
 - Native UI smoke passes for both builds with 10 Settings destinations, an
   unclipped 769x440 dark Backup / Restore dialog, and correct modal recovery.
-- Portable package regeneration and independent content audit follow after the
-  cleanup commit so `git archive HEAD` contains this exact audited tree.
+- The preceding v4.6.0 repository-audit packages contain 318 Win32 and 310 x64
+  manifest entries. Independent verification found zero missing,
+  changed, unlisted, private-runtime, non-empty-secret, or obsolete-source
+  files. The packaged audit document matches the committed Git blob.
+- Win32 retains the intentional x86 RTL-SDR DLL and four mirrored legacy VxD
+  copies; x64 contains neither.
+- `scripts/audit-release.ps1` passes for v4.6.1 and enforces release identity,
+  both CI architectures, Visual Basic review, obsolete-file exclusion,
+  dependency-notice alignment, and prepared-statement SQL safeguards.

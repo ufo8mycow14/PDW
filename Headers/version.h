@@ -6,14 +6,14 @@
 // the display strings.
 #define PDW_VERSION_MAJOR 4
 #define PDW_VERSION_MINOR 6
-#define PDW_VERSION_PATCH 0
+#define PDW_VERSION_PATCH 1
 #define PDW_VERSION_BUILD 0
 
-#define PDW_VERSION_RESOURCE 4,6,0,0
-#define PDW_VERSION_RESOURCE_STRING "4.6.0.0"
-#define PDW_VERSION_STRING "4.6.0 Beta"
-#define PDW_DISPLAY_VERSION "PDW v4.6.0 Beta"
-#define PDW_EXECUTABLE_NAME "PDW v4.6.0 Beta.exe"
-#define PDW_APP_NAME "PDW v4.6.0 Beta - Windows POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder"
+#define PDW_VERSION_RESOURCE 4,6,1,0
+#define PDW_VERSION_RESOURCE_STRING "4.6.1.0"
+#define PDW_VERSION_STRING "4.6.1 Beta"
+#define PDW_DISPLAY_VERSION "PDW v4.6.1 Beta"
+#define PDW_EXECUTABLE_NAME "PDW v4.6.1 Beta.exe"
+#define PDW_APP_NAME "PDW v4.6.1 Beta - Windows POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder"
 
 #endif

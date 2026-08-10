@@ -7,7 +7,7 @@ boundary at a time.
 
 ## Non-negotiable compatibility boundaries
 
-- Ship one product as architecture-matched `PDW v4.6.0 Beta.exe` packages, one
+- Ship one product as architecture-matched `PDW v4.6.1 Beta.exe` packages, one
   settings experience, and one consolidated message stream. Do not create
   separate legacy/enhanced editions or helper services.
 - Do not alter protocol algorithms without representative signal recordings

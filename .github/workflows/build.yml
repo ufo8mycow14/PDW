@@ -24,6 +24,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Audit release identity and compatibility rules
+        shell: pwsh
+        run: .\scripts\audit-release.ps1
+
       - name: Cache ${{ matrix.label }} dependencies
         uses: actions/cache@v5
         with:
@@ -55,9 +59,9 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v4.6.0-Beta-${{ matrix.label }}
+          name: PDW-v4.6.1-Beta-${{ matrix.label }}
           path: |
-            build-${{ matrix.architecture }}\Release\PDW v4.6.0 Beta.exe
+            build-${{ matrix.architecture }}\Release\PDW v4.6.1 Beta.exe
             License
             THIRD_PARTY_NOTICES.md
             out\dependencies\${{ matrix.architecture }}\pdw-dependencies.lock

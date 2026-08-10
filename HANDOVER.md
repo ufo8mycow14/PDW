@@ -10,11 +10,11 @@ stay authoritative, and enhancements must be additive or fail independently.
 ## Repository and release identity
 
 - Source checkout: `C:\PDW Update\PDW-source`
-- Release branch: `pdw-v4.6.0-beta`
-- Product/display name: **PDW v4.6.0 Beta**
-- Win32 executable: `out\build-win32\Release\PDW v4.6.0 Beta.exe`
-- x64 executable: `out\build-x64\Release\PDW v4.6.0 Beta.exe`
-- Windows file version: `4.6.0.0`
+- Release branch: `pdw-v4.6.1-beta`
+- Product/display name: **PDW v4.6.1 Beta**
+- Win32 executable: `out\build-win32\Release\PDW v4.6.1 Beta.exe`
+- x64 executable: `out\build-x64\Release\PDW v4.6.1 Beta.exe`
+- Windows file version: `4.6.1.0`
 - Maintained project definition: root `CMakeLists.txt` only
 - File-retention evidence: `docs\REPOSITORY_AUDIT.md`
 - Writable fork remote: `fork` (`ufo8mycow14/PDW`)
@@ -30,13 +30,16 @@ Important integration checkpoints:
 - `98ff7ad` - INI preservation;
 - `77e23bd` - legacy-safe FLEX fragment reassembly.
 
-Fork publication state:
+Fork publication state before the v4.6.1 push:
 
 - v4.5 PR #5 was merged into fork `master` on 10 August 2026;
-- pushed branch: `fork/pdw-v4.6.0-beta`;
-- draft PR: `https://github.com/ufo8mycow14/PDW/pull/6`;
+- previous pushed branch: `fork/pdw-v4.6.0-beta`;
+- previous draft PR: `https://github.com/ufo8mycow14/PDW/pull/6`;
+- local v4.6.1 branch and replacement draft PR are pending final dual gates;
 - the first v4.6 release commit is `14e9591`; GitHub checks run on every PR
   update and the PR is the authoritative current CI state;
+- the repository audit and its package-evidence sync remain on this same v4.6
+  release branch rather than creating a separate legacy-cleanup edition;
 - superseded v4.1 draft PR #3 is closed, with its branch retained;
 - Win32 workflow run `31361744748` passed dependency build, application build,
   all 18 tests, and artifact upload;
@@ -49,9 +52,10 @@ GitHub's separate AI-findings helper failed before reviewing code because its
 configured model was unsupported (HTTP 400). This was a GitHub service-side
 agent failure; the standard CodeQL and project checks passed.
 
-Historical v4.1 and v4.5 references in release history, acceptance evidence,
-and contributor credit are intentional. Current executable, workflow artifact,
-documentation, branch, and package targets use v4.6.0 Beta.
+Historical v4.1, v4.5, and v4.6.0 references in release history and acceptance
+evidence are intentional. Current executable, workflow artifact, documentation,
+branch, and package targets use v4.6.1 Beta. The contributor credit records the
+historical contribution version and does not replace the live About version.
 
 ## Safe integration result
 
@@ -136,20 +140,22 @@ WinMM and WASAPI smoke targets also compile for both architectures.
 
 Verified executable metadata:
 
-- filename: `PDW v4.6.0 Beta.exe`;
-- file version: `4.6.0.0`;
-- product version: `4.6.0 Beta`;
+- filename: `PDW v4.6.1 Beta.exe`;
+- file version: `4.6.1.0`;
+- product version: `4.6.1 Beta`;
 - Win32 PE machine: `0x014C`;
-- Win32 SHA-256: `B36C73F148E0681A385698ED750D741FD7E35562D6DAA496CE249F76169DB040`;
+- Win32 SHA-256: `471AE87D194C865FD1507E910C23522E44EA45E2B866623397EE5FEEA15DDA07`;
 - x64 PE machine: `0x8664`;
-- x64 SHA-256: `AF8E899EE3F81135C2B493F3333508C916417F0028594EA90CAFDF564730F6A0`.
+- x64 SHA-256: `2292EA14CBD5BA2EE1671024012486111B8B2150D6F4B4C56844182DA5A6A36F`.
 
-Both executables created a responsive main window titled **PDW v4.6.0 Beta**
+Both executables created a responsive main window titled **PDW v4.6.1 Beta**
 when launched with the sanitized portable profile. Automated native-window
 smoke then verified all 10 Settings destinations, an unclipped 769x440 dark
 Backup / Restore dialog, and correct disable/re-enable modality on Win32 and
-x64. The embedded manifest extracted from each executable reports version
-`4.6.0.0` with architecture-neutral assembly metadata; the PE header remains
+x64. The About dialog in each displays **PDW v4.6.1 Beta** and the historical
+Kieran O'Rourke v4.0.0 beta contributor credit without clipping. The embedded
+manifest extracted from each executable reports version `4.6.1.0` with
+architecture-neutral assembly metadata; the PE header remains
 the authoritative executable architecture.
 
 Earlier v4.5 acceptance on 10 August 2026 measured responsive manual main-window
@@ -215,8 +221,8 @@ The reproducible package command is:
 It requires a clean Git tree and matching executable metadata, refuses to
 overwrite an existing release, stages under `C:\PDW Update\tmp`, and produces:
 
-- `C:\PDW Update\PDW-4.6.0-Beta-Win32` and its matching ZIP;
-- `C:\PDW Update\PDW-4.6.0-Beta-x64` and its matching ZIP.
+- `C:\PDW Update\PDW-4.6.1-Beta-Win32` and its matching ZIP;
+- `C:\PDW Update\PDW-4.6.1-Beta-x64` and its matching ZIP.
 
 The ready-to-run root and `Application` copy include the executable, sanitized
 disabled-by-default `PDW.INI`, empty filters, documentation, standard receiver
@@ -225,16 +231,16 @@ from `git archive HEAD`. `SHA256SUMS.txt` covers every staged file. The script
 rejects runtime logs, databases, IQ/SigMF data, publish queues, dead-letter
 content, and non-empty INI secret fields.
 
-The prior v4.1 and v4.5 release folders are retained as rollback evidence and
-are not overwritten by the architecture-specific v4.6 packages.
+The prior v4.1, v4.5, and v4.6.0 release folders are retained as rollback
+evidence and are not overwritten by the architecture-specific v4.6.1 packages.
 
-The repository cleanup supersedes the earlier 334-entry Win32 and 326-entry
-x64 package manifests. Both packages must be regenerated from the committed
-audited tree before their new counts are recorded. The package rules still
-require zero missing, changed, unlisted, private-runtime, or non-empty-secret
-files; Win32 retains the bundled x86 RTL-SDR DLL and legacy VxD assets while
-x64 contains neither. The Desktop test installation is a separate local state
-and is not automatically replaced by package generation or fork publication.
+The clean repository-audit packages verify 318 Win32 and 310 x64 manifest
+entries with zero missing, changed, unlisted, private-runtime, non-empty-secret,
+or obsolete-source files. Their embedded repository audit document matches the
+committed Git blob. Win32 retains the bundled x86 RTL-SDR DLL and legacy VxD
+assets; x64 contains neither. The Desktop test installation is a separate
+local state and is not automatically replaced by package generation or fork
+publication.
 
 ## Desktop live-radio test installation
 
@@ -291,7 +297,7 @@ The maintained milestone view is in `docs/ROADMAP.md`.
 - Inspect the complete diff and preserve unrelated work.
 - Stage explicit release files; do not use broad cleanup/reset commands.
 - Build and test before committing.
-- Push `pdw-v4.6.0-beta` to the writable `fork` remote.
+- Push `pdw-v4.6.1-beta` to the writable `fork` remote.
 - Open a draft PR against the fork's `master`; close older draft PRs only as
   superseded references, without deleting their rollback branches.
 - Treat push, PR, merge, tag, GitHub release, and local installation as distinct

@@ -1,7 +1,7 @@
 # Radio, recording, and replay
 
 Open **Settings > Decoder and input > Radio and replay**. These inputs are
-additional choices inside the same `PDW v4.6.0 Beta.exe`; they do not create a separate
+additional choices inside the same `PDW v4.6.1 Beta.exe`; they do not create a separate
 edition or background helper.
 
 ## Local audio and serial compatibility
@@ -43,7 +43,7 @@ Use **Add receiver...** to import a matching-architecture `rtlsdr.dll` or
 `librtlsdr.dll`. PDW checks the PE architecture and required receive API, then
 copies the primary library and neighbouring DLL dependencies into a portable
 `Receivers\Custom` package. Existing compatible DLLs beside
-`PDW v4.6.0 Beta.exe` remain selectable as a legacy fallback. Arbitrary vendor
+`PDW v4.6.1 Beta.exe` remain selectable as a legacy fallback. Arbitrary vendor
 APIs are not loaded as if they were librtlsdr; those receivers can feed PDW
 through local/virtual audio or an RTL-TCP-compatible bridge.
 

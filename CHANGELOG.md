@@ -1,5 +1,42 @@
 # Changelog
 
+## 4.6.1 Beta
+
+Maintenance release establishing enforceable repository and release rules for
+the dual-architecture PDW product. Decoder, protocol, slicer, serial, audio,
+receiver, driver, filter, and established output behavior are unchanged.
+
+### Added
+
+- Binding engineering and security policies requiring every release to retain
+  Win32/x86 beside x64 and preserve legacy scanner, slicer, driver, receiver,
+  and protocol paths.
+- A repository release audit that aligns canonical version, executable,
+  manifest, workflow artifacts, Readme, changelog, dependency notices, both CI
+  targets, prepared-statement SQL safeguards, and the audited file boundary.
+- A point-in-time dependency and advisory review for pinned OpenSSL 3.5.7,
+  curl 8.21.0, libssh2 1.11.1, Windows SQLite, and operator-managed MySQL ODBC.
+
+### Changed
+
+- Removed obsolete VC6/VS2017 project state, generated resource caches, a
+  duplicate v3.1 runtime archive, unused source variants, and unreferenced
+  bitmaps. CMake is now the only maintained project definition for x64 and
+  Win32.
+- Advanced all current product, About, resource, manifest, workflow, package,
+  branch, fork, and documentation identity to PDW v4.6.1 Beta.
+- Packaging and CI now run the release audit before producing an artifact.
+
+### Compatibility and security
+
+- No Visual Basic source is present. Any future Visual Basic or runtime
+  introduction requires explicit supported-version, licensing, security, and
+  dual-architecture review.
+- SQLite and MySQL decoded-event fields remain bound parameters; table names
+  remain restricted identifiers. Optional outputs remain disabled by default.
+- No legacy decoder, protocol, slicer, driver, receiver, WinMM, serial, filter,
+  configuration, or delivery path was removed.
+
 ## 4.6.0 Beta
 
 Dual-architecture follow-up to the merged 4.5 Beta release. The same decoder,
@@ -23,11 +60,6 @@ while Win32 remains available for older receiver drivers and serial hardware.
   decoder, WinMM, serial, slicer, filter, or output path.
 - Centralized current executable naming and aligned product, resource,
   manifest, workflow artifact, branch, and package identity to PDW v4.6.0 Beta.
-- Removed obsolete VC6/VS2017 project state, generated resource caches, a
-  duplicate v3.1 runtime archive, unused source variants, and unreferenced
-  bitmaps. CMake is now the only maintained project definition for x64 and
-  Win32.
-
 ### Compatibility
 
 - Win32 remains the recommended build for legacy x86-only receiver DLLs and
