@@ -17,7 +17,10 @@ function Read-RepoFile([string]$RelativePath) {
         Add-Failure "Required release file is missing: $RelativePath"
         return ""
     }
-    return Get-Content -LiteralPath $path -Raw
+    # GitHub Actions uses PowerShell 7, while the development machine can use
+    # Windows PowerShell 5.1. Normalize line endings so anchored release
+    # metadata checks behave identically for CRLF and LF checkouts.
+    return (Get-Content -LiteralPath $path -Raw).Replace("`r`n", "`n").Replace("`r", "`n")
 }
 
 function Require-Match([string]$Text, [string]$Pattern, [string]$Description) {
