@@ -61,7 +61,8 @@ public:
 	explicit FragmentReassembler(
 		std::size_t maximumSlots = 16,
 		std::uint64_t timeoutMs = 120000,
-		std::size_t maximumBytes = 5119);
+		std::size_t maximumBytes = 5119,
+		std::size_t maximumCompletedIdentities = 256);
 
 	FragmentResult Observe(const FragmentObservation& observation);
 	void Reset();
@@ -93,10 +94,20 @@ private:
 		bool truncated;
 		std::string text;
 		std::vector<std::uint8_t> colors;
-		std::vector<Part> accepted;
+		Part start;
+		Part accepted[3];
 		Part pending[3];
 
 		Slot();
+	};
+	struct Completion
+	{
+		std::uint32_t address;
+		unsigned int messageNumber;
+		unsigned int messageType;
+		std::uint64_t observedAtMs;
+
+		Completion();
 	};
 
 	void Expire(std::uint64_t nowMs);
@@ -111,11 +122,17 @@ private:
 	static bool HasPendingParts(const Slot& slot);
 	static bool WasAccepted(const Slot& slot,
 		const FragmentObservation& observation);
+	bool WasRecentlyCompleted(std::uint32_t address,
+		unsigned int messageNumber, unsigned int messageType) const;
+	bool RememberCompletion(const Slot& slot);
 	FragmentResult AcceptAndDrain(std::size_t slotIndex,
 		const FragmentObservation& observation);
 	FragmentResult Complete(std::size_t slotIndex);
 
 	std::vector<Slot> slots_;
+	std::vector<Completion> completions_;
+	bool completionQuarantineSaturated_;
+	std::size_t maximumCompletedIdentities_;
 	std::uint64_t timeoutMs_;
 	std::size_t maximumBytes_;
 };

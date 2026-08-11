@@ -96,7 +96,7 @@ char phase;
 // original fragment through the established path before an optional assembled
 // copy is emitted.
 static pdw::flex::FragmentReassembler g_flexFragmentReassembler(
-	64, 240000, MAX_STR_LEN - 1);
+	64, 240000, MAX_STR_LEN - 1, 4096);
 
 static std::uint64_t FlexFragmentNowMs()
 {

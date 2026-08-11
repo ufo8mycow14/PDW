@@ -110,7 +110,8 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
     $predecessorExecutables = @(
         (Join-Path $installDirectory "PDW v5 2026 Release.exe"),
         (Join-Path $installDirectory "PDW v5.1 2026 Release.exe"),
-        (Join-Path $installDirectory "PDW v5.2 2026 Release.exe")
+        (Join-Path $installDirectory "PDW v5.2 2026 Release.exe"),
+        (Join-Path $installDirectory "PDW v5.3 2026 Release.exe")
     )
     foreach ($predecessorExecutable in $predecessorExecutables) {
         Set-Content -LiteralPath $predecessorExecutable -Value "synthetic predecessor executable" -Encoding Ascii

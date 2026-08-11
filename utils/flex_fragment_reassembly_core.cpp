@@ -36,11 +36,19 @@ FragmentReassembler::Slot::Slot()
 {
 }
 
+FragmentReassembler::Completion::Completion()
+	: address(0), messageNumber(0), messageType(0), observedAtMs(0)
+{
+}
+
 FragmentReassembler::FragmentReassembler(
 	std::size_t maximumSlots,
 	std::uint64_t timeoutMs,
-	std::size_t maximumBytes)
-	: slots_(maximumSlots), timeoutMs_(timeoutMs), maximumBytes_(maximumBytes)
+	std::size_t maximumBytes,
+	std::size_t maximumCompletedIdentities)
+	: slots_(maximumSlots), completionQuarantineSaturated_(false),
+	  maximumCompletedIdentities_(maximumCompletedIdentities),
+	  timeoutMs_(timeoutMs), maximumBytes_(maximumBytes)
 {
 }
 
@@ -64,6 +72,23 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 		return result;
 	}
 
+	// A completed FLEX identity remains quarantined for the fragment timeout.
+	// Original fragments have already followed the legacy path; suppressing the
+	// shadow observer here prevents trailing/replayed parts from poisoning a new
+	// speculative chain or producing a second assembled copy.
+	if (WasRecentlyCompleted(observation.address, observation.messageNumber,
+		observation.messageType))
+	{
+		result.status = FRAGMENT_DUPLICATE;
+		return result;
+	}
+
+	if (completionQuarantineSaturated_)
+	{
+		result.status = FRAGMENT_CAPACITY_REACHED;
+		return result;
+	}
+
 	std::size_t slotIndex = Find(observation.address, observation.messageNumber,
 		observation.messageType);
 
@@ -81,7 +106,7 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 		Slot& slot = slots_[slotIndex];
 		if (slot.active && slot.hasStart)
 		{
-			if (Matches(slot.accepted.front(), observation))
+			if (Matches(slot.start, observation))
 			{
 				result.status = FRAGMENT_DUPLICATE;
 				return result;
@@ -96,7 +121,7 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 			replacement.hasStart = true;
 			replacement.nextExpectedFragment = 0;
 			const Slot::Part start = MakePart(observation);
-			replacement.accepted.push_back(start);
+			replacement.start = start;
 			Append(replacement, start);
 			result.status = FRAGMENT_CONFLICT;
 			return result;
@@ -110,14 +135,14 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 		slot.hasStart = true;
 		slot.nextExpectedFragment = 0;
 		const Slot::Part start = MakePart(observation);
-		slot.accepted.push_back(start);
+		slot.start = start;
 		Append(slot, start);
 
 		while (slot.pending[slot.nextExpectedFragment].present)
 		{
 			const Slot::Part pending = slot.pending[slot.nextExpectedFragment];
 			slot.pending[slot.nextExpectedFragment] = Slot::Part();
-			slot.accepted.push_back(pending);
+			slot.accepted[pending.fragmentNumber] = pending;
 			Append(slot, pending);
 			slot.observedAtMs = (std::max)(slot.observedAtMs, pending.observedAtMs);
 			if (!pending.continuation)
@@ -157,8 +182,7 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 	}
 
 	Slot& slot = slots_[slotIndex];
-	if (WasAccepted(slot, observation) ||
-		Matches(slot.pending[observation.fragmentNumber], observation))
+	if (Matches(slot.pending[observation.fragmentNumber], observation))
 	{
 		result.status = FRAGMENT_DUPLICATE;
 		return result;
@@ -171,20 +195,31 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 		return result;
 	}
 
-	if (!slot.hasStart || observation.fragmentNumber != slot.nextExpectedFragment)
+	if (slot.hasStart && observation.fragmentNumber == slot.nextExpectedFragment)
 	{
-		slot.pending[observation.fragmentNumber] = MakePart(observation);
-		slot.observedAtMs = (std::max)(slot.observedAtMs, observation.observedAtMs);
-		result.status = FRAGMENT_BUFFERED_OUT_OF_ORDER;
+		// Fragment numbers wrap 0,1,2 for long pages.  An in-sequence part can
+		// legitimately have the same number and payload as an earlier cycle, so
+		// accepted-part duplicate detection must not run on the expected slot.
+		return AcceptAndDrain(slotIndex, observation);
+	}
+
+	if (WasAccepted(slot, observation))
+	{
+		result.status = FRAGMENT_DUPLICATE;
 		return result;
 	}
 
-	return AcceptAndDrain(slotIndex, observation);
+	slot.pending[observation.fragmentNumber] = MakePart(observation);
+	slot.observedAtMs = (std::max)(slot.observedAtMs, observation.observedAtMs);
+	result.status = FRAGMENT_BUFFERED_OUT_OF_ORDER;
+	return result;
 }
 
 void FragmentReassembler::Reset()
 {
 	for (std::size_t index = 0; index < slots_.size(); ++index) Clear(index);
+	completions_.clear();
+	completionQuarantineSaturated_ = false;
 }
 
 std::size_t FragmentReassembler::ActiveCount() const
@@ -213,6 +248,16 @@ void FragmentReassembler::Expire(std::uint64_t nowMs)
 			Clear(index);
 		}
 	}
+	completions_.erase(
+		std::remove_if(completions_.begin(), completions_.end(),
+			[nowMs, this](const Completion& completion)
+			{
+				return nowMs >= completion.observedAtMs &&
+					nowMs - completion.observedAtMs > timeoutMs_;
+			}),
+		completions_.end());
+	if (completions_.size() < maximumCompletedIdentities_)
+		completionQuarantineSaturated_ = false;
 }
 
 std::size_t FragmentReassembler::Find(std::uint32_t address,
@@ -297,9 +342,41 @@ bool FragmentReassembler::HasPendingParts(const Slot& slot)
 bool FragmentReassembler::WasAccepted(const Slot& slot,
 	const FragmentObservation& observation)
 {
-	for (std::size_t index = 0; index < slot.accepted.size(); ++index)
-		if (Matches(slot.accepted[index], observation)) return true;
+	return observation.fragmentNumber < 3 &&
+		Matches(slot.accepted[observation.fragmentNumber], observation);
+}
+
+bool FragmentReassembler::WasRecentlyCompleted(std::uint32_t address,
+	unsigned int messageNumber, unsigned int messageType) const
+{
+	for (std::size_t index = 0; index < completions_.size(); ++index)
+	{
+		const Completion& completion = completions_[index];
+		if (completion.address == address &&
+			completion.messageNumber == messageNumber &&
+			completion.messageType == messageType) return true;
+	}
 	return false;
+}
+
+bool FragmentReassembler::RememberCompletion(const Slot& slot)
+{
+	// Do not evict a still-quarantined identity. If the bounded completion
+	// cache is full, fail closed and leave the original fragment stream as the
+	// only output rather than emit an assembled copy that cannot be replay-safe.
+	if (completions_.size() >= maximumCompletedIdentities_)
+	{
+		completionQuarantineSaturated_ = true;
+		return false;
+	}
+
+	Completion completion;
+	completion.address = slot.address;
+	completion.messageNumber = slot.messageNumber;
+	completion.messageType = slot.messageType;
+	completion.observedAtMs = slot.observedAtMs;
+	completions_.push_back(completion);
+	return true;
 }
 
 FragmentResult FragmentReassembler::AcceptAndDrain(std::size_t slotIndex,
@@ -310,7 +387,7 @@ FragmentResult FragmentReassembler::AcceptAndDrain(std::size_t slotIndex,
 	Slot::Part part = MakePart(observation);
 	for (;;)
 	{
-		slot.accepted.push_back(part);
+		slot.accepted[part.fragmentNumber] = part;
 		Append(slot, part);
 		slot.observedAtMs = (std::max)(slot.observedAtMs, part.observedAtMs);
 		if (!part.continuation)
@@ -339,6 +416,12 @@ FragmentResult FragmentReassembler::Complete(std::size_t slotIndex)
 {
 	FragmentResult result;
 	Slot& slot = slots_[slotIndex];
+	if (!RememberCompletion(slot))
+	{
+		for (std::size_t index = 0; index < slots_.size(); ++index) Clear(index);
+		result.status = FRAGMENT_CAPACITY_REACHED;
+		return result;
+	}
 	result.status = FRAGMENT_ASSEMBLED;
 	result.assembled = true;
 	result.truncated = slot.truncated;
