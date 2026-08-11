@@ -1,6 +1,6 @@
-# PDW v5.2 2026 Release installation
+# PDW v5.3 2026 Release installation
 
-`PDW-v5.2-2026-Release-Setup.exe` is the recommended distribution for ordinary
+`PDW-v5.3-2026-Release-Setup.exe` is the recommended distribution for ordinary
 Windows users. It contains both maintained PDW architectures and installs per
 user without requiring administrator rights. The portable packages remain
 available for existing deployments and recovery; they run the same PDW code.
@@ -48,7 +48,7 @@ that file into the Capcode Directory without duplicating existing equivalent map
 duplicated label/text rows, then renames the original to a recoverable `.migrated` backup. Directory saves and CSV imports apply
 immediately; no scheduled regeneration or manual reload is required.
 
-Portable use is unchanged: start `PDW v5.2 2026 Release.exe` in a writable folder
+Portable use is unchanged: start `PDW v5.3 2026 Release.exe` in a writable folder
 containing `PDW.INI`. No installed service, background updater, or driver is
 required.
 
@@ -73,7 +73,7 @@ and tests both architecture paths:
   -ScanWithDefender
 
 .\tests\installer_smoke.ps1 `
-  -Setup out\installer\PDW-v5.2-2026-Release-Setup.exe `
+  -Setup out\installer\PDW-v5.3-2026-Release-Setup.exe `
   -TestRoot out\installer-smoke
 ```
 
@@ -90,7 +90,7 @@ Then run:
 
 ```powershell
 .\scripts\audit-installer.ps1 `
-  -Setup out\installer\PDW-v5.2-2026-Release-Setup.exe `
+  -Setup out\installer\PDW-v5.3-2026-Release-Setup.exe `
   -RequireSignature -ScanWithDefender
 ```
 

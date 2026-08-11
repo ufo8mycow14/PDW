@@ -1,6 +1,6 @@
 # Optional FLEX fragment assembly
 
-PDW v5.2 2026 Release can add one assembled copy after receiving a complete standard
+PDW v5.3 2026 Release can add one assembled copy after receiving a complete standard
 FLEX alpha or secure fragment chain. The feature is deliberately additive and
 is disabled by default.
 
@@ -39,7 +39,7 @@ clears transient fragment state.
 FLEX Group Mode is intentionally excluded from the added reassembler. Its
 assignment, missed-call, conversion, logging, and duplicate state are tightly
 coupled in the legacy decoder. Changing that path without representative replay
-fixtures could lose a behavior relied on by existing operators, so PDW v5.2 2026 Release
+fixtures could lose a behavior relied on by existing operators, so PDW v5.3 2026 Release
 keeps it exactly on the established path.
 
 ## Automated evidence

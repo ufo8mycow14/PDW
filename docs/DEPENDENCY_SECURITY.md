@@ -72,6 +72,16 @@ native or runtime dependency; it uses the existing Windows SQLite binding and
 C++/Windows file APIs. The repository pins and decisions therefore remain
 unchanged for v5.2.
 
+The 11 August 2026 v5.3 refresh rechecked the same official release and
+security sources. OpenSSL 3.5.7 remains the current supported 3.5 LTS release
+through 8 April 2030; curl 8.21.0 remains the current published release with
+zero listed vulnerabilities; libssh2 1.11.1 remains the newest official
+archive; and Inno Setup 6.7.3 remains the current 6.x compiler revision. The
+Capcode Directory filtering work introduces no new native or runtime
+dependency and reuses the existing Windows SQLite binding and project code.
+All repository pins and release decisions therefore remain unchanged for
+v5.3.
+
 ## Required review procedure
 
 1. Check every official release and advisory page above.

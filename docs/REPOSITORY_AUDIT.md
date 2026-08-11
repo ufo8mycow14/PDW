@@ -97,11 +97,11 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 - Optional WinMM and WASAPI hardware-smoke targets compile for both
   architectures.
 - PE machine values are Win32 `0x014C` and x64 `0x8664`; both executables
-  report file version `5.2.0.0` and product version `5.2.0 2026 Release`.
-- Both embedded manifests report `5.2.0.0`, architecture-neutral assembly
+  report file version `5.3.0.0` and product version `5.3.0 2026 Release`.
+- Both embedded manifests report `5.3.0.0`, architecture-neutral assembly
   metadata, and Per-Monitor V2 DPI awareness.
-- Native UI review remains predecessor-v5 evidence. The v5.2 resources and
-  executable metadata use the shared **PDW v5.2 2026 Release** identity, while
+- Native UI review remains predecessor-v5 evidence. The v5.3 resources and
+  executable metadata use the shared **PDW v5.3 2026 Release** identity, while
   current Light/Dark, compact-size, new-dialog, About, and Settings visual
   confirmation remains open.
 - The preceding v4.6.0 repository-audit packages contain 318 Win32 and 310 x64
@@ -114,11 +114,11 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
   private-runtime, non-empty-secret, or obsolete-source files.
 - Win32 retains the intentional x86 RTL-SDR DLL and four mirrored legacy VxD
   copies; x64 contains neither.
-- The v5.2 guided installer passes isolated x64 and Win32 installation,
-  co-located settings, upgrade-preservation, exact renamed-v5/v5.1 executable
+- The v5.3 guided installer passes isolated x64 and Win32 installation,
+  co-located settings, upgrade-preservation, exact renamed-v5/v5.1/v5.2 executable
   cleanup, and uninstall-preservation smoke. Microsoft Defender reports no
   threat in the unsigned local candidate.
-- `scripts/audit-release.ps1` enforces the v5.2 identity, both CI architectures,
+- `scripts/audit-release.ps1` enforces the v5.3 identity, both CI architectures,
   installer build/smoke coverage, Visual Basic review, obsolete-file
   exclusion, dependency-notice alignment, and prepared-statement SQL
   safeguards.
