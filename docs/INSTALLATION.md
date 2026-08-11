@@ -1,12 +1,12 @@
-# PDW v5.5 2026 Release installation
+# PDW v5.5.1 2026 Release installation
 
-For beta testers, `PDW-v5.5-2026-Release-Setup.exe` is the recommended
+For beta testers, `PDW-v5.5.1-2026-Release-Setup.exe` is the recommended
 distribution. It contains both maintained PDW architectures and installs per
 user without requiring administrator rights. The portable packages remain
 available for existing deployments and recovery; they run the same PDW code.
 
 > [!WARNING]
-> The 11 August 2026 Public Beta 1 Setup is intentionally unsigned under an
+> The 11 August 2026 Public Beta 2 Setup is intentionally unsigned under an
 > explicit maintainer-approved beta exception. Windows may show an unknown
 > publisher or SmartScreen warning. Download only from the maintained GitHub
 > prerelease and verify its published SHA-256 checksum. It is not a signed
@@ -156,7 +156,7 @@ the Capcode Directory, aliases, hit counters, history database, receivers, and
 legacy recovery file untouched. Directory saves and CSV imports apply
 immediately; no scheduled regeneration or manual reload is required.
 
-Portable use is unchanged: start `PDW v5.5 2026 Release.exe` in a writable folder
+Portable use is unchanged: start `PDW v5.5.1 2026 Release.exe` in a writable folder
 containing `PDW.INI`. No installed service, background updater, or driver is
 required.
 
@@ -181,7 +181,7 @@ and tests both architecture paths:
   -ScanWithDefender
 
 .\tests\installer_smoke.ps1 `
-  -Setup out\installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe `
+  -Setup out\installer\PDW-v5.5.1-2026-Release-Setup-package\PDW-v5.5.1-2026-Release-Setup.exe `
   -TestRoot out\installer-smoke
 ```
 
@@ -191,7 +191,7 @@ not a rewritten installer.
 
 ## Stable-release signing gate
 
-Unsigned CI output normally remains a test artifact. Public Beta 1 is a narrow,
+Unsigned CI output normally remains a test artifact. Public Beta 2 is a narrow,
 explicitly approved prerelease exception: it must be labelled unsigned and
 hardware-unverified, published as a GitHub prerelease with its checksum, and
 must not be described as stable or from a verified publisher. Before any stable
@@ -201,7 +201,7 @@ run:
 
 ```powershell
 .\scripts\audit-installer.ps1 `
-  -Setup out\installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe `
+  -Setup out\installer\PDW-v5.5.1-2026-Release-Setup-package\PDW-v5.5.1-2026-Release-Setup.exe `
   -RequireSignature -ScanWithDefender
 ```
 

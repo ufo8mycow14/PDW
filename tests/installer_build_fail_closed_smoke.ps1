@@ -50,7 +50,7 @@ $output = $outputArgument.Substring('/DInstallerOutput='.Length)
 $win32 = $win32Argument.Substring('/DWin32Application='.Length)
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 [System.IO.File]::WriteAllBytes(
-    (Join-Path $output 'PDW-v5.5-2026-Release-Setup.exe'),
+    (Join-Path $output 'PDW-v5.5.1-2026-Release-Setup.exe'),
     [byte[]](0x4d, 0x5a, 0x00, 0x00))
 if ($env:PDW_FAKE_COMPILER_MUTATE_INPUT -eq '1') {
     [System.IO.File]::AppendAllText(
@@ -88,8 +88,8 @@ if (-not $failedClosed) {
     throw "Setup build accepted a postcompile installer-input mutation."
 }
 
-$publicSet = Join-Path $outputRoot "PDW-v5.5-2026-Release-Setup-package"
-$publicSetup = Join-Path $publicSet "PDW-v5.5-2026-Release-Setup.exe"
+$publicSet = Join-Path $outputRoot "PDW-v5.5.1-2026-Release-Setup-package"
+$publicSetup = Join-Path $publicSet "PDW-v5.5.1-2026-Release-Setup.exe"
 if ((Test-Path -LiteralPath $publicSetup) -or
     (Test-Path -LiteralPath "$publicSetup.sha256")) {
     throw "Failed Setup validation left a public candidate or checksum behind."

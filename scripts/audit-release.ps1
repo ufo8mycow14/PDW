@@ -281,7 +281,7 @@ Require-Match $installationGuide 'app-local Microsoft Visual C\+\+ runtime' "Ins
 Require-Match $dependencyGuide 'Microsoft Visual C\+\+ runtime DLLs' "Dependency review does not record the VC runtime distribution decision."
 Require-Match $notices 'Microsoft Visual C\+\+ runtime' "Third-party notices do not record Microsoft runtime redistribution."
 Require-Match $installerSmoke 'adelaide-flex' "Installer smoke does not exercise the Adelaide profile."
-Require-Match $installerSmoke 'PDW v5\.4 2026 Release\.exe' "Installer smoke does not verify v5.4 predecessor cleanup."
+Require-Match $installerSmoke 'PDW v5\.5 2026 Release\.exe' "Installer smoke does not verify v5.5 predecessor cleanup."
 Require-Match $installerSmoke 'pdw-history\.sqlite3' "Installer smoke does not preserve the Capcode Directory database."
 Require-Match $installerSmoke 'legacyFilters' "Installer smoke does not preserve a pre-existing legacy filters.ini."
 Require-Match $installerSmoke 'UseInstalledArchitecture' "Installer smoke does not verify the saved architecture-marker default."

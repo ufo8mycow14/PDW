@@ -110,7 +110,7 @@ jobs:
         shell: pwsh
         run: |
           .\tests\source_archive_smoke.ps1 `
-            -PackageZip "out\packages\PDW-v5.5-2026-Release-${{ matrix.label }}-package\PDW-v5.5-2026-Release-${{ matrix.label }}.zip" `
+            -PackageZip "out\packages\PDW-v5.5.1-2026-Release-${{ matrix.label }}-package\PDW-v5.5.1-2026-Release-${{ matrix.label }}.zip" `
             -TestRoot "out\source-archive-smoke-${{ matrix.architecture }}" `
             -Architecture "${{ matrix.platform }}" `
             -DependencyRoot "out\dependencies\${{ matrix.architecture }}"
@@ -118,7 +118,7 @@ jobs:
       - name: Upload dependency-build evidence (not a runnable PDW package)
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v5.5-2026-Release-DependencyEvidence-${{ matrix.label }}
+          name: PDW-v5.5.1-2026-Release-DependencyEvidence-${{ matrix.label }}
           path: |
             out\dependencies\${{ matrix.architecture }}\pdw-dependencies.lock
             out\dependencies\${{ matrix.architecture }}\licenses\*
@@ -127,15 +127,15 @@ jobs:
       - name: Upload installer input
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v5.5-2026-Release-InstallerInput-${{ matrix.label }}
+          name: PDW-v5.5.1-2026-Release-InstallerInput-${{ matrix.label }}
           path: out\installer-input\*
           if-no-files-found: error
 
       - name: Upload portable package
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v5.5-2026-Release-Portable-${{ matrix.label }}
-          path: out\packages\PDW-v5.5-2026-Release-${{ matrix.label }}-package\PDW-v5.5-2026-Release-${{ matrix.label }}.zip
+          name: PDW-v5.5.1-2026-Release-Portable-${{ matrix.label }}
+          path: out\packages\PDW-v5.5.1-2026-Release-${{ matrix.label }}-package\PDW-v5.5.1-2026-Release-${{ matrix.label }}.zip
           if-no-files-found: error
 
   installer:
@@ -150,13 +150,13 @@ jobs:
       - name: Download Win32 installer input
         uses: actions/download-artifact@v8
         with:
-          name: PDW-v5.5-2026-Release-InstallerInput-Win32
+          name: PDW-v5.5.1-2026-Release-InstallerInput-Win32
           path: out\installer-input\Win32
 
       - name: Download x64 installer input
         uses: actions/download-artifact@v8
         with:
-          name: PDW-v5.5-2026-Release-InstallerInput-x64
+          name: PDW-v5.5.1-2026-Release-InstallerInput-x64
           path: out\installer-input\x64
 
       - name: Install pinned Inno Setup compiler
@@ -179,20 +179,20 @@ jobs:
         shell: pwsh
         run: |
           .\scripts\audit-installer.ps1 `
-            -Setup "out\installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe"
+            -Setup "out\installer\PDW-v5.5.1-2026-Release-Setup-package\PDW-v5.5.1-2026-Release-Setup.exe"
 
       - name: Test Win32 and x64 install, settings co-location, upgrade and uninstall
         shell: pwsh
         run: |
           .\tests\installer_smoke.ps1 `
-            -Setup "out\installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe" `
+            -Setup "out\installer\PDW-v5.5.1-2026-Release-Setup-package\PDW-v5.5.1-2026-Release-Setup.exe" `
             -TestRoot "out\installer-smoke-${{ github.run_id }}"
 
       - name: Upload unsigned CI Setup candidate
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v5.5-2026-Release-Setup-Unsigned-CI
+          name: PDW-v5.5.1-2026-Release-Setup-Unsigned-CI
           path: |
-            out\installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe
-            out\installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe.sha256
+            out\installer\PDW-v5.5.1-2026-Release-Setup-package\PDW-v5.5.1-2026-Release-Setup.exe
+            out\installer\PDW-v5.5.1-2026-Release-Setup-package\PDW-v5.5.1-2026-Release-Setup.exe.sha256
           if-no-files-found: error
