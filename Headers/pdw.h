@@ -362,7 +362,10 @@ typedef struct
 
 extern PROFILE Profile;     // profile information
 
-#define LINE_SIZE 180	// PH Test : was 160 (problem Colin)
+// Keep enough columns for modern ultrawide/4K displays. The visible wrap point
+// is still derived from each pane's client width, so smaller windows retain
+// normal wrapping without horizontal scrolling.
+#define LINE_SIZE 1024
 
 typedef struct
 {

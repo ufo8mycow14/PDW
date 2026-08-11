@@ -96,12 +96,13 @@ char phase;
 // original fragment through the established path before an optional assembled
 // copy is emitted.
 static pdw::flex::FragmentReassembler g_flexFragmentReassembler(
-	16, 120000, MAX_STR_LEN - 1);
+	64, 240000, MAX_STR_LEN - 1);
 
 static std::uint64_t FlexFragmentNowMs()
 {
 	// Keep the legacy GetTickCount import while extending its 32-bit wrap for
-	// the two-minute fragment timeout. Decoder callbacks are serialized.
+	// the protocol-required four-minute fragment window. Decoder callbacks are
+	// serialized.
 	static DWORD previousTick = 0;
 	static std::uint64_t tickEpoch = 0;
 	const DWORD currentTick = GetTickCount();
@@ -554,6 +555,9 @@ void FLEX::showframe(int asa, int vsa)
 				{
 					pdw::flex::FragmentObservation observation;
 					observation.address = static_cast<std::uint32_t>(capcode);
+					observation.messageNumber =
+						static_cast<unsigned int>((fragmentHeader >> 13) & 0x3f);
+					observation.messageType = static_cast<unsigned int>(vt);
 					observation.fragmentNumber = static_cast<unsigned int>(iFragmentNumber);
 					observation.continuation = iContinuationFlag != 0;
 					observation.observedAtMs = FlexFragmentNowMs();

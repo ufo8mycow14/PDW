@@ -246,26 +246,41 @@ void display_show_char(PaneStruct *pane, char cin)
 //  - Displays line of text when complete.
 //  - After displaying line, start over on next line.
 //void build_show_line(PaneStruct *pane, char cin, int linefeed)
+static int PaneNewLinePoint(const PaneStruct *pane)
+{
+	if (pane == NULL || pane->cxClient == 0 || cxChar <= 0) return NewLinePoint;
+	int point = static_cast<int>(pane->cxClient / static_cast<unsigned int>(cxChar)) - 1;
+	if (point > LINE_SIZE - 1) point = LINE_SIZE - 1;
+	if (point < 1) point = 1;
+	return point;
+}
+
+static void PrepareContinuationLine(PaneStruct *pane, bool automaticWrap)
+{
+	int indent = iItemPositions[MSG_MESSAGE];
+	const bool fullWidthPagerLine = !Profile.monitor_acars &&
+		!Profile.monitor_mobitex && !Profile.FlexGroupMode;
+	if (Profile.monitor_acars && automaticWrap) indent += 16;
+	if (fullWidthPagerLine) indent = 2;
+
+	char *lineChars = pane->buff_char + pane->Bottom * (LINE_SIZE + 1);
+	BYTE *lineColors = pane->buff_color + pane->Bottom * (LINE_SIZE + 1);
+	for (int index = 0; index < indent; ++index)
+	{
+		lineChars[index] = fullWidthPagerLine && index == 0 ? '>' : ' ';
+		lineColors[index] = fullWidthPagerLine && index == 0
+			? COLOR_INSTRUCTIONS : COLOR_MESSAGE;
+		pane->currentPos++;
+	}
+	iPanePos = pane->currentPos;
+}
+
 void build_show_line(PaneStruct *pane, char cin, int option)
 {
-	int index = iItemPositions[7]; // PH: Used when moving to new line
-
 	if (option == BUILDSHOWLINE_LINEFEED)
 	{
 		display_line(pane); // terminate/display line/start new line.
-
-		// Get buffer pointers & set correct postion in buffers.
-		dsc_pchar  = pane->buff_char  + pane->Bottom*(LINE_SIZE+1);
-		dsc_pcolor = pane->buff_color + pane->Bottom*(LINE_SIZE+1);
-
-		// Add spacing to continue message on next line in correct field.
-		for (int i=0; i<index; i++)
-		{
-			*dsc_pchar++ = ' ';
-			*dsc_pcolor++ = COLOR_MESSAGE;
-			pane->currentPos++;
-		}
-		iPanePos = pane->currentPos;	// Get current pane position
+		PrepareContinuationLine(pane, false);
 		return;
 	}
 	
@@ -283,24 +298,11 @@ void build_show_line(PaneStruct *pane, char cin, int option)
 	// Start new line?
 	if (option != BUILDSHOWLINE_LASTCHAR)
 	{
-		if ((pane->currentPos > NewLinePoint) || (pane->currentPos == LINE_SIZE))
+		if ((pane->currentPos > PaneNewLinePoint(pane)) ||
+			(pane->currentPos == LINE_SIZE))
 		{
 			display_line(pane); // terminate/display line/start new line.
-
-			// Get buffer pointers & set correct postion in buffers.
-			dsc_pchar  = pane->buff_char  + pane->Bottom*(LINE_SIZE+1);
-			dsc_pcolor = pane->buff_color + pane->Bottom*(LINE_SIZE+1);
-
-			// PH: If monitoring ACARS and no linefeed, ensure a correct spacing
-			if (Profile.monitor_acars) index += 16;
-
-			// Add spacing to continue message on next line in correct field.
-			for (int i=0; i<index; i++)
-			{
-				*dsc_pchar++ = ' ';
-				*dsc_pcolor++ = COLOR_MESSAGE;
-				pane->currentPos++;
-			}
+			PrepareContinuationLine(pane, true);
 		}
 	}
 	iPanePos = pane->currentPos;	// Get current pane position
@@ -634,7 +636,7 @@ void ShowMessage()
 
 	if (bAssembledFlexCopy)
 	{
-		strcpy(szFragment, "[Assembled FLEX fragments]");
+		strcpy(szFragment, "[Joined FLEX]");
 	}
 
 	if (!iConvertingGroupcall)
@@ -930,11 +932,17 @@ void ShowMessage()
 					{
 						display_color(pPane, COLOR_INSTRUCTIONS);
 						display_show_strV2(pPane, szFragment);
-						display_line(pPane);
-
-						for (j=iPanePos; j<iItemPositions[MSG_MESSAGE]; j++)
+						if (bAssembledFlexCopy)
 						{
 							display_show_strV2(pPane, " ");
+						}
+						else
+						{
+							display_line(pPane);
+							for (j=iPanePos; j<iItemPositions[MSG_MESSAGE]; j++)
+							{
+								display_show_strV2(pPane, " ");
+							}
 						}
 					}
 
@@ -986,7 +994,7 @@ void ShowMessage()
 									panepos++;
 								}
 
-								if (panepos > NewLinePoint)		// PH: Move to new line
+								if (panepos > PaneNewLinePoint(pPane))	// PH: Move to new line
 								{
 									build_show_line(pPane, ' ', BUILDSHOWLINE_LINEFEED);
 									bSkip_character=true;

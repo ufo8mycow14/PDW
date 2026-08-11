@@ -17,7 +17,10 @@ enum FragmentStatus
 	FRAGMENT_STANDALONE,
 	FRAGMENT_BUFFERED_START,
 	FRAGMENT_BUFFERED_CONTINUATION,
+	FRAGMENT_BUFFERED_OUT_OF_ORDER,
 	FRAGMENT_ASSEMBLED,
+	FRAGMENT_DUPLICATE,
+	FRAGMENT_CONFLICT,
 	FRAGMENT_ORPHAN,
 	FRAGMENT_SEQUENCE_ERROR,
 	FRAGMENT_CAPACITY_REACHED
@@ -26,6 +29,8 @@ enum FragmentStatus
 struct FragmentObservation
 {
 	std::uint32_t address;
+	unsigned int messageNumber;
+	unsigned int messageType;
 	unsigned int fragmentNumber;
 	bool continuation;
 	std::uint64_t observedAtMs;
@@ -67,21 +72,48 @@ private:
 	struct Slot
 	{
 		bool active;
+		struct Part
+		{
+			bool present;
+			unsigned int fragmentNumber;
+			bool continuation;
+			std::uint64_t observedAtMs;
+			std::string text;
+			std::vector<std::uint8_t> colors;
+
+			Part();
+		};
+
 		std::uint32_t address;
+		unsigned int messageNumber;
+		unsigned int messageType;
 		std::uint64_t observedAtMs;
+		bool hasStart;
 		unsigned int nextExpectedFragment;
 		bool truncated;
 		std::string text;
 		std::vector<std::uint8_t> colors;
+		std::vector<Part> accepted;
+		Part pending[3];
 
 		Slot();
 	};
 
 	void Expire(std::uint64_t nowMs);
-	std::size_t Find(std::uint32_t address) const;
+	std::size_t Find(std::uint32_t address, unsigned int messageNumber,
+		unsigned int messageType) const;
 	std::size_t FindFree() const;
 	void Clear(std::size_t index);
-	void Append(Slot& slot, const FragmentObservation& observation);
+	void Append(Slot& slot, const Slot::Part& part);
+	static Slot::Part MakePart(const FragmentObservation& observation);
+	static bool Matches(const Slot::Part& part,
+		const FragmentObservation& observation);
+	static bool HasPendingParts(const Slot& slot);
+	static bool WasAccepted(const Slot& slot,
+		const FragmentObservation& observation);
+	FragmentResult AcceptAndDrain(std::size_t slotIndex,
+		const FragmentObservation& observation);
+	FragmentResult Complete(std::size_t slotIndex);
 
 	std::vector<Slot> slots_;
 	std::uint64_t timeoutMs_;

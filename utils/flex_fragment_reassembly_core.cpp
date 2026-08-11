@@ -14,7 +14,8 @@ namespace
 }
 
 FragmentObservation::FragmentObservation()
-	: address(0), fragmentNumber(3), continuation(false), observedAtMs(0),
+	: address(0), messageNumber(0), messageType(0), fragmentNumber(3),
+	  continuation(false), observedAtMs(0),
 	  text(NULL), colors(NULL), length(0)
 {
 }
@@ -24,9 +25,14 @@ FragmentResult::FragmentResult()
 {
 }
 
+FragmentReassembler::Slot::Part::Part()
+	: present(false), fragmentNumber(3), continuation(false), observedAtMs(0)
+{
+}
+
 FragmentReassembler::Slot::Slot()
-	: active(false), address(0), observedAtMs(0), nextExpectedFragment(0),
-	  truncated(false)
+	: active(false), address(0), messageNumber(0), messageType(0),
+	  observedAtMs(0), hasStart(false), nextExpectedFragment(0), truncated(false)
 {
 }
 
@@ -58,9 +64,11 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 		return result;
 	}
 
-	std::size_t slotIndex = Find(observation.address);
+	std::size_t slotIndex = Find(observation.address, observation.messageNumber,
+		observation.messageType);
 
-	// F=11,C=1 is the only valid start. A repeat cleanly restarts that address.
+	// F=11,C=1 is the only valid start. Message number N is the protocol's
+	// fragment identity, so interleaved traffic for an address cannot collide.
 	if (observation.continuation && observation.fragmentNumber == 3)
 	{
 		if (slotIndex == kNoSlot) slotIndex = FindFree();
@@ -70,13 +78,60 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 			return result;
 		}
 
-		Clear(slotIndex);
 		Slot& slot = slots_[slotIndex];
+		if (slot.active && slot.hasStart)
+		{
+			if (Matches(slot.accepted.front(), observation))
+			{
+				result.status = FRAGMENT_DUPLICATE;
+				return result;
+			}
+			Clear(slotIndex);
+			Slot& replacement = slots_[slotIndex];
+			replacement.active = true;
+			replacement.address = observation.address;
+			replacement.messageNumber = observation.messageNumber;
+			replacement.messageType = observation.messageType;
+			replacement.observedAtMs = observation.observedAtMs;
+			replacement.hasStart = true;
+			replacement.nextExpectedFragment = 0;
+			const Slot::Part start = MakePart(observation);
+			replacement.accepted.push_back(start);
+			Append(replacement, start);
+			result.status = FRAGMENT_CONFLICT;
+			return result;
+		}
+
 		slot.active = true;
 		slot.address = observation.address;
+		slot.messageNumber = observation.messageNumber;
+		slot.messageType = observation.messageType;
 		slot.observedAtMs = observation.observedAtMs;
+		slot.hasStart = true;
 		slot.nextExpectedFragment = 0;
-		Append(slot, observation);
+		const Slot::Part start = MakePart(observation);
+		slot.accepted.push_back(start);
+		Append(slot, start);
+
+		while (slot.pending[slot.nextExpectedFragment].present)
+		{
+			const Slot::Part pending = slot.pending[slot.nextExpectedFragment];
+			slot.pending[slot.nextExpectedFragment] = Slot::Part();
+			slot.accepted.push_back(pending);
+			Append(slot, pending);
+			slot.observedAtMs = (std::max)(slot.observedAtMs, pending.observedAtMs);
+			if (!pending.continuation)
+			{
+				if (HasPendingParts(slot))
+				{
+					Clear(slotIndex);
+					result.status = FRAGMENT_CONFLICT;
+					return result;
+				}
+				return Complete(slotIndex);
+			}
+			slot.nextExpectedFragment = (pending.fragmentNumber + 1) % 3;
+		}
 		result.status = FRAGMENT_BUFFERED_START;
 		result.truncated = slot.truncated;
 		return result;
@@ -84,36 +139,47 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 
 	if (slotIndex == kNoSlot)
 	{
-		result.status = FRAGMENT_ORPHAN;
+		slotIndex = FindFree();
+		if (slotIndex == kNoSlot)
+		{
+			result.status = FRAGMENT_CAPACITY_REACHED;
+			return result;
+		}
+		Slot& orphan = slots_[slotIndex];
+		orphan.active = true;
+		orphan.address = observation.address;
+		orphan.messageNumber = observation.messageNumber;
+		orphan.messageType = observation.messageType;
+		orphan.observedAtMs = observation.observedAtMs;
+		orphan.pending[observation.fragmentNumber] = MakePart(observation);
+		result.status = FRAGMENT_BUFFERED_OUT_OF_ORDER;
 		return result;
 	}
 
 	Slot& slot = slots_[slotIndex];
-	if (observation.fragmentNumber != slot.nextExpectedFragment)
+	if (WasAccepted(slot, observation) ||
+		Matches(slot.pending[observation.fragmentNumber], observation))
+	{
+		result.status = FRAGMENT_DUPLICATE;
+		return result;
+	}
+
+	if (slot.pending[observation.fragmentNumber].present)
 	{
 		Clear(slotIndex);
-		result.status = FRAGMENT_SEQUENCE_ERROR;
+		result.status = FRAGMENT_CONFLICT;
 		return result;
 	}
 
-	Append(slot, observation);
-	slot.observedAtMs = observation.observedAtMs;
-
-	if (observation.continuation)
+	if (!slot.hasStart || observation.fragmentNumber != slot.nextExpectedFragment)
 	{
-		slot.nextExpectedFragment = (observation.fragmentNumber + 1) % 3;
-		result.status = FRAGMENT_BUFFERED_CONTINUATION;
-		result.truncated = slot.truncated;
+		slot.pending[observation.fragmentNumber] = MakePart(observation);
+		slot.observedAtMs = (std::max)(slot.observedAtMs, observation.observedAtMs);
+		result.status = FRAGMENT_BUFFERED_OUT_OF_ORDER;
 		return result;
 	}
 
-	result.status = FRAGMENT_ASSEMBLED;
-	result.assembled = true;
-	result.truncated = slot.truncated;
-	result.text.swap(slot.text);
-	result.colors.swap(slot.colors);
-	Clear(slotIndex);
-	return result;
+	return AcceptAndDrain(slotIndex, observation);
 }
 
 void FragmentReassembler::Reset()
@@ -131,7 +197,9 @@ std::size_t FragmentReassembler::ActiveCount() const
 
 bool FragmentReassembler::HasPending(std::uint32_t address) const
 {
-	return Find(address) != kNoSlot;
+	for (std::size_t index = 0; index < slots_.size(); ++index)
+		if (slots_[index].active && slots_[index].address == address) return true;
+	return false;
 }
 
 void FragmentReassembler::Expire(std::uint64_t nowMs)
@@ -147,10 +215,13 @@ void FragmentReassembler::Expire(std::uint64_t nowMs)
 	}
 }
 
-std::size_t FragmentReassembler::Find(std::uint32_t address) const
+std::size_t FragmentReassembler::Find(std::uint32_t address,
+	unsigned int messageNumber, unsigned int messageType) const
 {
 	for (std::size_t index = 0; index < slots_.size(); ++index)
-		if (slots_[index].active && slots_[index].address == address) return index;
+		if (slots_[index].active && slots_[index].address == address &&
+			slots_[index].messageNumber == messageNumber &&
+			slots_[index].messageType == messageType) return index;
 	return kNoSlot;
 }
 
@@ -167,26 +238,114 @@ void FragmentReassembler::Clear(std::size_t index)
 	slots_[index] = Slot();
 }
 
-void FragmentReassembler::Append(Slot& slot, const FragmentObservation& observation)
+void FragmentReassembler::Append(Slot& slot, const Slot::Part& part)
 {
 	const std::size_t remaining = slot.text.size() < maximumBytes_
 		? maximumBytes_ - slot.text.size()
 		: 0;
-	const std::size_t appendLength = (std::min)(remaining, observation.length);
+	const std::size_t appendLength = (std::min)(remaining, part.text.size());
 	if (appendLength != 0)
 	{
-		slot.text.append(reinterpret_cast<const char*>(observation.text), appendLength);
-		if (observation.colors != NULL)
+		slot.text.append(part.text.data(), appendLength);
+		if (!part.colors.empty())
 		{
-			slot.colors.insert(slot.colors.end(), observation.colors,
-				observation.colors + appendLength);
+			slot.colors.insert(slot.colors.end(), part.colors.begin(),
+				part.colors.begin() + appendLength);
 		}
 		else
 		{
 			slot.colors.insert(slot.colors.end(), appendLength, 0);
 		}
 	}
-	if (appendLength < observation.length) slot.truncated = true;
+	if (appendLength < part.text.size()) slot.truncated = true;
+}
+
+FragmentReassembler::Slot::Part FragmentReassembler::MakePart(
+	const FragmentObservation& observation)
+{
+	Slot::Part part;
+	part.present = true;
+	part.fragmentNumber = observation.fragmentNumber;
+	part.continuation = observation.continuation;
+	part.observedAtMs = observation.observedAtMs;
+	if (observation.length != 0)
+	{
+		part.text.assign(reinterpret_cast<const char*>(observation.text), observation.length);
+		if (observation.colors != NULL)
+			part.colors.assign(observation.colors, observation.colors + observation.length);
+	}
+	return part;
+}
+
+bool FragmentReassembler::Matches(const Slot::Part& part,
+	const FragmentObservation& observation)
+{
+	if (!part.present || part.fragmentNumber != observation.fragmentNumber ||
+		part.continuation != observation.continuation ||
+		part.text.size() != observation.length) return false;
+	return observation.length == 0 ||
+		std::equal(part.text.begin(), part.text.end(),
+			reinterpret_cast<const char*>(observation.text));
+}
+
+bool FragmentReassembler::HasPendingParts(const Slot& slot)
+{
+	return slot.pending[0].present || slot.pending[1].present ||
+		slot.pending[2].present;
+}
+
+bool FragmentReassembler::WasAccepted(const Slot& slot,
+	const FragmentObservation& observation)
+{
+	for (std::size_t index = 0; index < slot.accepted.size(); ++index)
+		if (Matches(slot.accepted[index], observation)) return true;
+	return false;
+}
+
+FragmentResult FragmentReassembler::AcceptAndDrain(std::size_t slotIndex,
+	const FragmentObservation& observation)
+{
+	FragmentResult result;
+	Slot& slot = slots_[slotIndex];
+	Slot::Part part = MakePart(observation);
+	for (;;)
+	{
+		slot.accepted.push_back(part);
+		Append(slot, part);
+		slot.observedAtMs = (std::max)(slot.observedAtMs, part.observedAtMs);
+		if (!part.continuation)
+		{
+			if (HasPendingParts(slot))
+			{
+				Clear(slotIndex);
+				result.status = FRAGMENT_CONFLICT;
+				return result;
+			}
+			return Complete(slotIndex);
+		}
+
+		slot.nextExpectedFragment = (part.fragmentNumber + 1) % 3;
+		if (!slot.pending[slot.nextExpectedFragment].present) break;
+		part = slot.pending[slot.nextExpectedFragment];
+		slot.pending[slot.nextExpectedFragment] = Slot::Part();
+	}
+
+	result.status = FRAGMENT_BUFFERED_CONTINUATION;
+	result.truncated = slot.truncated;
+	return result;
+}
+
+FragmentResult FragmentReassembler::Complete(std::size_t slotIndex)
+{
+	FragmentResult result;
+	Slot& slot = slots_[slotIndex];
+	result.status = FRAGMENT_ASSEMBLED;
+	result.assembled = true;
+	result.truncated = slot.truncated;
+	result.text.swap(slot.text);
+	result.colors.swap(slot.colors);
+	Clear(slotIndex);
+	return result;
 }
 
 } // namespace flex

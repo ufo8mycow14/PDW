@@ -20,11 +20,15 @@ namespace
 		bool continuation,
 		std::uint64_t time,
 		const std::string& text,
-		std::uint8_t color = 5)
+		std::uint8_t color = 5,
+		unsigned int messageNumber = 0,
+		unsigned int messageType = 5)
 	{
 		std::vector<std::uint8_t> colors(text.size(), color);
 		pdw::flex::FragmentObservation observation;
 		observation.address = address;
+		observation.messageNumber = messageNumber;
+		observation.messageType = messageType;
 		observation.fragmentNumber = fragment;
 		observation.continuation = continuation;
 		observation.observedAtMs = time;
@@ -55,26 +59,35 @@ int main()
 	Expect(assembled.colors.back() == 8, "final fragment colors are retained");
 	Expect(normal.ActiveCount() == 0, "completed chain releases its slot");
 
-	FragmentReassembler strict;
-	Observe(strict, 42, 3, true, 1000, "start");
-	Expect(Observe(strict, 42, 1, true, 1001, "gap").status ==
-		FRAGMENT_SEQUENCE_ERROR, "missing fragment aborts a chain");
-	Expect(!strict.HasPending(42), "sequence error removes ambiguous state");
-	Expect(Observe(strict, 42, 0, false, 1002, "last").status ==
-		FRAGMENT_ORPHAN, "orphan final fragment is not assembled");
-	Expect(Observe(strict, 42, 2, true, 1003, "middle").status ==
-		FRAGMENT_ORPHAN, "orphan continuation is not assembled");
+	FragmentReassembler reordered;
+	Observe(reordered, 42, 3, true, 1000, "start-");
+	Expect(Observe(reordered, 42, 1, false, 1001, "last").status ==
+		FRAGMENT_BUFFERED_OUT_OF_ORDER, "early final fragment is buffered");
+	FragmentResult reorderedResult = Observe(reordered, 42, 0, true, 1002, "middle-");
+	Expect(reorderedResult.assembled && reorderedResult.text == "start-middle-last",
+		"out-of-order fragments assemble after the gap arrives");
+
+	FragmentReassembler startLast;
+	Expect(Observe(startLast, 43, 0, true, 1100, "middle-").status ==
+		FRAGMENT_BUFFERED_OUT_OF_ORDER, "continuation may arrive before start");
+	Expect(Observe(startLast, 43, 1, false, 1101, "last").status ==
+		FRAGMENT_BUFFERED_OUT_OF_ORDER, "final may arrive before start");
+	FragmentResult startLastResult = Observe(startLast, 43, 3, true, 1102, "start-");
+	Expect(startLastResult.assembled && startLastResult.text == "start-middle-last",
+		"late start drains a complete unambiguous sequence");
 
 	FragmentReassembler restart;
 	Observe(restart, 77, 3, true, 2000, "old-");
-	Observe(restart, 77, 3, true, 2001, "new-");
+	Expect(Observe(restart, 77, 3, true, 2001, "new-").status == FRAGMENT_CONFLICT,
+		"conflicting start replaces incomplete state without emitting it");
 	FragmentResult restarted = Observe(restart, 77, 0, false, 2002, "last");
 	Expect(restarted.text == "new-last", "new F=11 cleanly restarts the same address");
 
 	FragmentReassembler timeout(16, 100, 5119);
 	Observe(timeout, 88, 3, true, 3000, "old");
-	Expect(Observe(timeout, 88, 0, false, 3101, "late").status ==
-		FRAGMENT_ORPHAN, "expired state cannot create a stale assembly");
+	FragmentResult late = Observe(timeout, 88, 0, false, 3101, "late");
+	Expect(!late.assembled && late.status == FRAGMENT_BUFFERED_OUT_OF_ORDER,
+		"expired state cannot create a stale assembly");
 
 	FragmentReassembler capacity(2, 120000, 5119);
 	Observe(capacity, 1, 3, true, 4000, "a");
@@ -98,6 +111,40 @@ int main()
 	FragmentResult second = Observe(independent, 200, 0, false, 6002, "done");
 	Expect(first.text == "first-done" && second.text == "other-done",
 		"different addresses remain independent");
+
+	FragmentReassembler interleaved;
+	Observe(interleaved, 500, 3, true, 6100, "page-a-", 5, 10);
+	Observe(interleaved, 500, 3, true, 6101, "page-b-", 5, 11);
+	FragmentResult pageB = Observe(interleaved, 500, 0, false, 6102, "done", 5, 11);
+	FragmentResult pageA = Observe(interleaved, 500, 0, false, 6103, "done", 5, 10);
+	Expect(pageA.text == "page-a-done" && pageB.text == "page-b-done",
+		"message numbers isolate interleaved pages for one capcode");
+
+	FragmentReassembler typed;
+	Observe(typed, 501, 3, true, 6200, "alpha-", 5, 12, 5);
+	Observe(typed, 501, 3, true, 6201, "secure-", 5, 12, 0);
+	FragmentResult alpha = Observe(typed, 501, 0, false, 6202, "done", 5, 12, 5);
+	FragmentResult secure = Observe(typed, 501, 0, false, 6203, "done", 5, 12, 0);
+	Expect(alpha.text == "alpha-done" && secure.text == "secure-done",
+		"message type participates in fragment identity");
+
+	FragmentReassembler duplicate;
+	Observe(duplicate, 600, 3, true, 6300, "start-", 5, 3);
+	Expect(Observe(duplicate, 600, 3, true, 6301, "start-", 5, 3).status ==
+		FRAGMENT_DUPLICATE, "duplicate start does not restart the page");
+	Observe(duplicate, 600, 1, false, 6302, "last", 5, 3);
+	Expect(Observe(duplicate, 600, 1, false, 6303, "last", 5, 3).status ==
+		FRAGMENT_DUPLICATE, "duplicate buffered fragment is ignored");
+	FragmentResult duplicateResult = Observe(duplicate, 600, 0, true, 6304, "middle-", 5, 3);
+	Expect(duplicateResult.text == "start-middle-last",
+		"duplicates cannot corrupt the final assembly");
+
+	FragmentReassembler conflict;
+	Observe(conflict, 700, 3, true, 6400, "start-", 5, 4);
+	Observe(conflict, 700, 1, false, 6401, "last-a", 5, 4);
+	Expect(Observe(conflict, 700, 1, false, 6402, "last-b", 5, 4).status ==
+		FRAGMENT_CONFLICT, "conflicting copies are rejected as ambiguous");
+	Expect(!conflict.HasPending(700), "ambiguous chain is discarded without output");
 
 	FragmentReassembler preserved;
 	Observe(preserved, 300, 3, true, 7000, "pending-");
