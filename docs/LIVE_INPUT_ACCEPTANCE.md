@@ -9,6 +9,20 @@ Neither smoke target stores audio samples, decoded messages, credentials, or
 device recordings. They open the current Windows default capture endpoint for
 approximately one second, report content-free counts, release it, and exit.
 
+## Public Beta 1 rollout decision
+
+The maintainer explicitly approved the 11 August 2026 unsigned Public Beta 1
+rollout before completing the physical SDR#/VB-CABLE matrix. This is a request
+for community acceptance evidence, not a claim that untested hardware works.
+The GitHub release and installer documentation must continue to say
+hardware-unverified until representative results are recorded.
+
+Testers should report Windows version/build, PDW architecture, receiver/audio
+path, driver or third-party application version, the expected result, the actual
+result, and whether recovery required operator action. Reports must be
+content-free: never attach pager traffic, raw audio/radio captures, capcodes,
+credentials, endpoint IDs, `PDW.INI`, logs or queue files.
+
 ## Repeatable commands
 
 From a configured Win32 build tree:

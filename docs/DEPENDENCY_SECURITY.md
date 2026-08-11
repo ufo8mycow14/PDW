@@ -137,9 +137,11 @@ donationware and its vendor requires licensing for professional use. PDW uses
 existing Windows MMDevice/WASAPI APIs only, stores no real machine endpoint ID
 in release defaults, and fails closed if the saved exact endpoint is missing.
 The profile does not create or modify Capcode Directory data or `filters.ini`
-and introduces no new linked native dependency. Fresh dual builds,
-tests, package/installer smoke, physical audio acceptance, and signing remain
-pending for the v5.5 candidate.
+and introduces no new linked native dependency. Fresh dual builds, tests,
+package/source-tamper checks, combined installer smoke, CI/CodeQL and Defender
+pass for Public Beta 1. Physical audio acceptance and trusted Authenticode
+signing remain open; the maintainer-approved public beta must stay visibly
+unsigned and hardware-unverified until those gates are completed.
 
 The v5.5 distribution makes PDW's existing `/MD` compiler-runtime dependency
 explicit by placing the architecture-matched Microsoft Visual C++ runtime DLLs

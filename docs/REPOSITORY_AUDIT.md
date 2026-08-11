@@ -147,8 +147,8 @@ They remain useful regression evidence but do not prove the v5.5 candidate:
 ## PDW v5.5 validation state
 
 The v5.5 source identity is **PDW v5.5 2026 Release**, product version
-`5.5.0 2026 Release`, file/manifest version `5.5.0.0`, and branch
-`pdw-v5.5-sdr-vbcable-reconciliation`. The candidate adds an explicit
+`5.5.0 2026 Release`, file/manifest version `5.5.0.0`, and maintained branch
+`master`. Public Beta 1 adds an explicit
 clean-install Adelaide FLEX profile plus stable endpoint identity and
 endpoint-specific WASAPI capture.
 The maintained v5.5 release build uses Visual Studio 2026/MSVC v145 on the
@@ -166,10 +166,13 @@ SDR# and VB-CABLE are external/operator-installed and are not repository or
 package dependencies. The profile does not create, import, replace, or modify
 Capcode Directory entries or `filters.ini`.
 
-No fresh v5.5 validation result is recorded yet. Release audit, clean Win32 and
-x64 builds/tests, optional device-smoke compilation, PE/version/manifest/About
-inspection, stable-identity/endpoint-specific-WASAPI and explicit-apply tests, native UI matrices, independent
-portable-package audit, guided installer/profile/upgrade/uninstall smoke,
-Defender, exact-head CI/CodeQL, Authenticode signing, and clean-worktree review
-all remain pending. Evidence must name the exact candidate commit and artifact;
-predecessor results must not be relabelled as v5.5 results.
+The exact-head v5.5 automated release gate passes: clean Win32 and x64 builds,
+31 tests per architecture, optional device-smoke compilation,
+stable-identity/endpoint-specific-WASAPI and explicit-apply regression tests,
+independent portable/source-tamper audits, guided
+installer/profile/upgrade/uninstall smoke, Defender, CI/CodeQL and clean-tree
+review. The maintainer explicitly approved Public Beta 1 without trusted
+Authenticode signing or physical SDR#/VB-CABLE acceptance. The GitHub release
+must therefore remain an unsigned prerelease with a checksum and hardware-
+unverified warning. Full native UI/device matrices, physical workflow evidence,
+trusted signing and post-signing validation remain required before stable.

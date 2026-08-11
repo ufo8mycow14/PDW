@@ -7,7 +7,7 @@
 A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
 ![Version](https://img.shields.io/badge/version-v5.5%202026%20Release-2E74B5)
-![Status](https://img.shields.io/badge/status-candidate%20%28unreleased%29-F0A000)
+![Status](https://img.shields.io/badge/status-public%20beta%201%20%28unsigned%29-F0A000)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
 ![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20Win32-555555)
 ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
@@ -68,15 +68,28 @@ Configuration and decoder behaviour are shared between the builds. Native DLLs m
 
 ## Install on Windows
 
-The v5.5 candidate is intended to ship as
-**PDW-v5.5-2026-Release-Setup.exe** after its dual-architecture, installer,
-Defender, CI, and signing gates pass. It is not yet a downloadable v5.5
-release. The guided Setup is designed to contain both architectures, keep the
-executable, `PDW.INI`, Capcode Directory database, any existing legacy
-`filters.ini` recovery file, receivers, WAV files and logs together in one PDW
-folder, create normal Windows shortcuts, preserve operator settings during
-upgrades, and leave user data intact during uninstall. Use **Settings > General
+**PDW v5.5 2026 Release - Public Beta 1** is available from
+[GitHub Releases](https://github.com/ufo8mycow14/PDW/releases/tag/v5.5.0-beta.1)
+as one **PDW-v5.5-2026-Release-Setup.exe**. The guided Setup contains both
+architectures, keeps the executable, `PDW.INI`, Capcode Directory database, any
+existing legacy `filters.ini` recovery file, receivers, WAV files and logs
+together in one PDW folder, creates normal Windows shortcuts, preserves
+operator settings during upgrades, and leaves user data intact during
+uninstall. Use **Settings > General
 > Backup / Restore** to move configuration from another PDW copy.
+
+> [!WARNING]
+> Public Beta 1 is intentionally unsigned. Windows or SmartScreen may identify
+> the publisher as unknown. Download it only from this repository, verify the
+> published SHA-256 checksum, and do not treat it as a signed stable release.
+
+> [!NOTE]
+> Automated x64/Win32 builds, tests, package checks, Defender scanning and the
+> complete installer matrix pass. Physical SDR, SDR# and VB-CABLE combinations
+> are not yet validated by the maintainer. Beta testers are invited to report
+> content-free results through
+> [the beta feedback form](https://github.com/ufo8mycow14/PDW/issues/new?template=pdw-v5.5-beta-feedback.yml); never attach private
+> pager traffic, recordings, credentials, endpoint IDs or operator settings.
 
 Setup enforces Windows build 10586 as the technical API floor. Production use
 requires a Windows 10/11 edition and build still receiving Microsoft security
@@ -84,7 +97,7 @@ servicing (including applicable ESU or LTSC servicing), or a serviced Windows
 Server 2016-or-newer release. The Visual Studio 2026/MSVC v145 build and Windows
 SQLite binding no longer support Windows 7/8/8.1.
 
-On a clean install, the candidate Setup is intended to offer **Standard PDW
+On a clean install, the beta Setup offers **Standard PDW
 settings** or the named
 **SDR# + VB-Audio Cable (Adelaide FLEX)** input profile. The profile resolves
 `CABLE Output (VB-Audio Virtual Cable)` to its stable Windows endpoint identity
@@ -282,18 +295,20 @@ PDW is being modernised conservatively.
 
 ## Release History
 
-### Current candidate
+### Current beta
 
-**PDW v5.5 2026 Release** is the prepared source identity for the explicit
+**PDW v5.5 2026 Release - Public Beta 1** is the prerelease distribution for the explicit
 clean-install SDR# + VB-Audio Cable Adelaide FLEX profile, stable fail-closed
 Windows endpoint identity, and endpoint-specific WASAPI capture. It does not
-change Capcode Directory or filter ownership. No release date is assigned and
-the build, test, UI, package, installer, Defender, CI/CodeQL, and signing gates
-remain pending.
+change Capcode Directory or filter ownership. On 11 August 2026, exact-head
+x64/Win32 CI, automated tests, package/source-tamper checks, CodeQL, Defender,
+and the combined Setup install/upgrade/uninstall matrix passed. Trusted
+Authenticode signing and maintainer physical SDR#/VB-CABLE acceptance remain
+open, so this distribution is explicitly an unsigned beta rather than stable.
 
 | Version | Status | Highlights |
 | --- | --- | --- |
-| **PDW v5.5 2026 Release** | **Candidate - no release date assigned** | Clean-install Adelaide FLEX profile, stable fail-closed endpoint identity, and endpoint-specific WASAPI capture; every release gate remains pending. |
+| **PDW v5.5 2026 Release** | **Public Beta 1 - 11 August 2026; unsigned; hardware feedback open** | Clean-install Adelaide FLEX profile, stable fail-closed endpoint identity, endpoint-specific WASAPI capture, dual-architecture automated validation, and one guided Setup. |
 
 ### Current Generation
 

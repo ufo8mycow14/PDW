@@ -4,6 +4,13 @@ This named local-input profile preserves the decoder settings that restored live
 
 SDR# and VB-Audio Cable are external, operator-installed products. PDW does not bundle, license, install, tune or configure either product.
 
+> [!CAUTION]
+> This profile is included in Public Beta 1 for community testing. Automated
+> endpoint, fail-closed, profile and installer checks pass, but the exact
+> physical SDR#/VB-CABLE workflow has not been maintainer-validated. Confirm
+> lawful use, protect operator configuration, and report only content-free
+> results through the maintained PDW v5.5 beta feedback form on GitHub.
+
 ## Signal path
 
 Configure SDR# manually as follows:
@@ -67,6 +74,6 @@ This profile does not tune or reconfigure SDR#. A live meter proves only that au
 Only monitor radio traffic where reception and use are lawful and authorised.
 Public test evidence, screenshots and fixtures must use synthetic, redacted or
 licensed representative data; do not publish decoded traffic, capcodes, real
-endpoint IDs or operator settings. Until the exact release commit completes the
-documented physical SDR#/VB-Cable workflow, describe this profile as configured
-or operator-reported rather than hardware-validated.
+endpoint IDs or operator settings. Until representative Public Beta 1 reports
+complete the documented physical SDR#/VB-Cable workflow, describe this profile
+as configured or operator-reported rather than hardware-validated.

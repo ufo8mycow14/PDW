@@ -164,8 +164,11 @@ path; fragment assembly is not required to publish a website or webhook.
 
 ## Release gate for PDW v5.5 2026 Release
 
-A public PDW v5.5 2026 Release build requires all of the following; none is
-implied complete merely by preparing the source identity:
+A stable PDW v5.5 2026 Release build requires all of the following; none is
+implied complete merely by preparing the source identity. The maintainer has
+approved Public Beta 1 as an unsigned, hardware-unverified GitHub prerelease so
+community testers can provide the remaining physical evidence. That exception
+does not satisfy or remove any stable-release gate:
 
 1. Successful clean Visual Studio 2026/MSVC v145 x64 and Win32 Release builds.
 2. Startup and shutdown tests on current Windows.

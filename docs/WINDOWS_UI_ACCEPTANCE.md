@@ -172,3 +172,9 @@ keyboard, High Contrast, 125-200% DPI, About/Settings, installer profile,
 stable-identity/WASAPI-fallback and missing-endpoint checks remain pending on the exact release
 candidate. Use only synthetic or configuration-only evidence; the configured
 Adelaide profile is not proof of live hardware or authorised FLEX reception.
+
+The maintainer explicitly approved Public Beta 1 before this manual matrix is
+complete. The release must therefore remain labelled beta, unsigned and
+hardware/UI-unverified. Community reports may complete individual cells only
+when they identify the exact beta, architecture and Windows environment and
+contain no private traffic, recordings, endpoint IDs, credentials or settings.

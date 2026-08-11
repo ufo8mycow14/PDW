@@ -1,0 +1,90 @@
+name: PDW v5.5 Public Beta feedback
+description: Report a content-free hardware, installation, or compatibility result.
+title: "[v5.5 Beta 1] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing PDW v5.5 Public Beta 1.
+
+        Do not attach decoded pager traffic, capcodes, recordings, credentials, endpoint IDs, PDW.INI, logs, queue files, or other operator-specific data. Use synthetic or content-free descriptions only.
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and build
+      description: For example, Windows 11 24H2 build 26100.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: PDW architecture
+      options:
+        - x64
+        - Win32
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: signal_source
+    attributes:
+      label: Signal source or test area
+      options:
+        - Installation, upgrade, or uninstall
+        - Standard Windows audio
+        - SDR# plus VB-Audio Cable Adelaide FLEX profile
+        - RTL-TCP
+        - Direct RTL-SDR USB
+        - Serial or slicer hardware
+        - WAV, SigMF, or recording replay
+        - Interface or settings
+        - Notifications or data output
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Relevant device, driver, or third-party application versions
+      description: Leave out serial numbers, endpoint IDs, account details, and credentials.
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Working as expected
+        - Partially working
+        - Not working
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: Describe the expected behaviour without including message content or private configuration.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result and recovery steps
+      description: State what happened and whether restarting or changing an input was required. Keep the report content-free.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I have not included pager traffic, capcodes, recordings, credentials, endpoint IDs, PDW.INI, logs, queue files, or operator-specific data.
+          required: true
+        - label: I understand this is an unsigned, hardware-unverified public beta and not a signed stable release.
+          required: true

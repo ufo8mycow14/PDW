@@ -1,9 +1,18 @@
 # PDW v5.5 2026 Release installation
 
-`PDW-v5.5-2026-Release-Setup.exe` is the recommended distribution for ordinary
-Windows users. It contains both maintained PDW architectures and installs per
+For beta testers, `PDW-v5.5-2026-Release-Setup.exe` is the recommended
+distribution. It contains both maintained PDW architectures and installs per
 user without requiring administrator rights. The portable packages remain
 available for existing deployments and recovery; they run the same PDW code.
+
+> [!WARNING]
+> The 11 August 2026 Public Beta 1 Setup is intentionally unsigned under an
+> explicit maintainer-approved beta exception. Windows may show an unknown
+> publisher or SmartScreen warning. Download only from the maintained GitHub
+> prerelease and verify its published SHA-256 checksum. It is not a signed
+> stable release, and physical SDR#/VB-CABLE compatibility is still being
+> evaluated by beta testers.
+
 Setup enforces Windows build 10586 as the technical API floor. Production use
 requires a Windows 10/11 edition and build still receiving Microsoft security
 servicing (including applicable ESU or LTSC servicing), or a serviced Windows
@@ -180,12 +189,15 @@ and tests both architecture paths:
 ordinary decoder, UI, receiver, or output code changes require a rebuild but
 not a rewritten installer.
 
-## Public signing gate
+## Stable-release signing gate
 
-An unsigned CI installer is a test artifact, not a public release. Before
-publication, sign the PDW executables, Setup, and the generated uninstaller
-with the same trusted Authenticode publisher identity and a trusted timestamp.
-Then run:
+Unsigned CI output normally remains a test artifact. Public Beta 1 is a narrow,
+explicitly approved prerelease exception: it must be labelled unsigned and
+hardware-unverified, published as a GitHub prerelease with its checksum, and
+must not be described as stable or from a verified publisher. Before any stable
+publication, sign the PDW executables, Setup, and the generated uninstaller with
+the same trusted Authenticode publisher identity and a trusted timestamp. Then
+run:
 
 ```powershell
 .\scripts\audit-installer.ps1 `
@@ -193,6 +205,7 @@ Then run:
   -RequireSignature -ScanWithDefender
 ```
 
-Any missing/invalid signature, Defender detection, secret-bearing default,
-architecture mismatch, separated settings storage, failed upgrade, or data-removing
-uninstall blocks public release.
+Any Defender detection, secret-bearing default, architecture mismatch,
+separated settings storage, failed upgrade, or data-removing uninstall blocks
+beta and stable publication. A missing or invalid signature additionally blocks
+promotion to a stable release.

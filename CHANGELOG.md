@@ -2,6 +2,8 @@
 
 ## PDW v5.5 2026 Release
 
+**Public Beta 1 - 11 August 2026**
+
 An additive local-audio profile release. Existing protocol decoders, signal
 sources, Capcode Directory rules, filter behavior, message history, display,
 logging, notifications, and optional outputs remain available with their
@@ -37,9 +39,15 @@ established semantics.
 - SDR# and VB-CABLE remain external, operator-installed products. PDW does not
   download, bundle, license, tune, or configure them, and no network or data
   output is enabled by the profile.
-- Dual-architecture clean builds/tests, native UI acceptance, portable-package
-  audit, guided-installer smoke, Defender scanning, CI/CodeQL, and trusted
-  Authenticode signing are pending for the v5.5 candidate.
+- Exact-head Visual Studio 2026 x64 and Win32 builds, all automated tests,
+  device-smoke compilation, portable-package/source-tamper audits, combined
+  Setup/profile/upgrade/uninstall smoke, Defender scanning, and CI/CodeQL pass.
+- The maintainer has explicitly approved an unsigned public prerelease so users
+  can perform the remaining physical SDR, SDR#, VB-CABLE and broader Windows UI
+  testing. Those paths are beta and hardware-unverified; trusted Authenticode
+  signing and post-signing validation remain mandatory before a stable release.
+- Testers should report content-free results through GitHub Issues without
+  attaching pager traffic, recordings, credentials, endpoint IDs or settings.
 
 ## PDW v5.4 2026 Release
 

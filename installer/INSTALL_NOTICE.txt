@@ -1,3 +1,13 @@
+PUBLIC BETA 1 - UNSIGNED / UNKNOWN PUBLISHER
+
+This 11 August 2026 prerelease passed automated x64 and Win32 builds, tests,
+package checks, Defender scanning, and the install/upgrade/uninstall matrix. It
+has not been Authenticode-signed and its physical SDR#/VB-CABLE combinations
+have not been maintainer-validated. Verify the published SHA-256 checksum and
+report only content-free results through the maintained GitHub Issues page.
+Do not include pager traffic, recordings, credentials, endpoint IDs, PDW.INI,
+logs, or operator settings in a public report.
+
 PDW v5.5 2026 Release keeps all established decoder, receiver, slicer, audio,
 serial, filter and output paths. This Setup installs the same PDW application
 that remains available in portable form.

@@ -78,11 +78,17 @@ or packaging. Native metadata and UI still require post-build inspection.
    forbidden runtime content, source snapshot, and architecture-only assets.
 9. Build the combined Setup and pass Win32/x64 install, co-located settings,
    upgrade, uninstall, Defender, metadata, and architecture-selection checks.
-10. Require trusted Authenticode signatures for every public executable,
-    Setup, and uninstaller; unsigned CI outputs remain test artifacts only.
-11. Push a named release branch, open/update a draft pull request, wait for all
-   dual-architecture CI and security checks, and keep the tree clean.
+10. Require trusted Authenticode signatures for every stable public executable,
+    Setup, and uninstaller. An unsigned public beta requires explicit maintainer
+    approval, a GitHub prerelease label, an unknown-publisher warning, a
+    published SHA-256 checksum, and a clear list of incomplete acceptance gates.
+11. Push the release state, wait for all dual-architecture CI and security
+    checks on the exact commit, publish an immutable prerelease tag, and keep
+    the tree clean.
 
 Physical receiver, slicer, driver, network-service, and live-radio acceptance
 remain separate manual evidence. A clean build must never be described as
-proof that untested hardware or services work.
+proof that untested hardware or services work. An explicitly approved beta may
+ask users to supply that evidence, provided the unverified status and safe,
+content-free feedback requirements are prominent and the build is not promoted
+to stable.
