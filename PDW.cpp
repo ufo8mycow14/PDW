@@ -289,8 +289,12 @@
 #include <commctrl.h>
 #include <mmsystem.h>
 #include <stdio.h>
+#include <fcntl.h>
+#include <io.h>
+#include <stdint.h>
 #include <commdlg.h>
 #include <string.h>
+#include <string>
 #include <time.h>
 #include <shlobj.h>
 
@@ -329,6 +333,7 @@
 #include "utils\ostype.h"
 #include "utils\smtp.h"
 #include "utils\ini_preservation_core.h"
+#include "utils\local_audio_profile.h"
 
 #include "headers\helper_funcs.h"	// Extra functies van Andreas
 
@@ -815,6 +820,11 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.audioSampleRate		= 44100;
 	Profile.audioConfig			= 5;		// Audio input configuration.
 	Profile.audioSource			= AUDIO_SOURCE_LOCAL;
+	Profile.audioProfileId[0]	= '\0';
+	Profile.audioProfileName[0]	= '\0';
+	Profile.audioDeviceEndpointId[0] = '\0';
+	Profile.audioDeviceName[0]	= '\0';
+	Profile.audioDeviceIdentityInvalid = 0;
 	strcpy(Profile.rtlTcpHost, "127.0.0.1");
 	Profile.rtlTcpPort			= 1234;
 	Profile.rtlFrequencyHz		= 148000000;
@@ -879,7 +889,6 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 					szApiFailedMsg, lpszSourceFileName, __LINE__);
 		return (FALSE);
 	}
-
 	OutputHealthInitialize(ghWnd);
 	OutputHealthConfigure(Profile.outputHealthAlertsEnabled,
 		Profile.outputHealthFailureThreshold);
@@ -1545,94 +1554,90 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				break;
 
 				case IDM_INTERFACE:
-
-				int tmp_comPort, tmp_comPortAddr, tmp_comPortIRQ, tmp_comPortRS232;
-				int tmp_audioChannels, tmp_audioSampleRate;
-
-				tmp_comPort			= Profile.comPort;
-				tmp_comPortAddr		= Profile.comPortAddr;
-				tmp_comPortIRQ		= Profile.comPortIRQ;
-				tmp_comPortRS232	= Profile.comPortRS232;
-				tmp_audioChannels	= 0;
-				tmp_audioSampleRate	= Profile.audioSampleRate;
-
-				GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(SETUPDLGBOX),
-										hWnd, (DLGPROC) SetupDlgProc, 0L);
-
-				if (Profile.comPortEnabled) // User selected serial port?.
 				{
-					if (bCapturing)		// If currently using sound card then
-					{					// close and reset audio device.
-						KillTimer(ghWnd, PDW_TIMER);
-						Stop_Capturing();
+					// Treat Interface Setup as one transaction: validate the candidate,
+					// start that exact input, persist it, or restore the prior live input
+					// and in-memory profile. This prevents a failed endpoint bind or a
+					// read-only PDW.INI from being reported as a successful change.
+					const PROFILE previousProfile = Profile;
+					const bool previousCaptureWasRunning = bCapturing;
+					const bool previousSerialWasRunning = nDriverLoaded != DRIVER_NOT_LOADED;
+					const INT_PTR accepted = GoModalDialogBoxParam(ghInstance,
+						MAKEINTRESOURCE(SETUPDLGBOX), hWnd, (DLGPROC) SetupDlgProc, 0L);
+					if (accepted != TRUE)
+					{
+						Profile = previousProfile;
+						SetAudioConfig(Profile.audioConfig);
+						break;
 					}
 
-					if (bPlayback)	// RAH: If currently playback active, stop it
+					KillTimer(ghWnd, PDW_TIMER);
+					bool previousCaptureStopped = true;
+					if (bCapturing) previousCaptureStopped = Stop_Capturing() != FALSE;
+					if (nDriverLoaded) UnloadDriver();
+
+					bool desiredInputStarted = previousCaptureStopped && !bCapturing &&
+						nDriverLoaded == DRIVER_NOT_LOADED;
+					if (desiredInputStarted && Profile.comPortEnabled)
 					{
-						Stop_Playback();
+						if (bPlayback) Stop_Playback();
+						pd_reset_all();
+						desiredInputStarted = LoadDriver();
+					}
+					else if (desiredInputStarted && Profile.audioEnabled)
+					{
+						desiredInputStarted = Start_Capturing() != FALSE;
 					}
 
-					// check if the COM Port parameters changed
-					if (!nDriverLoaded || (tmp_comPort		!= Profile.comPort) ||
-										  (tmp_comPortAddr	!= Profile.comPortAddr) ||
-										  (tmp_comPortRS232	!= Profile.comPortRS232) ||
-										  (tmp_comPortIRQ	!= Profile.comPortIRQ))
+					const bool settingsSaved = desiredInputStarted && TryWriteSettings();
+					if (desiredInputStarted && settingsSaved)
 					{
-						// Dynamically UNLOAD the comport driver
-						if (nDriverLoaded)	// HWi
-						{
-							UnloadDriver();
-						}
-						pd_reset_all();	// Reset globals for serial port decoding. see "decode.cpp"
-
-						if (LoadDriver())	// HWi
-						{
-							if (Profile.comPortRS232 && (GetRs232DriverType() == DRIVER_TYPE_SLICER))
-							{
-								MessageBox(ghWnd, "You have selected an RS232 interface.\nFor best results, de-install Slicer.sys", "PDW Slicer.sys", MB_ICONINFORMATION);
-							}
+						if (Profile.comPortEnabled || Profile.audioEnabled)
 							SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL);
+						if (Profile.comPortEnabled && Profile.comPortRS232 &&
+							GetRs232DriverType() == DRIVER_TYPE_SLICER)
+						{
+							MessageBox(ghWnd,
+								"You have selected an RS232 interface.\nFor best results, de-install Slicer.sys",
+								"PDW Slicer.sys", MB_ICONINFORMATION);
 						}
-					}
-				}
-				else if (Profile.audioEnabled) // User selected sound card.
-				{
-					if (nDriverLoaded)	// HWi
-					{
-						UnloadDriver();
+						break;
 					}
 
-					// check if audio info has changed
-					if (!bCapturing ||  (tmp_audioChannels   != Profile.audioChannels) ||
-										(tmp_audioSampleRate != Profile.audioSampleRate))
+					KillTimer(ghWnd, PDW_TIMER);
+					bool selectedInputReleased = true;
+					if (bCapturing)
+						selectedInputReleased = Stop_Capturing() != FALSE;
+					if (nDriverLoaded) UnloadDriver();
+					if (!selectedInputReleased || bCapturing ||
+						nDriverLoaded != DRIVER_NOT_LOADED)
 					{
-						if (bCapturing) // close and reset audio device.
-						{
-							KillTimer(ghWnd, PDW_TIMER);
-							Stop_Capturing();
-						}
+						MessageBoxA(hWnd,
+							"PDW could not confirm that the selected input released its resources. The current in-memory input and ownership were preserved, no previous input was started, and the unsaved change will not be retried automatically. Restart PDW before selecting another input.",
+							"PDW Interface Setup", MB_ICONERROR);
+						break;
+					}
+					Profile = previousProfile;
+					SetAudioConfig(Profile.audioConfig);
 
-						if (Start_Capturing())
-						{
-							SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL);
-						}
-					}
+					bool previousInputRestored = !bCapturing &&
+						nDriverLoaded == DRIVER_NOT_LOADED;
+					if (previousInputRestored && previousSerialWasRunning)
+						previousInputRestored = LoadDriver();
+					else if (previousInputRestored && previousCaptureWasRunning)
+						previousInputRestored = Start_Capturing() != FALSE;
+					if (previousInputRestored &&
+						(previousSerialWasRunning || previousCaptureWasRunning))
+						SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL);
+
+					std::string failure = desiredInputStarted ?
+						"PDW could not save the interface settings. No new input binding was retained." :
+						"PDW could not start the selected input. No new input binding was retained.";
+					if (!previousInputRestored)
+						failure += "\n\nThe previous live input also could not be restarted; review Radio and Signal Sources.";
+					MessageBoxA(hWnd, failure.c_str(), "PDW Interface Setup", MB_ICONERROR);
+					break;
 				}
-				// If user has not selected the serial port or sound card for input
-				// then ensure neither the audio device or serial port is in use.
-				else
-				{
-					if (nDriverLoaded)	// HWi
-					{
-						UnloadDriver();
-					}
-					if (bCapturing)		// If currently using sound card then
-					{					// close and reset audio device.
-						KillTimer(ghWnd, PDW_TIMER);
-						Stop_Capturing();
-					}
-				}
-				break;
 
 				case IDT_TOOLBAR_BTN6:
 				case IDM_OPTIONS:
@@ -3204,17 +3209,17 @@ void PaneVScroll(PaneStruct *pane, WPARAM wParam, LPARAM lParam)
 } // end of PaneVScroll
 
 
-VOID NEAR GoModalDialogBoxParam(HINSTANCE hInstance, LPCSTR lpszTemplate, HWND hWnd, DLGPROC lpDlgProc, LPARAM lParam)
+INT_PTR NEAR GoModalDialogBoxParam(HINSTANCE hInstance, LPCSTR lpszTemplate, HWND hWnd, DLGPROC lpDlgProc, LPARAM lParam)
 {
 	DLGPROC  lpProcInstance;
 
 	lpProcInstance = (DLGPROC) MakeProcInstance((FARPROC) lpDlgProc,hInstance);
 	PdwThemeBeginDialogHook();
-	DialogBoxParam(hInstance, lpszTemplate, hWnd, lpProcInstance, lParam);
+	const INT_PTR result = DialogBoxParam(hInstance, lpszTemplate, hWnd, lpProcInstance, lParam);
 	PdwThemeEndDialogHook();
 	FreeProcInstance((FARPROC) lpProcInstance);
 
-	return;
+	return result;
 
 } // end of GoModalDialogBoxParam()
 
@@ -3232,6 +3237,13 @@ BOOL FAR PASCAL AboutDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		TmpDlgChildWin(hDlg, ghInstance, IDS_ABOUTLOGO, 12, 16);
 
 		SetDlgItemText(hDlg, IDC_VERSION, pdw_version);
+#ifdef _WIN64
+		SetDlgItemTextA(hDlg, IDC_ABOUT_ARCHITECTURE,
+			"Architecture: x64 (64-bit Windows application)");
+#else
+		SetDlgItemTextA(hDlg, IDC_ABOUT_ARCHITECTURE,
+			"Architecture: Win32/x86 (legacy hardware compatibility)");
+#endif
 
 		return (TRUE);
 
@@ -3239,13 +3251,19 @@ BOOL FAR PASCAL AboutDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		switch (LOWORD(wParam))
 		{
 			case IDC_WEBSITE:
-				ShellExecute(NULL, "open", "http://www.discriminator.nl/pdw/index-en.html", NULL, NULL, SW_SHOWNORMAL);
+				ShellExecuteA(hDlg, "open", "https://github.com/ufo8mycow14/PDW",
+					NULL, NULL, SW_SHOWNORMAL);
+				return TRUE;
 
-			// fall through
+			case IDC_ABOUT_HISTORICAL:
+				ShellExecuteA(hDlg, "open", "https://www.discriminator.nl/pdw/index-en.html",
+					NULL, NULL, SW_SHOWNORMAL);
+				return TRUE;
 
+			case IDOK:
 			case IDCANCEL:
 				EndDialog(hDlg, TRUE);
-			break;
+				return TRUE;
 		}
 		break;
 	}
@@ -3352,6 +3370,7 @@ BOOL FAR PASCAL SystemTrayDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 		if (!CenterWindow(hDlg)) return (FALSE);
 
 		hSystemTrayDlg = hDlg;
+		iRestore = Profile.SystemTrayRestore;
 
 		CheckDlgButton(hDlg, IDC_SYSTEMTRAY,         Profile.SystemTray);
 		CheckDlgButton(hDlg, IDC_SYSTEMTRAY_RESTORE, Profile.SystemTrayRestore);
@@ -3432,21 +3451,31 @@ BOOL FAR PASCAL SystemTrayDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 			break;
 
 			case IDOK:
-
-			Profile.SystemTray        = IsDlgButtonChecked(hDlg, IDC_SYSTEMTRAY);
+			{
+			const int previousSystemTray = Profile.SystemTray;
+			const int previousSystemTrayRestore = Profile.SystemTrayRestore;
+			Profile.SystemTray = IsDlgButtonChecked(hDlg, IDC_SYSTEMTRAY);
 			Profile.SystemTrayRestore = iRestore;
-
+			if (!TryWriteSettings())
+			{
+				Profile.SystemTray = previousSystemTray;
+				Profile.SystemTrayRestore = previousSystemTrayRestore;
+				MessageBoxA(hDlg,
+					"PDW could not save the system tray settings. The current tray state was left unchanged; choose a writable portable folder or correct PDW.INI permissions, then try again.",
+					"PDW System Tray", MB_ICONERROR);
+				return TRUE;
+			}
 			if (!Profile.SystemTray)
 			{
 				if (bTrayed) SystemTrayWindow(false);
 				SystemTrayIcon(true); // PH: Remove PDW-icon from systemtray
 			}
-			WriteSettings();
 
 			hSystemTrayDlg = NULL;
 			EndDialog(hDlg, TRUE);
 
 			return (TRUE);
+			}
 
 			case IDCANCEL:
 
@@ -3731,8 +3760,6 @@ BOOL FAR PASCAL CustomAudioDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 			// Update audio configuration.
 			SetAudioConfig(Profile.audioConfig);
 
-			WriteSettings();
-
 			EndDialog(hDlg, TRUE);
 			return (TRUE);
 
@@ -3756,9 +3783,17 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	char temp[10];
 
 	static int old_device=0, more_audio=0, audio_devices=0;
+	static bool audioDeviceSelectionChanged = false;
+	static PROFILE dialogOriginalProfile = {};
 	int i, state=0, config, comport, slicer, rs232, serial, soundcard;
-	int	tmp_audioConfig = Profile.audioConfig; // May need to restore configuration later.
-
+	int selectedAudioItem = 0;
+	LRESULT selectedItem = CB_ERR, selectedDevice = CB_ERR;
+	bool bindSelectedAudioDevice = false;
+	bool hasConfiguredStableAudio = false;
+	bool configuredStableAudioResolved = true;
+	std::string resolutionError;
+	pdw::audio_profile::CaptureDeviceSaveDecision audioSaveDecision =
+		pdw::audio_profile::CAPTURE_SAVE_KEEP_CONFIGURED_IDENTITY;
 	DWORD value;
 
 	WAVEINCAPS WaveInCaps = {0};
@@ -3768,6 +3803,8 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		case WM_INITDIALOG:
 
 		if (!CenterWindow(hDlg)) return (FALSE);
+		dialogOriginalProfile = Profile;
+		audioDeviceSelectionChanged = false;
 
 		if (bWin9x && !Profile.comPortRS232)
 		{
@@ -3905,12 +3942,32 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			for (i=0; i<audio_devices; i++)		// PH: Display available audiodevices
 			{
 				waveInGetDevCaps(i, &WaveInCaps, sizeof(WAVEINCAPS));	// PH: Get device name
-				sprintf(szDeviceName, "%i. %s", i+1, WaveInCaps.szPname);		
-				SendDlgItemMessage(hDlg, IDC_AUDIODEVICES, CB_ADDSTRING, 0, (LPARAM) (LPSTR) szDeviceName);
+				sprintf(szDeviceName, "%i. %s", i+1, WaveInCaps.szPname);
+				const LRESULT item = SendDlgItemMessage(hDlg, IDC_AUDIODEVICES,
+					CB_ADDSTRING, 0, (LPARAM) (LPSTR) szDeviceName);
+				if (item != CB_ERR && item != CB_ERRSPACE)
+				{
+					SendDlgItemMessage(hDlg, IDC_AUDIODEVICES, CB_SETITEMDATA,
+						static_cast<WPARAM>(item), static_cast<LPARAM>(i));
+				}
+			}
+			const LRESULT itemCount = SendDlgItemMessage(hDlg, IDC_AUDIODEVICES,
+				CB_GETCOUNT, 0, 0L);
+			for (LRESULT item = 0; item < itemCount; ++item)
+			{
+				if (SendDlgItemMessage(hDlg, IDC_AUDIODEVICES, CB_GETITEMDATA,
+					static_cast<WPARAM>(item), 0L) == Profile.audioDevice)
+				{
+					selectedAudioItem = static_cast<int>(item);
+					break;
+				}
 			}
 		}
-		SendDlgItemMessage(hDlg, IDC_AUDIODEVICES, CB_SETCURSEL, more_audio ? Profile.audioDevice : 0, 0L);
+		SendDlgItemMessage(hDlg, IDC_AUDIODEVICES, CB_SETCURSEL,
+			more_audio ? selectedAudioItem : 0, 0L);
 		if (!more_audio) EnableWindow(GetDlgItem(hDlg, IDC_AUDIODEVICES), false);
+		EnableWindow(GetDlgItem(hDlg, IDC_AUDIO_BIND),
+			audio_devices > 0 && Profile.audioEnabled && !Profile.comPortEnabled);
 
 		value = GetWindowLong(GetDlgItem(hDlg, IDC_AUDIODEVICES), GWL_STYLE) - CBS_DROPDOWNLIST;
 		SetWindowLong(GetDlgItem(hDlg, IDC_AUDIODEVICES), GWL_STYLE, value | ES_READONLY);
@@ -3924,6 +3981,16 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 		switch (LOWORD(wParam))
 		{
+			case IDC_AUDIODEVICES:
+				if (HIWORD(wParam) == CBN_SELCHANGE || HIWORD(wParam) == CBN_SELENDOK)
+					audioDeviceSelectionChanged = true;
+				return TRUE;
+
+			case IDC_AUDIO_BIND:
+				audioDeviceSelectionChanged = true;
+				SetDlgItemTextA(hDlg, IDC_AUDIO_BIND, "Selected input ready");
+				return TRUE;
+
 			case IDC_AUDIOCUSTOM:
 
 			Profile.audioConfig = 0; // must be custom here!
@@ -4022,6 +4089,7 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			EnableWindow(GetDlgItem(hDlg, IDC_AUDIODEVICES), soundcard && more_audio);
 			EnableWindow(GetDlgItem(hDlg, IDC_AUDIOSAMPLERATE), soundcard && audio_devices);
 			EnableWindow(GetDlgItem(hDlg, IDC_AUDIOCUSTOM), soundcard && !config);
+			EnableWindow(GetDlgItem(hDlg, IDC_AUDIO_BIND), soundcard && !serial && audio_devices);
 
 			break;
 
@@ -4064,6 +4132,8 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			break;
 
 			case IDOK:
+			{
+			const PROFILE attemptOriginalProfile = Profile;
 
 			// Set audio configuration.
 			Profile.audioConfig = SendDlgItemMessage(hDlg, IDC_AUDIOCONFIG, CB_GETCURSEL, 0, 0L);
@@ -4103,6 +4173,8 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 					if (GetDlgItemText(hDlg, IDC_COMADDR,(LPSTR) temp, 6) == 0)
 					{
+						Profile = attemptOriginalProfile;
+						SetAudioConfig(Profile.audioConfig);
 						MessageBox(hDlg,"You must provide an I/O Address!","PDW Setup",MB_ICONERROR);
 						SetFocus(GetDlgItem(hDlg, IDC_COMADDR));
 						return (FALSE);
@@ -4110,6 +4182,8 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 					if (SendDlgItemMessage(hDlg, IDC_COMIRQ, CB_GETCURSEL, 0, 0L) == CB_ERR)
 					{
+						Profile = attemptOriginalProfile;
+						SetAudioConfig(Profile.audioConfig);
 						MessageBox(hDlg,"You must select an IRQ vector!","PDW Setup",MB_ICONERROR);
 						SetFocus(GetDlgItem(hDlg, IDC_COMIRQ));
 						return (FALSE);
@@ -4155,33 +4229,79 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			Profile.comPortRS232   = IsDlgButtonChecked(hDlg, IDC_COMRS232);
 			if (Profile.comPortRS232) Profile.comPortRS232 += SendDlgItemMessage(hDlg, IDC_RS232MODE, CB_GETCURSEL, 0, 0L);
 			Profile.audioEnabled   = IsDlgButtonChecked(hDlg, IDC_AUDIOENABLE);
-			Profile.audioDevice    = SendDlgItemMessage(hDlg, IDC_AUDIODEVICES, CB_GETCURSEL, 0, 0L);
-			if (Profile.audioDevice != old_device)
+			hasConfiguredStableAudio =
+				Profile.audioDeviceIdentityInvalid || Profile.audioDeviceEndpointId[0] ||
+				Profile.audioDeviceName[0] || Profile.audioProfileId[0] ||
+				Profile.audioProfileName[0];
+			configuredStableAudioResolved = true;
+			resolutionError.clear();
+			if (!audioDeviceSelectionChanged && Profile.audioEnabled && hasConfiguredStableAudio)
 			{
-				if (bCapturing)
+				pdw::audio_profile::DeviceResolution configuredDevice;
+				configuredStableAudioResolved = pdw::audio_profile::ResolveConfiguredCaptureDevice(
+					configuredDevice, resolutionError);
+			}
+			audioSaveDecision =
+				pdw::audio_profile::DecideCaptureDeviceSave(
+					audioDeviceSelectionChanged && Profile.audioEnabled && !Profile.comPortEnabled,
+					hasConfiguredStableAudio, configuredStableAudioResolved);
+			if (Profile.audioEnabled && audioSaveDecision ==
+				pdw::audio_profile::CAPTURE_SAVE_REJECT_UNAVAILABLE_STABLE_IDENTITY)
+			{
+				Profile = attemptOriginalProfile;
+				SetAudioConfig(Profile.audioConfig);
+				MessageBoxA(hDlg, resolutionError.empty() ?
+					"The saved audio input is unavailable. Select the intended input explicitly before saving." :
+					resolutionError.c_str(), "PDW Soundcard", MB_ICONERROR);
+				return TRUE;
+			}
+			bindSelectedAudioDevice = audioSaveDecision ==
+				pdw::audio_profile::CAPTURE_SAVE_BIND_EXPLICIT_SELECTION;
+			if (bindSelectedAudioDevice)
+			{
+				selectedItem = SendDlgItemMessage(hDlg, IDC_AUDIODEVICES,
+					CB_GETCURSEL, 0, 0L);
+				if (selectedItem == CB_ERR)
 				{
-					KillTimer(ghWnd, PDW_TIMER);
-					Stop_Capturing();
+					Profile = attemptOriginalProfile;
+					SetAudioConfig(Profile.audioConfig);
+					MessageBoxA(hDlg, "Choose an available audio input before saving.",
+						"PDW Soundcard", MB_ICONERROR);
+					return TRUE;
 				}
-				if (Start_Capturing())
+				selectedDevice = SendDlgItemMessage(hDlg, IDC_AUDIODEVICES,
+					CB_GETITEMDATA, static_cast<WPARAM>(selectedItem), 0L);
+				if (selectedDevice == CB_ERR || selectedDevice < 0)
 				{
-					SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL);
+					Profile = attemptOriginalProfile;
+					SetAudioConfig(Profile.audioConfig);
+					MessageBoxA(hDlg, "PDW could not identify the selected audio input.",
+						"PDW Soundcard", MB_ICONERROR);
+					return TRUE;
 				}
-				else return (FALSE);
+				Profile.audioDevice = static_cast<int>(selectedDevice);
+			}
+			if (bindSelectedAudioDevice &&
+				!pdw::audio_profile::RememberWinmmCaptureDevice(Profile.audioDevice))
+			{
+				Profile = attemptOriginalProfile;
+				SetAudioConfig(Profile.audioConfig);
+				MessageBoxA(hDlg, "PDW could not save a stable identity for the selected audio input.",
+					"PDW Soundcard", MB_ICONERROR);
+				return TRUE;
 			}
 
 			if (Profile.audioEnabled) Profile.fourlevel = 0;
 			else Profile.fourlevel = SendDlgItemMessage(hDlg, IDC_LEVEL, CB_GETCURSEL, 0, 0L);
 
-			WriteSettings();
-
 			EndDialog(hDlg, TRUE);
 			return (TRUE);
+			}
 
 			case IDCANCEL:
-			Profile.audioConfig = tmp_audioConfig;
+			Profile = dialogOriginalProfile;
 			SetAudioConfig(Profile.audioConfig);
-			EndDialog(hDlg, TRUE);
+			EndDialog(hDlg, FALSE);
 			return (TRUE);
 		}
 		break;
@@ -9941,6 +10061,57 @@ BOOL ErrorMessageBox(LPCTSTR lpszText, LPCTSTR lpszTitle, LPCTSTR lpszFile, INT 
 } // end of ErrorMessageBox
 
 
+static bool ReadInputProfileUtf8Field(LPCSTR key, LPCTSTR iniPath,
+	char* destination, std::size_t destinationSize, std::size_t maximumUtf8Bytes,
+	int& invalidIdentity)
+{
+	char persisted[(AUDIO_ENDPOINT_ID_LEN * 2) + 32] = {};
+	const DWORD length = GetPrivateProfileStringA("InputProfile", key, "",
+		persisted, static_cast<DWORD>(_countof(persisted)), iniPath);
+	destination[0] = '\0';
+	if (!length) return true;
+	if (length >= _countof(persisted) - 1)
+	{
+		invalidIdentity = 1;
+		OutputDebugStringA("PDW rejected a truncated InputProfile identity field.\n");
+		return false;
+	}
+
+	const std::string stored(persisted, length);
+	std::string decoded;
+	std::string error;
+	const bool encoded = stored.compare(0, 9, "utf8-hex:") == 0;
+	const bool valid = encoded ?
+		pdw::audio_profile::DecodeIniUtf8Field(stored, maximumUtf8Bytes, decoded, error) :
+		pdw::audio_profile::ValidateUtf8Field(stored, maximumUtf8Bytes, error);
+	if (!encoded && valid) decoded = stored; // one-time compatibility with the unencoded v5.5 candidate
+	if (!valid || decoded.size() >= destinationSize)
+	{
+		invalidIdentity = 1;
+		const std::string diagnostic = "PDW rejected InputProfile/" + std::string(key) +
+			": " + (error.empty() ? std::string("field is overlength") : error) + "\n";
+		OutputDebugStringA(diagnostic.c_str());
+		return false;
+	}
+	memcpy(destination, decoded.data(), decoded.size());
+	destination[decoded.size()] = '\0';
+	return true;
+}
+
+static bool EncodeInputProfileUtf8Field(const char* value, std::size_t maximumUtf8Bytes,
+	std::string& encoded)
+{
+	encoded.clear();
+	if (!value || !value[0]) return true;
+	std::string error;
+	if (pdw::audio_profile::EncodeIniUtf8Field(value, maximumUtf8Bytes, encoded, error))
+		return true;
+	const std::string diagnostic = "PDW could not encode an InputProfile identity: " +
+		error + "\n";
+	OutputDebugStringA(diagnostic.c_str());
+	return false;
+}
+
 BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PPROFILE pProfile)
 {
 	TCHAR ValBuf[16];
@@ -10088,6 +10259,20 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->audioSampleRate			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("AudioSampleRate"), pProfile->audioSampleRate, lpszIniPathName);
 	pProfile->audioConfig				= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("AudioConfiguration"), pProfile->audioConfig, lpszIniPathName);
 	pProfile->audioSource				= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("AudioSource"), pProfile->audioSource, lpszIniPathName);
+	pProfile->audioDeviceIdentityInvalid = GetPrivateProfileInt(TEXT("InputProfile"),
+		TEXT("IdentityInvalid"), 0, lpszIniPathName) ? 1 : 0;
+	ReadInputProfileUtf8Field("PresetId", lpszIniPathName,
+		pProfile->audioProfileId, sizeof(pProfile->audioProfileId),
+		pdw::audio_profile::MAX_PROFILE_ID_UTF8_BYTES, pProfile->audioDeviceIdentityInvalid);
+	ReadInputProfileUtf8Field("PresetName", lpszIniPathName,
+		pProfile->audioProfileName, sizeof(pProfile->audioProfileName),
+		pdw::audio_profile::MAX_PROFILE_NAME_UTF8_BYTES, pProfile->audioDeviceIdentityInvalid);
+	ReadInputProfileUtf8Field("DeviceEndpointId", lpszIniPathName,
+		pProfile->audioDeviceEndpointId, sizeof(pProfile->audioDeviceEndpointId),
+		pdw::audio_profile::MAX_ENDPOINT_ID_UTF8_BYTES, pProfile->audioDeviceIdentityInvalid);
+	ReadInputProfileUtf8Field("DeviceFriendlyName", lpszIniPathName,
+		pProfile->audioDeviceName, sizeof(pProfile->audioDeviceName),
+		pdw::audio_profile::MAX_ENDPOINT_NAME_UTF8_BYTES, pProfile->audioDeviceIdentityInvalid);
 	GetPrivateProfileString(lpszAppTitle, TEXT("RtlTcpHost"), "127.0.0.1", pProfile->rtlTcpHost, sizeof(pProfile->rtlTcpHost), lpszIniPathName);
 	pProfile->rtlTcpPort				= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlTcpPort"), pProfile->rtlTcpPort, lpszIniPathName);
 	pProfile->rtlFrequencyHz			= (unsigned int) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlFrequencyHz"), pProfile->rtlFrequencyHz, lpszIniPathName);
@@ -10614,16 +10799,89 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 	return(true);
 }
 
-void WriteSettings()
+bool TryWriteSettings()
 {
 	// Isolated receiver workers inherit the main configuration but must never
 	// overwrite it from their minimized compatibility windows.
-	if (pdw::multichannel::WorkerActive()) return;
-	char settingsSnapshotPath[MAX_PATH] = {};
+	if (pdw::multichannel::WorkerActive()) return false;
+	pdw::audio_profile::RefreshSelectedAudioProfileIdentity();
+	std::string encodedProfileId;
+	std::string encodedProfileName;
+	std::string encodedEndpointId;
+	std::string encodedEndpointName;
+	bool invalidAudioIdentity = Profile.audioDeviceIdentityInvalid != 0;
+	if (!invalidAudioIdentity &&
+		(!EncodeInputProfileUtf8Field(Profile.audioProfileId,
+			pdw::audio_profile::MAX_PROFILE_ID_UTF8_BYTES, encodedProfileId) ||
+		 !EncodeInputProfileUtf8Field(Profile.audioProfileName,
+			pdw::audio_profile::MAX_PROFILE_NAME_UTF8_BYTES, encodedProfileName) ||
+		 !EncodeInputProfileUtf8Field(Profile.audioDeviceEndpointId,
+			pdw::audio_profile::MAX_ENDPOINT_ID_UTF8_BYTES, encodedEndpointId) ||
+		 !EncodeInputProfileUtf8Field(Profile.audioDeviceName,
+			pdw::audio_profile::MAX_ENDPOINT_NAME_UTF8_BYTES, encodedEndpointName)))
+	{
+		// Quarantine damaged identity metadata without preventing unrelated PDW
+		// settings from being saved. The durable marker keeps local capture
+		// fail-closed after restart until the operator explicitly binds a device.
+		invalidAudioIdentity = true;
+		Profile.audioDeviceIdentityInvalid = 1;
+		encodedProfileId.clear();
+		encodedProfileName.clear();
+		encodedEndpointId.clear();
+		encodedEndpointName.clear();
+	}
+	bool settingsWritten = false;
+	std::string settingsSnapshotPath;
+	std::string snapshotError;
+	void* settingsSnapshotNativeHandle = INVALID_HANDLE_VALUE;
 	FILE* pFile = NULL;
-	if (GetTempFileNameA(szPath, "PDS", 0, settingsSnapshotPath))
-		pFile = fopen(settingsSnapshotPath, "w+b");
-	if (!pFile && settingsSnapshotPath[0]) DeleteFileA(settingsSnapshotPath);
+	if (pdw::ini::CreateSensitiveSettingsTemporaryFile(szIniPathName, "PDS",
+		settingsSnapshotPath, settingsSnapshotNativeHandle, snapshotError))
+	{
+		const int descriptor = _open_osfhandle(
+			reinterpret_cast<intptr_t>(settingsSnapshotNativeHandle),
+			_O_RDWR | _O_BINARY);
+		if (descriptor >= 0)
+		{
+			pFile = _fdopen(descriptor, "w+b");
+			if (!pFile)
+			{
+				const intptr_t exactHandle = _get_osfhandle(descriptor);
+				std::string removalError;
+				const bool marked = exactHandle != -1 &&
+					pdw::ini::MarkSensitiveSettingsTemporaryFileForDeletion(
+						reinterpret_cast<void*>(exactHandle), settingsSnapshotPath,
+						removalError);
+				snapshotError = "PDW could not create the protected settings-snapshot CRT stream.";
+				if (!marked)
+					snapshotError += " " + (removalError.empty() ?
+						"The exact snapshot handle could not be marked for deletion." : removalError);
+				_close(descriptor);
+			}
+		}
+		else
+		{
+			std::string removalError;
+			const bool marked = pdw::ini::MarkSensitiveSettingsTemporaryFileForDeletion(
+				settingsSnapshotNativeHandle, settingsSnapshotPath, removalError);
+			snapshotError = "PDW could not convert the protected settings snapshot to a CRT handle.";
+			if (!marked)
+				snapshotError += " " + removalError;
+			CloseHandle(static_cast<HANDLE>(settingsSnapshotNativeHandle));
+		}
+	}
+	if (!pFile && !settingsSnapshotPath.empty())
+	{
+		if (!snapshotError.empty())
+		{
+			OutputDebugStringA((snapshotError + "\n").c_str());
+			MessageBoxA(ghWnd, snapshotError.c_str(), "PDW Settings Privacy", MB_ICONERROR);
+		}
+		settingsSnapshotPath.clear();
+	}
+	if (!pFile && !snapshotError.empty())
+		OutputDebugStringA(("PDW could not create a protected settings snapshot: " +
+			snapshotError + "\n").c_str());
 
 	if (pFile)
 	{
@@ -10798,6 +11056,13 @@ void WriteSettings()
 		fprintf(pFile, "SystemTray=%i\n",				Profile.SystemTray);
 		fprintf(pFile, "SystemTrayRestore=%i\n",		Profile.SystemTrayRestore);
 
+		fprintf(pFile, "\n[InputProfile]\n");
+		fprintf(pFile, "PresetId=%s\n", encodedProfileId.c_str());
+		fprintf(pFile, "PresetName=%s\n", encodedProfileName.c_str());
+		fprintf(pFile, "DeviceEndpointId=%s\n", encodedEndpointId.c_str());
+		fprintf(pFile, "DeviceFriendlyName=%s\n", encodedEndpointName.c_str());
+		fprintf(pFile, "IdentityInvalid=%i\n", invalidAudioIdentity ? 1 : 0);
+
 		fprintf(pFile, "\n[SMTP]\n");
 		fprintf(pFile, "Enable=%i\n",					Profile.SMTP);
 		fprintf(pFile, "Host=%s\n",						Profile.szMailHost);
@@ -10913,20 +11178,59 @@ void WriteSettings()
 					generatedSettings.clear();
 			}
 		}
+		std::string removalError;
+		const intptr_t snapshotHandleValue = _get_osfhandle(_fileno(pFile));
+		const bool snapshotDeleteMarked = snapshotHandleValue != -1 &&
+			pdw::ini::MarkSensitiveSettingsTemporaryFileForDeletion(
+				reinterpret_cast<void*>(snapshotHandleValue), settingsSnapshotPath,
+				removalError);
+		if (snapshotHandleValue == -1)
+			removalError = "PDW could not retain the exact protected settings-snapshot handle for deletion. The settings save was not applied.";
 		fclose(pFile);
 		pFile = NULL;
-		DeleteFileA(settingsSnapshotPath);
+		if (!snapshotDeleteMarked)
+		{
+			if (!generatedSettings.empty())
+				SecureZeroMemory(&generatedSettings[0], generatedSettings.size());
+			OutputDebugStringA((removalError + "\n").c_str());
+			MessageBoxA(ghWnd, removalError.c_str(), "PDW Settings Privacy", MB_ICONERROR);
+			return false;
+		}
 
 		std::string error;
-		if (generatedSettings.empty() ||
-			!pdw::ini::WriteMergedSettingsFile(szIniPathName, generatedSettings, error))
+		pdw::audio_profile::SettingsTransactionOutcome settingsOutcome =
+			pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
+		if (!generatedSettings.empty())
+			settingsOutcome = pdw::ini::WriteMergedSettingsFile(
+				szIniPathName, generatedSettings, error);
+		if (!pdw::audio_profile::SettingsTransactionCommitted(settingsOutcome))
 		{
 			std::string debug = "PDW settings save was not applied: " +
 				(error.empty() ? "temporary settings generation failed." : error) + "\n";
 			OutputDebugStringA(debug.c_str());
 		}
+		else
+		{
+			settingsWritten = true;
+			if (settingsOutcome ==
+				pdw::audio_profile::SETTINGS_TRANSACTION_COMMITTED_WITH_WARNING)
+			{
+				const std::string warning = error.empty() ?
+					"PDW committed the settings, but retained a protected transaction artifact for operator review." :
+					error;
+				OutputDebugStringA((warning + "\n").c_str());
+				MessageBoxA(ghWnd, warning.c_str(), "PDW Settings Warning",
+					MB_OK | MB_ICONWARNING);
+			}
+		}
 	}
+	return settingsWritten;
 } // end of WritePrivateProfileSettings
+
+void WriteSettings()
+{
+	TryWriteSettings();
+}
 
 
 void WriteFilters(PPROFILE pProfile, int backup)

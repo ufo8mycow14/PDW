@@ -95,7 +95,7 @@ namespace
 		{ PDW_SETTINGS_HEALTH, IDM_OUTPUT_HEALTH, "Delivery health", "Review destination state, failures and pending alerts." },
 		{ PDW_SETTINGS_HEALTH, IDM_MONSTAT, "Decoder statistics", "Review message counts, errors and current decoder activity." },
 		{ PDW_SETTINGS_HEALTH, IDM_DEBUG, "Diagnostics", "Open PDW's diagnostic information and troubleshooting view." },
-		{ PDW_SETTINGS_ABOUT, IDM_ABOUT, "About PDW", "View the PDW version, credits and contributor information." }
+		{ PDW_SETTINGS_ABOUT, IDM_ABOUT, "About PDW", "View the PDW version, architecture, capabilities, credits and project links." }
 	};
 
 	HWND g_window = NULL;
@@ -283,7 +283,13 @@ namespace
 		}
 		if (g_draftTheme != g_appliedTheme)
 		{
-			PdwThemeSetMode(g_draftTheme, owner);
+			if (!PdwThemeSetMode(g_draftTheme, owner))
+			{
+				RefreshDraftControls();
+				SetDirty(g_draftStartup != g_appliedStartup ||
+					g_draftTheme != g_appliedTheme);
+				return false;
+			}
 			g_appliedTheme = g_draftTheme;
 		}
 		SetDirty(false);

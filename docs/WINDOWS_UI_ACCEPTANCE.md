@@ -1,7 +1,7 @@
 # Windows UI acceptance
 
 This checklist records the manual evidence required to maintain the stable
-PDW v5.4 2026 Release. A successful resource compile, startup
+PDW v5.5 2026 Release candidate. A successful resource compile, startup
 smoke, or unit suite does not prove that every legacy dialog remains readable
 and operable at every Windows scale.
 
@@ -10,7 +10,10 @@ synthetic messages, or the documented configuration-only test actions. Do not
 include credentials, decoded addresses, message text, queues, or recordings in
 screenshots or issue reports.
 
-## Automated and static evidence already completed
+## Predecessor automated and static evidence
+
+These results were obtained before the v5.5 profile and About changes. They are
+regression context only and must not be reported as v5.5 acceptance:
 
 - The Win32 resource compiler accepts all dialog templates.
 - A static bounds pass found all non-combobox controls inside their declared
@@ -48,9 +51,10 @@ different scale factors.
 
 | Surface | 100% | 125% | 150% | 200% | Required result |
 | --- | --- | --- | --- | --- | --- |
-| Main panes, toolbar, signal indicators | [x] | [ ] | [ ] | [ ] | No overlap, missing text, inaccessible pane, or stale layout after monitor movement. |
-| Settings hub | [x] | [ ] | [ ] | [ ] | Every category and bottom action remains visible and keyboard reachable. |
-| Radio and Signal Sources | [x] | [ ] | [ ] | [ ] | Receiver list, source test, recording, replay, calibration, waveform and status remain usable. |
+| Main panes, toolbar, signal indicators | [ ] | [ ] | [ ] | [ ] | No overlap, missing text, inaccessible pane, or stale layout after monitor movement. |
+| Settings hub | [ ] | [ ] | [ ] | [ ] | Every category and bottom action remains visible and keyboard reachable. |
+| Radio and Signal Sources | [ ] | [ ] | [ ] | [ ] | Receiver list, source test, recording, replay, calibration, waveform and status remain usable. |
+| Named local-input profile and endpoint status | [ ] | [ ] | [ ] | [ ] | The exact saved endpoint is identifiable; a missing endpoint produces a readable fail-closed prompt and never silently selects a microphone. |
 | Screen Options and FLEX assembly row | [ ] | [ ] | [ ] | [ ] | The full compatibility wording and Group Mode relationship remain visible. |
 | Data Outputs, all tabs | [ ] | [ ] | [ ] | [ ] | Tab pages, enable/permission controls, fields, test actions and OK/Cancel remain reachable. |
 | Delivery Health | [ ] | [ ] | [ ] | [ ] | Columns, history, acknowledgement and close controls remain readable and reachable. |
@@ -58,6 +62,7 @@ different scale factors.
 | Filters and filter options | [ ] | [ ] | [ ] | [ ] | List, search, edit, labels, output and duplicate controls remain recognizable. |
 | Capcode Directory and Message History | [ ] | [ ] | [ ] | [ ] | Search, paging, full-width rows, Export CSV, status, and close controls remain visible and reachable. |
 | Legacy input/custom audio and colour dialogs | [ ] | [ ] | [ ] | [ ] | Every legacy receiver, slicer and presentation option remains available. |
+| About dialog and Settings About me | [ ] | [ ] | [ ] | [ ] | v5.5 identity, actual architecture, supported protocols, external-profile boundary, lawful-use text, credits, licence and project links remain readable and keyboard reachable. |
 
 ## Theme and contrast matrix
 
@@ -66,9 +71,9 @@ Repeat with at least one primary dialog left open while changing the state.
 | State | Main window | Settings | Data Outputs | Delivery Health | High Contrast off recovery |
 | --- | --- | --- | --- | --- | --- |
 | Follow Windows / light | [ ] | [ ] | [ ] | [ ] | [ ] |
-| Follow Windows / dark | [x] | [x] | [ ] | [ ] | [ ] |
-| Explicit Light | [x] | [x] | [ ] | [ ] | [ ] |
-| Explicit Dark | [x] | [x] | [ ] | [ ] | [ ] |
+| Follow Windows / dark | [ ] | [ ] | [ ] | [ ] | [ ] |
+| Explicit Light | [ ] | [ ] | [ ] | [ ] | [ ] |
+| Explicit Dark | [ ] | [ ] | [ ] | [ ] | [ ] |
 | High Contrast enabled | [ ] | [ ] | [ ] | [ ] | N/A |
 
 Required result: readable text and focus indication, no theme-stuck controls,
@@ -88,6 +93,18 @@ arrow keys, Space, Enter, Escape, menu accelerators and F1 only:
 - [ ] In Message History, reach **Export CSV...** by Tab and Alt+X; cancel the
   native Save dialog and confirm focus returns to Export without creating a file.
 - [ ] Open F1 help and Settings > Volume; confirm current Windows routing.
+- [ ] Open About from Help and Settings About me; confirm both show the same
+  v5.5 identity and current architecture without clipping.
+- [ ] With only synthetic/configuration data, verify the named profile's status
+  identifies the intended CABLE Output endpoint. Treat this as identity/display
+  evidence only; do not record the opaque machine endpoint ID.
+- [ ] On a controlled machine with an unrelated default recording device, keep
+  the saved target available through WASAPI while deliberately making its WinMM
+  open fail. Verify the live source changes from **Local audio** to **Windows
+  audio**, target-only synthetic samples reach the meter, and the unrelated
+  default device is never captured. Record the forcing method and device setup.
+- [ ] Make the saved endpoint unavailable and verify capture fails closed, with
+  focus returned to an operator-selectable input action.
 - [ ] Cancel each dialog and confirm settings remain unchanged.
 - [ ] Save one reversible non-secret appearance setting and confirm it survives restart.
 
@@ -109,25 +126,30 @@ file after acceptance.
 
 ## Acceptance record
 
-10 August 2026, Windows development machine, 100% scale: the current working
-tree passed the main-window and Settings Light/Dark image review, repeated
+10 August 2026, Windows development machine, 100% scale: the then-current
+predecessor worktree passed the main-window and Settings Light/Dark image review, repeated
 1000x720 -> 720x560 -> 1000x720 -> 820x600 relayout, single-instance Settings,
 page switching, live-meter navigation, and modal return smoke. Content-free
 captures are stored locally under `out\ui-*.png`. This record does not cover
 live radio input, High Contrast, keyboard-only completion, other dialogs, or
-125-200% scaling.
+125-200% scaling. The record was added in commit `8b017d25`; the exact tested
+binary commit was not separately recorded, so it is predecessor context only.
 
 10 August 2026 command-bar regression: initial and post-display/resize captures
 show Source, Pause, Record, Filters, Clear, and Settings beneath their icons.
 Geometry checks held the toolbar at 54 pixels and Pane 1 at y=55 through three
 restore/maximize cycles. This closes the clipped-label/column-header overlap at
 100% scale; other DPI levels remain open.
+The record was added in commit `cf9c3472`; the exact tested binary commit was
+not separately recorded.
 
 10 August 2026 Live Input regression: explicit Light and Dark captures at
 normal and maximized window sizes show a dedicated green quality percentage
 between the waveform and peak track. Narrow-window rendering includes the
 percentage in the primary meter text and suppresses waveform bars when there
 is insufficient width, preventing the quality value from being obscured.
+The record was added in commit `0106c5b5`; the exact tested binary commit was
+not separately recorded.
 
 10 August 2026 merged-backup regression: General > Backup / Restore rendered
 at 769x440 in the Windows-following dark palette with all explanatory text and
@@ -135,8 +157,18 @@ actions visible. Native-window checks counted all 10 Settings destinations and
 confirmed correct modal disable/re-enable behavior. Export and restore were not
 run during this visual smoke; cryptographic round-trip and failure behavior are
 covered by the configuration-backup core suite.
+The record was introduced in commit `cf9c3472` and refined in `2b54a8bc`; the
+exact tested binary commit was not separately recorded.
 
 For each run record Windows version/build, display resolution, scale, monitor
 arrangement, PDW commit, result, and a content-free defect description. A
 failure remains open until the same matrix cell is repeated successfully on a
 fixed build. Never attach operator INI files or private runtime artifacts.
+
+## PDW v5.5 acceptance status
+
+No v5.5 matrix cell is accepted yet. Fresh Win32 and x64 Light/Dark, compact,
+keyboard, High Contrast, 125-200% DPI, About/Settings, installer profile,
+stable-identity/WASAPI-fallback and missing-endpoint checks remain pending on the exact release
+candidate. Use only synthetic or configuration-only evidence; the configured
+Adelaide profile is not proof of live hardware or authorised FLEX reception.

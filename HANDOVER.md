@@ -1,188 +1,182 @@
-# PDW v5.4 2026 Release handover
+# PDW v5.5 2026 Release handover
 
 Updated: 11 August 2026
 
 ## Current release identity
 
-- Repository: `C:\PDW Update\tmp\pdw-message-reassembly`
-- Active branch: `pdw-v5.4-flex-reassembly-display`
-- Product/display name: **PDW v5.4 2026 Release**
-- Executable: `PDW v5.4 2026 Release.exe`
-- Product version: `5.4.0 2026 Release`
-- File version: `5.4.0.0`
-- Installer: `PDW-v5.4-2026-Release-Setup.exe`
-- Portable packages: `PDW-v5.4-2026-Release-Win32` and
-  `PDW-v5.4-2026-Release-x64`
+- Repository: `C:\PDW Update\tmp\pdw-v5.5-sdr-vbcable`
+- Active branch: `pdw-v5.5-sdr-vbcable-reconciliation`
+- Baseline: fork `master` at `651cedfd2d53a03c27f673d899d9774e0d91f76b`
+- Product/display name: **PDW v5.5 2026 Release**
+- Executable: `PDW v5.5 2026 Release.exe`
+- Product version: `5.5.0 2026 Release`
+- File/manifest version: `5.5.0.0`
+- Installer: `PDW-v5.5-2026-Release-Setup.exe`
+- Portable packages: `PDW-v5.5-2026-Release-Win32` and
+  `PDW-v5.5-2026-Release-x64`
 
-The v5.4 release is one PDW product. The installer contains both application
-architectures and selects x64 by default on 64-bit Windows while retaining a
-clear Win32 compatibility choice. The portable folder workflow remains fully
-supported.
+PDW remains one native C++ product with mandatory Win32 and x64 targets. The
+guided installer and portable packages are two delivery forms of that same
+application; they do not define separate editions or decoder behavior.
+The maintained release toolchain is Visual Studio 2026/MSVC v145 on the
+`windows-2025-vs2026` hosted image. Visual Studio 2022/v143 remains an explicit
+local rollback option, not the v5.5 release target. Dependency locks record the
+exact compiler, generator, toolset, CMake version and resolver recipe.
 
-`Headers/version.h` is the authoritative application identity. CMake reads the
-display name from that header for the output filename; the About dialog and
-Settings **About me** page render the same display macro. The installer,
-packaging, audit scripts, workflow names, documentation, and manifests are
-aligned to the v5.4 identity.
+`Headers/version.h` is the authoritative current identity. CMake reads the
+display name for the executable output, while resources, the manifest,
+workflow artifact names, packaging, Setup, the main title, About, and current
+documentation must agree with it before release.
 
-## Guided installer
+## v5.5 scope
 
-The Inno Setup definition is `installer/PDW.iss`. It produces one guided,
-per-user installer that:
+The release adds an explicit clean-install **SDR# + VB-Audio Cable (Adelaide
+FLEX)** profile beside the standard PDW settings. Its compatibility boundary
+is narrow:
 
-- installs without requiring administrator privileges;
-- offers x64 or Win32 on 64-bit Windows and automatically uses Win32 on
-  32-bit Windows;
-- supports `/ARCH=x64` and `/ARCH=Win32` for unattended deployment;
-- keeps `PDW.INI`, filters, receivers, WAV files, logs, and the executable in
-  one selected PDW installation folder;
-- leaves same-user Windows Credential Manager records available;
-- preserves operator INI files, filters, receivers, WAV files, logs, queues,
-  recordings, and databases on upgrade;
-- does not remove operator configuration during uninstall;
-- offers Start menu, optional Desktop, and optional Windows startup shortcuts;
-  and
-- can sign Setup and its uninstaller when an approved Authenticode signing
-  command is supplied.
+- SDR# and VB-CABLE are external, operator-installed products. PDW does not
+  download, bundle, license, tune, or configure them.
+- The profile sets only local audio and decoder configuration. It does not
+  create, replace, import, or modify Capcode Directory entries or
+  `filters.ini`.
+- Existing `PDW.INI` always takes precedence during upgrade and reinstall.
+- The initial friendly-name match establishes an exact Windows endpoint. PDW
+  persists that opaque ID before opening it and then uses endpoint-specific
+  WASAPI from the start rather than converting it to a mutable WinMM ordinal.
+- If the saved endpoint is missing or has changed, capture fails closed and the
+  operator is asked to choose an input. PDW does not silently capture the
+  default microphone.
+- The clean-install Adelaide file differs from Standard only where the named
+  preset needs different packaged defaults. The explicit in-app Apply action is
+  intentionally a broader, previewed and reversible reset of the complete
+  known-good local-input, decoder and Custom-slicer state; it probes first and
+  creates a verified byte-exact PDW.INI backup. It is never automatic.
+- No startup prompt, silent migration, or generic-profile conversion is run;
+  existing users must choose the explicit default-No Apply action themselves.
 
-Tracked default WAV files and required legacy data are staged from `packaging`
-so a clean clone can build the installer. Obsolete VxD drivers are not installed
-automatically. Architecture-specific receiver rules remain enforced: Win32 can
-include the redistributed x86 RTL-SDR DLL; x64 excludes it and supports matching
-x64 custom libraries or the architecture-neutral `rtl_tcp` path.
+The profile does not enable a network, notification, publishing, database, or
+other data-output destination.
 
-## Current verification
+## Installer and package boundary
 
-Local Visual Studio 2022 Release builds completed for Win32 and x64. Each
-architecture passes **29 of 29 CTest tests**, and the optional WinMM and WASAPI
-device-smoke targets compile for both architectures. The following physical
-audio measurements are retained predecessor-v5 evidence and were not rerun for
-the v5.4 candidate:
+The maintained Setup definition is `installer/PDW.iss`. The v5.5 candidate is
+intended to:
 
-- Win32 WinMM: 44,100 bytes at 44.1 kHz, 8-bit mono;
-- Win32 WASAPI: 48,480 samples at 48 kHz;
-- x64 WinMM: 44,100 bytes at 44.1 kHz, 8-bit mono; and
-- x64 WASAPI: 48,000 samples at 48 kHz.
+- offer x64 or Win32 on 64-bit Windows and use Win32 on 32-bit Windows;
+- keep the application and mutable operator data in one selected PDW folder;
+- preserve existing settings, Capcode Directory data, legacy `filters.ini`
+  recovery files, receivers, sounds, logs, queues, recordings, and databases;
+- offer the named profile only during a genuinely clean installation;
+- never install a new `filters.ini` or overwrite an existing `PDW.INI`;
+- remove only exact renamed predecessor executables, including v5.4; and
+- support trusted signing of the application, Setup, and uninstaller.
 
-The current executables report:
+Win32 may retain reviewed x86-only receiver assets. x64 must exclude those
+binaries and use architecture-matched libraries or the architecture-neutral
+`rtl_tcp` path. Portable packaging remains supported and must carry the same
+clean-install profiles and documentation without private runtime data.
 
-- Win32 PE machine `0x014C`, file version `5.4.0.0`, product version
-  `5.4.0 2026 Release`;
-- x64 PE machine `0x8664`, file version `5.4.0.0`, product version
-  `5.4.0 2026 Release`; and
-- embedded manifest version `5.4.0.0` with Per-Monitor V2 DPI awareness.
+## Dependency review
 
-Content-free native UI review passed for the predecessor-v5 application on both
-architectures. A v5.4 native Light/Dark and compact-size UI smoke remains open.
-The shared resources and binary metadata now carry **PDW v5.4 2026 Release**;
-visual confirmation of the main window, new dialogs, About dialog, and Settings
-**About me** page remains part of that open UI gate.
+The 11 August 2026 review retains the pinned OpenSSL 3.5.7 LTS, curl 8.21.0,
+libssh2 1.11.1, Windows `winsqlite3`, and operator-managed MySQL ODBC boundary.
+Oracle's July 2026 CPU and the current Connector/ODBC 26.7.0 download were
+reviewed. Inno Setup 7.0.2 is available, but v5.5 deliberately retains pinned
+6.7.3 because changing installer-compiler major version during the profile and
+upgrade change would broaden release risk; migration to 7 remains a separate
+dual-architecture installer project.
 
-The current v5.4 isolated installer smoke passes for x64 and Win32. It verifies application
-architecture and version, settings co-location, upgrade preservation of
-modified settings and custom receivers, removal of the exact renamed v5 and
-v5.1/v5.2/v5.3 predecessor executables, clean uninstall, and
-retention of operator-owned configuration after uninstall. Microsoft Defender
-reported no threat in the locally generated candidate.
+The reviewed external-profile references are SDR# production revision 1921 and
+VB-CABLE Package 45. Neither is packaged. Operators obtain, secure, support,
+and license them independently; VB-CABLE professional use is subject to the
+vendor's licensing terms.
 
-## Signing and public-release boundary
+## Current verification state
 
-The local installer candidate is intentionally not described as the public
-stable release because no trusted publisher certificate is configured. The
-release scripts support signing and `-RequireSignature`; the public-release
-path must fail when the signature is absent or invalid.
+The fork `master` baseline at `651cedf` has successful x64, Win32, guided Setup,
+and CodeQL checks. Those are predecessor-v5.4 baseline results, not evidence for
+the uncommitted v5.5 candidate.
 
-Before attaching the stable installer to a GitHub Release:
+At this handover, all v5.5 release gates remain pending unless a later dated
+record identifies the exact tested commit and artifacts:
 
-1. approve a trusted publisher identity and Authenticode certificate or an
-   approved managed signing service;
-2. sign both application executables and the installer/uninstaller;
-3. verify the signature chain and timestamp on a clean Windows machine;
-4. scan the signed artifacts with Microsoft Defender;
-5. rerun the isolated dual-architecture installer smoke; and
-6. if Defender or SmartScreen reports a false positive, submit the exact signed
-   artifact to Microsoft rather than weakening application or installer
-   security.
+- release audit and complete diff review;
+- fresh Win32 and x64 Release configure/build/CTest runs;
+- optional WinMM and WASAPI device-smoke compilation for both architectures;
+- stable-identity and endpoint-specific WASAPI profile tests;
+- PE machine, file/product version, manifest, main-title and About verification;
+- native Light/Dark, compact-size, keyboard, High Contrast, and DPI acceptance;
+- independent Win32 and x64 portable-package audit;
+- guided Setup clean-profile, standard-profile, upgrade, co-location,
+  predecessor-cleanup, uninstall, and preservation smoke;
+- Microsoft Defender scanning;
+- PR CI and CodeQL on the exact candidate head; and
+- trusted Authenticode signing and timestamp verification for public artifacts.
 
-Signing reduces unknown-publisher warnings and establishes identity and
-integrity. It cannot guarantee immediate SmartScreen reputation or that no
-security product will ever inspect the application.
-
-## Compatibility and privacy boundaries
-
-- Preserve POCSAG, FLEX, ACARS, MOBITEX, and ERMES legacy protocol behavior.
-- Keep WinMM, WASAPI fallback, serial slicers, `.rec` playback, INI files,
-  filters, logs, WAV alerts, and established hard-decision parsers available.
-- Keep SMTP, Apprise, FTP/FTPS/SFTP, static publishing, webhooks, MQTT,
-  SQLite, ODBC/MySQL, Telnet, and Windows notifications intact and independent.
-- Publishing and every optional adapter remain disabled by default. Operators
-  must consider the laws and permissions that apply in their own country.
-- Never commit or package pager traffic, operator logs, credentials, queues,
-  recordings, databases, or personal configuration.
-- Secrets remain in Windows Credential Manager and are excluded from INI
-  files, logs, screenshots, packages, and chat.
-- Git source, local builds, portable packages, installer candidates, test
-  installations, pushed branches, pull requests, CI, tags, and GitHub Releases
-  are separate states and must be reported separately.
+No v5.5 portable package, installer, signature, tag, GitHub Release, or public
+deployment should be described as complete until its corresponding gate has
+actually passed.
 
 ## Rebuild and audit
 
 ```powershell
-.\scripts\build-dependencies.ps1
-cmake -S . -B out\v5.4-build-win32 -A Win32
-cmake --build out\v5.4-build-win32 --config Release --target clean
-cmake --build out\v5.4-build-win32 --config Release --parallel
-ctest --test-dir out\v5.4-build-win32 -C Release --output-on-failure
+.\scripts\audit-release.ps1
 
-.\scripts\build-dependencies.ps1 -Architecture x64
-cmake -S . -B out\v5.4-build-x64 -A x64 `
+$generator = .\scripts\resolve-cmake-generator.ps1 -VisualStudioMajor 18
+.\scripts\build-dependencies.ps1 -Architecture x86 -VisualStudioMajor 18
+cmake -S . -B out\v5.5-build-win32 -G "$generator" -A Win32 -T v145
+cmake --build out\v5.5-build-win32 --config Release --parallel
+ctest --test-dir out\v5.5-build-win32 -C Release --output-on-failure
+
+.\scripts\build-dependencies.ps1 -Architecture x64 -VisualStudioMajor 18
+cmake -S . -B out\v5.5-build-x64 -G "$generator" -A x64 -T v145 `
   -DPDW_DEPENDENCY_ROOT="$PWD\out\dependencies\x64"
-cmake --build out\v5.4-build-x64 --config Release --target clean
-cmake --build out\v5.4-build-x64 --config Release --parallel
-ctest --test-dir out\v5.4-build-x64 -C Release --output-on-failure
+cmake --build out\v5.5-build-x64 --config Release --parallel
+ctest --test-dir out\v5.5-build-x64 -C Release --output-on-failure
 
 .\scripts\stage-installer-input.ps1 -Architecture Win32 `
-  -BuildDirectory out\v5.4-build-win32\Release `
-  -Destination out\v5.4-installer-input\Win32
+  -BuildDirectory out\v5.5-build-win32\Release `
+  -Destination out\v5.5-installer-input\Win32
 .\scripts\stage-installer-input.ps1 -Architecture x64 `
-  -BuildDirectory out\v5.4-build-x64\Release `
-  -Destination out\v5.4-installer-input\x64
+  -BuildDirectory out\v5.5-build-x64\Release `
+  -Destination out\v5.5-installer-input\x64
 .\scripts\build-installer.ps1 `
-  -Win32ApplicationDirectory out\v5.4-installer-input\Win32 `
-  -X64ApplicationDirectory out\v5.4-installer-input\x64 `
-  -OutputDirectory out\v5.4-installer
+  -Win32ApplicationDirectory out\v5.5-installer-input\Win32 `
+  -X64ApplicationDirectory out\v5.5-installer-input\x64 `
+  -OutputDirectory out\v5.5-installer
 .\scripts\audit-installer.ps1 `
-  -Setup 'out\v5.4-installer\PDW-v5.4-2026-Release-Setup.exe'
+  -Setup 'out\v5.5-installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe'
 .\tests\installer_smoke.ps1 `
-  -Setup 'out\v5.4-installer\PDW-v5.4-2026-Release-Setup.exe' `
-  -TestRoot out\v5.4-installer-smoke
-
-.\scripts\audit-release.ps1
+  -Setup 'out\v5.5-installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe' `
+  -TestRoot out\v5.5-installer-smoke
 ```
 
-Public release builds add the approved signing command to
-`build-installer.ps1` and require signatures during the installer audit.
+Public builds additionally require the approved signing command and
+`-RequireSignature` during installer audit.
 
-## Remaining acceptance work
+## Compatibility and privacy boundaries
 
-1. Obtain and configure the trusted publisher signing identity.
-2. Complete keyboard-only, High Contrast, and 125%, 150%, and 200% DPI checks.
-3. Verify WinMM/WASAPI device loss and recovery, `rtl_tcp`, and physical
-   supported RTL-SDR devices on intended hardware.
-4. Extend synthetic decoder fixtures with audio, FLEX, filtering, duplicate,
-   correction, and remaining protocol coverage.
-5. Exercise secure outputs with disposable non-private test services.
-
-Historical v4.1, v4.5, v4.6.0, and v4.6.1 references remain only where they
-describe earlier release evidence or changelog history. They do not define the
-current product identity.
+- Preserve POCSAG, FLEX, ACARS, MOBITEX, and ERMES behavior.
+- Keep WinMM, WASAPI fallback, serial slicers, `.rec` playback, legacy local
+  audio, direct radio, filters, logs, alerts, and every established output.
+- Keep network/data outputs disabled by default and independent from capture
+  and decoding.
+- Never commit or package pager traffic, operator logs, credentials, queues,
+  recordings, databases, endpoint IDs from a real machine, or personal INI
+  files.
+- Use synthetic, redacted, or licensed data for tests and acceptance records.
+- Treat source, local builds, packages, Setup, pushed branch, PR, CI, merge,
+  tag, signature, and public release as separate states.
 
 ## Publication workflow
 
-- Inspect and commit the complete v5.4 release diff.
-- Push `pdw-v5.4-flex-reassembly-display` to the writable `fork` remote.
-- Open a draft pull request against the fork's `master` and let dual CI,
-  installer smoke, CodeQL, and artifact checks complete.
-- Merge the source PR only after dual CI, installer smoke, and security checks
-  pass. Do not tag or publish a public installer until the signing gate passes.
-- Retain earlier branches and packages as rollback evidence.
+1. Resolve and review the complete v5.5 diff without disturbing unrelated work.
+2. Pass the local dual-architecture, package, installer, UI, security, and
+   privacy gates above.
+3. Commit and push `pdw-v5.5-sdr-vbcable-reconciliation` to the writable fork.
+4. Open a draft PR against fork `master` and wait for exact-head Build/Setup
+   and CodeQL results.
+5. Merge only after required source gates pass.
+6. Do not publish a stable installer until application, Setup, and uninstaller
+   signatures, timestamps, Defender scan, and clean-machine smoke all pass.
+7. Retain historical branches and artifacts as rollback evidence.

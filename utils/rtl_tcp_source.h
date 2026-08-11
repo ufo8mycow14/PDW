@@ -78,6 +78,17 @@ enum RtlTcpState
 	RTL_TCP_FAILED
 };
 
+// Thread-owned handles and callback state may be released only after Windows
+// has positively confirmed that the source thread exited. Keep this policy
+// shared by RTL-TCP and direct RTL-SDR so neither source can detach a live
+// thread after a bounded stop wait.
+bool RtlThreadResourcesMayBeReleased(DWORD waitResult);
+
+#if defined(PDW_RTL_SOURCE_TEST_HOOKS)
+typedef DWORD (WINAPI *RtlStopThreadWaitFunction)(HANDLE, DWORD);
+void SetRtlStopThreadWaitFunctionForTesting(RtlStopThreadWaitFunction waitFunction);
+#endif
+
 class RtlTcpSource
 {
 public:
@@ -85,7 +96,7 @@ public:
 	~RtlTcpSource();
 
 	bool Start(const RtlTcpConfig& config, AudioSampleSink* sink);
-	void Stop();
+	bool Stop();
 	RtlTcpState state() const;
 	std::string lastError() const;
 
@@ -96,6 +107,10 @@ private:
 	static DWORD WINAPI ThreadEntry(LPVOID context);
 	DWORD NetworkThread();
 	bool ConnectAndReceive();
+	void CleanupStoppedThread();
+	void PublishSocket(UINT_PTR socketValue);
+	void RetireSocket(UINT_PTR socketValue);
+	void ShutdownCurrentSocket();
 	void SetState(RtlTcpState state, const char* error);
 
 	mutable CRITICAL_SECTION lock_;
@@ -116,7 +131,7 @@ public:
 	~RtlSdrSource();
 
 	bool Start(const RtlTcpConfig& config, unsigned int deviceIndex, AudioSampleSink* sink);
-	void Stop();
+	bool Stop();
 	RtlTcpState state() const;
 	std::string lastError() const;
 	DWORD lastIqCallbackTick() const;
@@ -128,6 +143,8 @@ private:
 	static DWORD WINAPI ThreadEntry(LPVOID context);
 	static void __cdecl ReadCallback(unsigned char* buffer, std::uint32_t length, void* context);
 	DWORD DeviceThread();
+	void CleanupStoppedThread();
+	void RequestDeviceCancellation();
 	void SetState(RtlTcpState state, const char* error);
 
 	mutable CRITICAL_SECTION lock_;

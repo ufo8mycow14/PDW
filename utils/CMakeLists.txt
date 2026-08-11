@@ -17,6 +17,8 @@ set( PDW_INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/ini_preservation_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/ipcnfg.h
   ${CMAKE_CURRENT_SOURCE_DIR}/local_dashboard_server.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/local_audio_profile.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/local_audio_profile_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/message_archive.h
   ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_manager.h
@@ -64,6 +66,8 @@ set( PDW_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/ini_preservation_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/message_router.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/local_dashboard_server.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/local_audio_profile.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/local_audio_profile_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/message_archive.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/message_archive_manager.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/message_centre.cpp

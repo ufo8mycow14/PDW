@@ -1,16 +1,21 @@
 # Radio, recording, and replay
 
 Open **Settings > Decoder and input > Radio and replay**. These inputs are
-additional choices inside the same `PDW v5.4 2026 Release.exe`; they do not create a separate
+additional choices inside the same `PDW v5.5 2026 Release.exe`; they do not create a separate
 edition or background helper.
 
 ## Local audio and serial compatibility
 
 The existing Input Setup dialog remains the authority for legacy serial and
-local audio configuration. Local audio tries the original mono unsigned 8-bit
-WinMM path first. If Windows rejects that format, PDW starts event-driven
-WASAPI capture, converts supported PCM/float formats to normalized mono, and
-feeds the existing protocol routines. Device loss triggers a bounded retry.
+local audio configuration. An identityless legacy input tries the original mono
+unsigned 8-bit WinMM path first and uses event-driven WASAPI only if Windows
+rejects that format. A saved stable endpoint is opened by its exact Windows ID
+through WASAPI from the start; PDW never converts that identity back to a
+mutable WinMM ordinal. Both paths normalize supported PCM/float formats before
+feeding the existing protocol routines. Device loss triggers a bounded retry.
+If Windows does not confirm that a WASAPI thread stopped, PDW retains its
+handles and sink, suppresses stale samples, and blocks replay or any alternate
+source until the thread exit is confirmed or PDW is restarted.
 
 Serial two-level and four-level slicers, inversion settings, sample-rate/audio
 configuration presets, `.rec` playback, and WAV alerts are unchanged.
@@ -56,7 +61,7 @@ Use **Add receiver...** to import a matching-architecture `rtlsdr.dll` or
 `librtlsdr.dll`. PDW checks the PE architecture and required receive API, then
 copies the primary library and neighbouring DLL dependencies into a portable
 `Receivers\Custom` package. Existing compatible DLLs beside
-`PDW v5.4 2026 Release.exe` remain selectable as a legacy fallback. Arbitrary vendor
+`PDW v5.5 2026 Release.exe` remain selectable as a legacy fallback. Arbitrary vendor
 APIs are not loaded as if they were librtlsdr; those receivers can feed PDW
 through local/virtual audio or an RTL-TCP-compatible bridge.
 
@@ -64,6 +69,21 @@ The optional Zadig utility and matching source are under `Receivers\Driver
 Tools`. It can install WinUSB for RTL-SDR hardware, but it requires
 administrator approval and selecting the exact receiver interface. PDW never
 launches it or changes a Windows driver automatically.
+
+## SDR# and VB-Audio Virtual Cable
+
+For a new `PDW.INI`, Setup offers an explicit **SDR# + VB-Audio Cable
+(Adelaide FLEX)** local-input profile. SDR# and VB-Audio Cable remain separate,
+operator-installed products. Before named-profile capture, PDW must resolve one
+unique active `CABLE Output (VB-Audio Virtual Cable)` recording endpoint and
+persist its exact Windows identity. `AudioDevice=0` remains only as a legacy
+compatibility value; a missing, ambiguous, invalid, or changed saved identity
+fails closed instead of selecting another input. Existing and portable users
+can preview and explicitly apply the same preset from this dialog; the action
+creates a verified settings backup and does not touch filters, the Capcode
+Directory, message history, receivers, or WAV files. See
+[`SDRSHARP_VBCABLE_PROFILE.md`](SDRSHARP_VBCABLE_PROFILE.md) for the exact SDR#
+and decoder settings.
 
 ## Diagnostic WAV and SigMF
 

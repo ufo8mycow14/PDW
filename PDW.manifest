@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="5.4.0.0" processorArchitecture="*" name="PDW.OpenSource.PDW" type="win32" />
+  <assemblyIdentity version="5.5.0.0" processorArchitecture="*" name="PDW.OpenSource.PDW" type="win32" />
   <description>PDW pager and data decoder</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
@@ -23,7 +23,6 @@
   </application>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
-      <supportedOS Id="{4f476546-9376-4f16-a4d1-357b06d4e63e}" />
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
     </application>
   </compatibility>

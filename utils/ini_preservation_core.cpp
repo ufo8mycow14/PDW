@@ -15,11 +15,30 @@
 #include <vector>
 
 #include "ini_preservation_core.h"
+#include "local_audio_profile_core.h"
 
 namespace pdw
 {
 namespace ini
 {
+#ifdef PDW_INI_PRESERVATION_TEST_HOOKS
+namespace
+{
+	BeforeMissingIniCommitTestHook g_beforeMissingIniCommitTestHook = NULL;
+	BeforeExistingIniCommitTestHook g_beforeExistingIniCommitTestHook = NULL;
+}
+
+void SetBeforeMissingIniCommitTestHook(BeforeMissingIniCommitTestHook hook)
+{
+	g_beforeMissingIniCommitTestHook = hook;
+}
+
+void SetBeforeExistingIniCommitTestHook(BeforeExistingIniCommitTestHook hook)
+{
+	g_beforeExistingIniCommitTestHook = hook;
+}
+#endif
+
 namespace
 {
 	const std::size_t MAX_INI_BYTES = 16u * 1024u * 1024u;
@@ -200,9 +219,11 @@ namespace
 	}
 
 	bool ReadExistingFile(const std::string& path, std::string& contents, bool& exists,
-		DWORD& attributes, std::string& error)
+		DWORD& attributes, DWORD& volumeSerial, DWORD& fileIndexHigh,
+		DWORD& fileIndexLow, std::string& error)
 	{
 		contents.clear();
+		volumeSerial = fileIndexHigh = fileIndexLow = 0;
 		attributes = GetFileAttributesA(path.c_str());
 		exists = attributes != INVALID_FILE_ATTRIBUTES;
 		if (!exists)
@@ -217,26 +238,43 @@ namespace
 			error = "The INI path refers to a directory.";
 			return false;
 		}
-		std::ifstream input(path.c_str(), std::ios::binary | std::ios::ate);
-		if (!input)
+		HANDLE input = CreateFileA(path.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES | READ_CONTROL,
+			FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+		if (input == INVALID_HANDLE_VALUE)
 		{
-			error = "The existing INI file could not be opened for preservation.";
+			error = WindowsError("Pinning the existing INI for preservation", GetLastError());
 			return false;
 		}
-		const std::streamoff length = input.tellg();
-		if (length < 0 || static_cast<unsigned long long>(length) > MAX_INI_BYTES)
+		BY_HANDLE_FILE_INFORMATION information = {};
+		LARGE_INTEGER length = {};
+		if (!GetFileInformationByHandle(input, &information) ||
+			!GetFileSizeEx(input, &length) || length.QuadPart < 0 ||
+			static_cast<unsigned long long>(length.QuadPart) > MAX_INI_BYTES)
 		{
+			CloseHandle(input);
 			error = "The existing INI file is too large to merge safely.";
 			return false;
 		}
-		contents.assign(static_cast<std::size_t>(length), '\0');
-		input.seekg(0, std::ios::beg);
-		if (length > 0) input.read(&contents[0], length);
-		if (!input && length > 0)
+		attributes = information.dwFileAttributes;
+		volumeSerial = information.dwVolumeSerialNumber;
+		fileIndexHigh = information.nFileIndexHigh;
+		fileIndexLow = information.nFileIndexLow;
+		contents.assign(static_cast<std::size_t>(length.QuadPart), '\0');
+		std::size_t total = 0;
+		while (total < contents.size())
 		{
-			error = "The existing INI file could not be read completely.";
-			return false;
+			const DWORD requested = static_cast<DWORD>((std::min)(contents.size() - total,
+				static_cast<std::size_t>(0x7fffffff)));
+			DWORD read = 0;
+			if (!ReadFile(input, &contents[total], requested, &read, NULL) || !read)
+			{
+				CloseHandle(input);
+				error = WindowsError("Reading the pinned existing INI", GetLastError());
+				return false;
+			}
+			total += read;
 		}
+		CloseHandle(input);
 		return true;
 	}
 
@@ -262,6 +300,21 @@ namespace
 		}
 		return true;
 	}
+}
+
+bool CreateSensitiveSettingsTemporaryFile(const std::string& referencePath,
+	const char* prefix, std::string& temporaryPath, void*& nativeHandle,
+	std::string& error)
+{
+	return pdw::audio_profile::CreateSecureTemporarySettingsFile(referencePath,
+		prefix, temporaryPath, nativeHandle, error);
+}
+
+bool MarkSensitiveSettingsTemporaryFileForDeletion(void* nativeHandle,
+	const std::string& path, std::string& error)
+{
+	return pdw::audio_profile::MarkSensitiveTemporaryFileForDeletion(nativeHandle,
+		path, error);
 }
 
 std::string MergeKnownSettings(const std::string& existingInput,
@@ -371,14 +424,15 @@ std::string MergeKnownSettings(const std::string& existingInput,
 	return JoinLines(outputLines, newline, trailing, prefix);
 }
 
-bool WriteMergedSettingsFile(const std::string& path,
+pdw::audio_profile::SettingsTransactionOutcome WriteMergedSettingsFile(
+	const std::string& path,
 	const std::string& generated, std::string& error)
 {
 	error.clear();
 	if (path.empty() || generated.empty() || generated.size() > MAX_INI_BYTES)
 	{
 		error = "The generated INI settings are empty or too large.";
-		return false;
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
 	}
 
 	char fullPath[MAX_PATH] = {};
@@ -387,74 +441,163 @@ bool WriteMergedSettingsFile(const std::string& path,
 	if (!fullLength)
 	{
 		error = WindowsError("Resolving INI path", GetLastError());
-		return false;
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
 	}
 	if (fullLength >= _countof(fullPath))
 	{
 		error = "The INI path is too long for this PDW build.";
-		return false;
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
 	}
 	std::string existing;
 	bool exists = false;
 	DWORD attributes = INVALID_FILE_ATTRIBUTES;
-	if (!ReadExistingFile(fullPath, existing, exists, attributes, error)) return false;
+	DWORD volumeSerial = 0;
+	DWORD fileIndexHigh = 0;
+	DWORD fileIndexLow = 0;
+	if (!ReadExistingFile(fullPath, existing, exists, attributes, volumeSerial,
+		fileIndexHigh, fileIndexLow, error)) return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
 	const std::string merged = MergeKnownSettings(existing, generated);
 	if (merged.empty())
 	{
 		error = "The merged INI settings would be empty.";
-		return false;
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
 	}
 
-	std::string directory(fullPath);
-	const std::size_t slash = directory.find_last_of("\\/");
-	if (slash == std::string::npos) directory = ".";
-	else if (slash == 2 && directory.size() >= 3 && directory[1] == ':')
-		directory = directory.substr(0, 3);
-	else directory = directory.substr(0, slash);
-	char temporary[MAX_PATH] = {};
-	if (!GetTempFileNameA(directory.c_str(), "PDW", 0, temporary))
+	if (exists)
 	{
-		error = WindowsError("Creating INI temporary name", GetLastError());
-		return false;
+#ifdef PDW_INI_PRESERVATION_TEST_HOOKS
+		if (g_beforeExistingIniCommitTestHook)
+			g_beforeExistingIniCommitTestHook(fullPath);
+#endif
+		const pdw::audio_profile::SettingsTransactionOutcome outcome =
+			pdw::audio_profile::CommitVerifiedFileTransactionForIdentity(fullPath,
+				existing, merged, volumeSerial, fileIndexHigh, fileIndexLow, error);
+		// The shared transaction clears a legacy read-only bit only through the
+		// already verified file handle. A pathname swap can therefore never cause
+		// PDW to mutate an operator's replacement file by name.
+		return outcome;
 	}
 
-	HANDLE file = CreateFileA(temporary, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-		FILE_ATTRIBUTE_TEMPORARY, NULL);
-	if (file == INVALID_HANDLE_VALUE)
-	{
-		error = WindowsError("Opening INI temporary file", GetLastError());
-		DeleteFileA(temporary);
-		return false;
-	}
+	std::string temporary;
+	void* temporaryNativeHandle = INVALID_HANDLE_VALUE;
+	if (!CreateSensitiveSettingsTemporaryFile(fullPath, "PDW", temporary,
+		temporaryNativeHandle, error))
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
+	HANDLE file = static_cast<HANDLE>(temporaryNativeHandle);
 	const bool wrote = WriteAll(file, merged, error);
-	CloseHandle(file);
 	if (!wrote)
 	{
-		DeleteFileA(temporary);
-		return false;
+		std::string removalError;
+		if (!MarkSensitiveSettingsTemporaryFileForDeletion(file, temporary, removalError))
+			error += " " + removalError;
+		CloseHandle(file);
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
 	}
 
-	const bool wasReadOnly = exists && (attributes & FILE_ATTRIBUTE_READONLY) != 0;
-	if (wasReadOnly && !SetFileAttributesA(fullPath, attributes & ~FILE_ATTRIBUTE_READONLY))
+	std::string staged;
+	LARGE_INTEGER beginning = {};
+	LARGE_INTEGER length = {};
+	if (!SetFilePointerEx(file, beginning, NULL, FILE_BEGIN) ||
+		!GetFileSizeEx(file, &length) || length.QuadPart < 0 ||
+		static_cast<unsigned long long>(length.QuadPart) > MAX_INI_BYTES)
+		error = WindowsError("Reading protected staged INI size", GetLastError());
+	else
 	{
-		error = WindowsError("Clearing read-only INI attribute", GetLastError());
-		DeleteFileA(temporary);
-		return false;
+		staged.assign(static_cast<std::size_t>(length.QuadPart), '\0');
+		std::size_t total = 0;
+		while (total < staged.size())
+		{
+			const DWORD requested = static_cast<DWORD>((std::min)(staged.size() - total,
+				static_cast<std::size_t>(0x7fffffff)));
+			DWORD read = 0;
+			if (!ReadFile(file, &staged[total], requested, &read, NULL) || !read)
+			{
+				error = WindowsError("Reading protected staged INI", GetLastError());
+				staged.clear();
+				break;
+			}
+			total += read;
+		}
 	}
+	if (staged != merged)
+	{
+		std::string removalError;
+		if (!MarkSensitiveSettingsTemporaryFileForDeletion(file, temporary, removalError))
+			error += " " + removalError;
+		CloseHandle(file);
+		if (error.empty()) error = "The staged INI did not verify byte-for-byte.";
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
+	}
+	BY_HANDLE_FILE_INFORMATION stagedInformation = {};
+	if (!GetFileInformationByHandle(file, &stagedInformation))
+	{
+		error = WindowsError("Reading protected staged INI identity", GetLastError());
+		std::string removalError;
+		if (!MarkSensitiveSettingsTemporaryFileForDeletion(file, temporary, removalError))
+			error += " " + removalError;
+		CloseHandle(file);
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
+	}
+	CloseHandle(file);
 
-	BOOL replaced = exists ? ReplaceFileA(fullPath, temporary, NULL,
-		REPLACEFILE_WRITE_THROUGH, NULL, NULL) :
-		MoveFileExA(temporary, fullPath, MOVEFILE_WRITE_THROUGH);
+#ifdef PDW_INI_PRESERVATION_TEST_HOOKS
+	if (g_beforeMissingIniCommitTestHook)
+		g_beforeMissingIniCommitTestHook(fullPath, temporary.c_str());
+#endif
+	BOOL replaced = MoveFileExA(temporary.c_str(), fullPath, MOVEFILE_WRITE_THROUGH);
 	if (!replaced)
 	{
 		const DWORD code = GetLastError();
-		DeleteFileA(temporary);
-		if (wasReadOnly) SetFileAttributesA(fullPath, attributes);
-		error = WindowsError("Replacing INI file", code);
-		return false;
+		error = WindowsError("Creating INI file", code);
+		error += " The protected staged settings were retained at \"" + temporary +
+			"\"; PDW did not delete a possible last complete settings candidate.";
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
 	}
-	if (exists) SetFileAttributesA(fullPath, attributes & ~FILE_ATTRIBUTE_READONLY);
-	return true;
+	HANDLE committed = CreateFileA(fullPath, GENERIC_READ | FILE_READ_ATTRIBUTES,
+		FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (committed == INVALID_HANDLE_VALUE)
+	{
+		error = WindowsError("Verifying the newly created INI", GetLastError());
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
+	}
+	BY_HANDLE_FILE_INFORMATION committedInformation = {};
+	std::string committedBytes;
+	LARGE_INTEGER committedBeginning = {};
+	LARGE_INTEGER committedLength = {};
+	bool committedVerified = GetFileInformationByHandle(committed, &committedInformation) != FALSE &&
+		SetFilePointerEx(committed, committedBeginning, NULL, FILE_BEGIN) != FALSE &&
+		GetFileSizeEx(committed, &committedLength) != FALSE &&
+		committedLength.QuadPart >= 0 &&
+		static_cast<unsigned long long>(committedLength.QuadPart) <= MAX_INI_BYTES;
+	if (committedVerified)
+	{
+		committedBytes.assign(static_cast<std::size_t>(committedLength.QuadPart), '\0');
+		std::size_t total = 0;
+		while (total < committedBytes.size())
+		{
+			const DWORD requested = static_cast<DWORD>((std::min)(committedBytes.size() - total,
+				static_cast<std::size_t>(0x7fffffff)));
+			DWORD read = 0;
+			if (!ReadFile(committed, &committedBytes[total], requested, &read, NULL) || !read)
+			{
+				committedVerified = false;
+				break;
+			}
+			total += read;
+		}
+	}
+	committedVerified = committedVerified && committedBytes == merged &&
+		committedInformation.dwVolumeSerialNumber == stagedInformation.dwVolumeSerialNumber &&
+		committedInformation.nFileIndexHigh == stagedInformation.nFileIndexHigh &&
+		committedInformation.nFileIndexLow == stagedInformation.nFileIndexLow;
+	CloseHandle(committed);
+	if (!committedVerified)
+	{
+		error = "The newly created INI did not match the protected staged-file identity; "
+			"PDW left the current pathname occupant untouched.";
+		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
+	}
+	return pdw::audio_profile::SETTINGS_TRANSACTION_COMMITTED;
 }
 
 } // namespace ini

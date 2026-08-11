@@ -18,7 +18,7 @@ BOOL PdwThemeHandleMenuMeasure(LPARAM lParam);
 BOOL PdwThemeHandleMenuDraw(LPARAM lParam);
 void PdwThemeApplyToWindow(HWND hWnd);
 void PdwThemeSystemSettingChanged(HWND hWnd);
-void PdwThemeSetMode(int mode, HWND owner);
+bool PdwThemeSetMode(int mode, HWND owner);
 bool PdwThemeIsDark(void);
 bool PdwThemeIsHighContrast(void);
 COLORREF PdwThemeBackgroundColor(void);

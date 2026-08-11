@@ -62,7 +62,7 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 bool SignalDiagnosticStartRecording(const char *path, char *error, size_t errorSize);
 bool SignalDiagnosticStopRecording(char *error, size_t errorSize);
 bool SignalDiagnosticStartReplay(const char *path, char *error, size_t errorSize);
-void SignalDiagnosticStopReplay(void);
+bool SignalDiagnosticStopReplay(void);
 bool SignalDiagnosticIsRecording(void);
 bool SignalDiagnosticIsReplaying(void);
 bool SignalDiagnosticToggleRecording(HWND owner);

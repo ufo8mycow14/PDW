@@ -77,6 +77,20 @@ const char* HResultMessage(HRESULT result)
 	if (result == E_ACCESSDENIED) return "Access to the audio capture device was denied.";
 	return "Unable to initialize Windows audio capture.";
 }
+
+bool Utf8ToWide(const std::string& value, std::wstring& converted)
+{
+	converted.clear();
+	if (value.empty()) return false;
+	const int required = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+		value.c_str(), -1, NULL, 0);
+	if (required <= 1) return false;
+	std::vector<wchar_t> buffer(static_cast<std::size_t>(required));
+	if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.c_str(), -1,
+		&buffer[0], required)) return false;
+	converted.assign(&buffer[0]);
+	return !converted.empty();
+}
 }
 
 bool DescribeWasapiFormat(const WAVEFORMATEX* waveFormat, WasapiSampleFormat& format)
@@ -142,6 +156,11 @@ bool ConvertWasapiFramesToMono(const unsigned char* frames,
 	return true;
 }
 
+bool WasapiThreadResourcesMayBeReleased(DWORD waitResult)
+{
+	return waitResult == WAIT_OBJECT_0;
+}
+
 WasapiCaptureSource::WasapiCaptureSource()
 	: stopEvent_(NULL), readyEvent_(NULL), sampleEvent_(NULL), thread_(NULL),
 	  sink_(NULL), state_(WASAPI_CAPTURE_STOPPED)
@@ -152,14 +171,62 @@ WasapiCaptureSource::WasapiCaptureSource()
 WasapiCaptureSource::~WasapiCaptureSource()
 {
 	Stop();
+	if (thread_)
+	{
+		// Stop() is deliberately bounded for normal UI operations. Destruction is
+		// the final ownership boundary for both this object and its non-owning sink,
+		// so returning while the capture thread can still access either would be a
+		// use-after-free. Do not use TerminateThread here: killing a thread inside
+		// COM, an audio driver, the heap, or a sink callback can corrupt the process.
+		// A safety-first final join is the only sound last resort after quarantine.
+		OutputDebugStringA(
+			"PDW WASAPI capture remained quarantined during destruction; waiting for a safe thread exit.\n");
+		if (stopEvent_) SetEvent(stopEvent_);
+		const DWORD waitResult = WaitForSingleObject(thread_, INFINITE);
+		if (!WasapiThreadResourcesMayBeReleased(waitResult))
+		{
+			// A valid thread handle cannot normally fail an infinite wait. If the
+			// invariant is broken, fail fast rather than destroy storage still
+			// reachable by an unknown thread.
+			RaiseFailFastException(NULL, NULL, 0);
+		}
+		CleanupStoppedThread();
+	}
 	DeleteCriticalSection(&lock_);
 }
 
 bool WasapiCaptureSource::StartDefault(WasapiCaptureSink* sink)
 {
+	return Start(std::wstring(), sink);
+}
+
+bool WasapiCaptureSource::StartEndpoint(const std::string& endpointId,
+	WasapiCaptureSink* sink)
+{
+	std::wstring wideEndpointId;
+	if (!Utf8ToWide(endpointId, wideEndpointId))
+	{
+		Stop();
+		SetState(WASAPI_CAPTURE_FAILED,
+			"The configured audio endpoint identifier is invalid.");
+		return false;
+	}
+	return Start(wideEndpointId, sink);
+}
+
+bool WasapiCaptureSource::Start(const std::wstring& endpointId,
+	WasapiCaptureSink* sink)
+{
 	if (!sink) return false;
 	Stop();
+	if (thread_)
+	{
+		SetState(WASAPI_CAPTURE_FAILED,
+			"The previous Windows audio capture thread is still stopping; this source is quarantined and was not reused.");
+		return false;
+	}
 	sink_ = sink;
+	endpointId_ = endpointId;
 	stopEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	readyEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	sampleEvent_ = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -183,24 +250,43 @@ bool WasapiCaptureSource::StartDefault(WasapiCaptureSink* sink)
 		Stop();
 		return false;
 	}
-	return state() == WASAPI_CAPTURE_RUNNING;
+	const bool running = state() == WASAPI_CAPTURE_RUNNING;
+	if (!running) Stop();
+	return running;
 }
 
-void WasapiCaptureSource::Stop()
+bool WasapiCaptureSource::Stop()
 {
 	if (stopEvent_) SetEvent(stopEvent_);
 	if (thread_)
 	{
-		WaitForSingleObject(thread_, 5000);
-		CloseHandle(thread_);
-		thread_ = NULL;
+		const DWORD waitResult = WaitForSingleObject(thread_, 5000);
+		if (!WasapiThreadResourcesMayBeReleased(waitResult))
+		{
+			SetState(WASAPI_CAPTURE_FAILED,
+				waitResult == WAIT_TIMEOUT ?
+				"Windows audio capture did not stop in time; the source is quarantined and will not be reused." :
+				"Windows could not confirm that the audio capture thread stopped; the source is quarantined and will not be reused.");
+			return false;
+		}
 	}
+	CleanupStoppedThread();
+	if (state() != WASAPI_CAPTURE_FAILED && state() != WASAPI_CAPTURE_DEVICE_LOST)
+		SetState(WASAPI_CAPTURE_STOPPED, NULL);
+	return true;
+}
+
+void WasapiCaptureSource::CleanupStoppedThread()
+{
+	// The caller must have positively observed a signalled thread handle (or no
+	// thread at all). No handle, callback pointer, or synchronization primitive
+	// is touched on the quarantine path.
+	if (thread_) { CloseHandle(thread_); thread_ = NULL; }
 	if (sampleEvent_) { CloseHandle(sampleEvent_); sampleEvent_ = NULL; }
 	if (readyEvent_) { CloseHandle(readyEvent_); readyEvent_ = NULL; }
 	if (stopEvent_) { CloseHandle(stopEvent_); stopEvent_ = NULL; }
 	sink_ = NULL;
-	if (state() != WASAPI_CAPTURE_FAILED && state() != WASAPI_CAPTURE_DEVICE_LOST)
-		SetState(WASAPI_CAPTURE_STOPPED, NULL);
+	endpointId_.clear();
 }
 
 WasapiCaptureState WasapiCaptureSource::state() const
@@ -241,6 +327,7 @@ DWORD WasapiCaptureSource::CaptureThread()
 	IAudioClient* audioClient = NULL;
 	IAudioCaptureClient* captureClient = NULL;
 	WAVEFORMATEX* mixFormat = NULL;
+	bool configuredEndpointUnavailable = false;
 	HRESULT result = CoInitializeEx(NULL, COINIT_MULTITHREADED);
 	const bool uninitializeCom = SUCCEEDED(result);
 	if (result == RPC_E_CHANGED_MODE) result = S_OK;
@@ -248,7 +335,26 @@ DWORD WasapiCaptureSource::CaptureThread()
 	if (SUCCEEDED(result))
 		result = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
 			__uuidof(IMMDeviceEnumerator), reinterpret_cast<void**>(&enumerator));
-	if (SUCCEEDED(result)) result = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
+	if (SUCCEEDED(result))
+	{
+		if (endpointId_.empty())
+			result = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
+		else
+		{
+			result = enumerator->GetDevice(endpointId_.c_str(), &device);
+			if (FAILED(result)) configuredEndpointUnavailable = true;
+			else
+			{
+				DWORD deviceState = 0;
+				result = device->GetState(&deviceState);
+				if (SUCCEEDED(result) && !(deviceState & DEVICE_STATE_ACTIVE))
+				{
+					configuredEndpointUnavailable = true;
+					result = AUDCLNT_E_DEVICE_INVALIDATED;
+				}
+			}
+		}
+	}
 	if (SUCCEEDED(result))
 		result = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL,
 			reinterpret_cast<void**>(&audioClient));
@@ -269,8 +375,11 @@ DWORD WasapiCaptureSource::CaptureThread()
 
 	if (FAILED(result))
 	{
+		const char* message = HResultMessage(result);
+		if (configuredEndpointUnavailable)
+			message = "The configured audio capture endpoint is not available.";
 		SetState(result == AUDCLNT_E_DEVICE_INVALIDATED ? WASAPI_CAPTURE_DEVICE_LOST : WASAPI_CAPTURE_FAILED,
-			HResultMessage(result));
+			message);
 		SetEvent(readyEvent_);
 	}
 	else

@@ -698,13 +698,33 @@ namespace
 			return false;
 		}
 		const std::string path = Utf8ToPdw(utf8Path);
+		const std::string previousPath = Profile.messageArchivePath;
+		const int previousHistoryEnabled = Profile.messageHistoryEnabled;
+		const int previousIncludeMessage = Profile.messageHistoryIncludeMessage;
+		const unsigned int previousRetentionDays = Profile.messageHistoryRetentionDays;
+		const int previousDashboardEnabled = Profile.liveDashboardEnabled;
 		strncpy(Profile.messageArchivePath, path.c_str(), sizeof(Profile.messageArchivePath) - 1);
 		Profile.messageArchivePath[sizeof(Profile.messageArchivePath) - 1] = '\0';
 		Profile.messageHistoryEnabled = IsDlgButtonChecked(dialog, IDC_HISTORY_ENABLE) != 0;
 		Profile.messageHistoryIncludeMessage = IsDlgButtonChecked(dialog, IDC_HISTORY_MESSAGE) != 0;
 		Profile.messageHistoryRetentionDays = retention;
 		if (!Profile.messageHistoryEnabled) Profile.liveDashboardEnabled = 0;
-		WriteSettings();
+		if (!TryWriteSettings())
+		{
+			strncpy(Profile.messageArchivePath, previousPath.c_str(),
+				sizeof(Profile.messageArchivePath) - 1);
+			Profile.messageArchivePath[sizeof(Profile.messageArchivePath) - 1] = '\0';
+			Profile.messageHistoryEnabled = previousHistoryEnabled;
+			Profile.messageHistoryIncludeMessage = previousIncludeMessage;
+			Profile.messageHistoryRetentionDays = previousRetentionDays;
+			Profile.liveDashboardEnabled = previousDashboardEnabled;
+			SetDlgItemTextA(dialog, IDC_HISTORY_STATUS,
+				"Message History settings were not saved; the previous configuration was restored.");
+			MessageBoxA(dialog,
+				"PDW could not save the Message History settings. The previous history configuration was restored. Choose a writable portable folder or correct PDW.INI permissions, then try again.",
+				"PDW Message History", MB_OK | MB_ICONERROR);
+			return false;
+		}
 		MessageArchiveSettingsChanged();
 		SetDlgItemTextA(dialog, IDC_HISTORY_STATUS, MessageArchiveStatusText().c_str());
 		return true;
@@ -1099,7 +1119,9 @@ BOOL FAR PASCAL MessageHistoryDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARA
 			switch (LOWORD(wParam))
 			{
 				case IDC_HISTORY_BROWSE: BrowseHistoryPath(hDlg); return TRUE;
-				case IDC_HISTORY_SAVE_SETTINGS: SaveHistorySettings(hDlg); RefreshHistory(hDlg, state, true); return TRUE;
+				case IDC_HISTORY_SAVE_SETTINGS:
+					if (SaveHistorySettings(hDlg)) RefreshHistory(hDlg, state, true);
+					return TRUE;
 				case IDC_HISTORY_REFRESH: RefreshHistory(hDlg, state, true); return TRUE;
 				case IDC_HISTORY_EXPORT: ExportHistoryCsv(hDlg); return TRUE;
 				case IDC_HISTORY_PREVIOUS:

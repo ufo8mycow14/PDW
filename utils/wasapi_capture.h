@@ -44,6 +44,11 @@ bool ConvertWasapiFramesToMono(const unsigned char* frames,
 	const WasapiSampleFormat& format,
 	std::vector<float>& monoSamples);
 
+// Thread-owned handles and callback state may be released only after Windows
+// has positively confirmed that the capture thread exited. This small policy
+// helper is public so the timeout/failure cases have deterministic unit tests.
+bool WasapiThreadResourcesMayBeReleased(DWORD waitResult);
+
 typedef AudioSampleSink WasapiCaptureSink;
 
 enum WasapiCaptureState
@@ -62,7 +67,8 @@ public:
 	~WasapiCaptureSource();
 
 	bool StartDefault(WasapiCaptureSink* sink);
-	void Stop();
+	bool StartEndpoint(const std::string& endpointId, WasapiCaptureSink* sink);
+	bool Stop();
 	WasapiCaptureState state() const;
 	std::string lastError() const;
 
@@ -72,6 +78,8 @@ private:
 
 	static DWORD WINAPI ThreadEntry(LPVOID context);
 	DWORD CaptureThread();
+	bool Start(const std::wstring& endpointId, WasapiCaptureSink* sink);
+	void CleanupStoppedThread();
 	void SetState(WasapiCaptureState state, const char* error);
 
 	mutable CRITICAL_SECTION lock_;
@@ -82,6 +90,7 @@ private:
 	WasapiCaptureSink* sink_;
 	WasapiCaptureState state_;
 	std::string lastError_;
+	std::wstring endpointId_;
 };
 
 } // namespace signal

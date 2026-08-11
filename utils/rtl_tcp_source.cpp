@@ -17,6 +17,19 @@ namespace
 {
 const UINT_PTR INVALID_SOCKET_VALUE = static_cast<UINT_PTR>(INVALID_SOCKET);
 
+#if defined(PDW_RTL_SOURCE_TEST_HOOKS)
+RtlStopThreadWaitFunction g_stopThreadWaitFunction = NULL;
+#endif
+
+DWORD WaitForSourceThread(HANDLE thread, DWORD milliseconds)
+{
+#if defined(PDW_RTL_SOURCE_TEST_HOOKS)
+	if (g_stopThreadWaitFunction)
+		return g_stopThreadWaitFunction(thread, milliseconds);
+#endif
+	return WaitForSingleObject(thread, milliseconds);
+}
+
 bool StopRequested(HANDLE eventHandle)
 {
 	return eventHandle && WaitForSingleObject(eventHandle, 0) == WAIT_OBJECT_0;
@@ -53,6 +66,18 @@ bool SendCommand(SOCKET socketValue, unsigned char command, std::uint32_t value)
 	return true;
 }
 }
+
+bool RtlThreadResourcesMayBeReleased(DWORD waitResult)
+{
+	return waitResult == WAIT_OBJECT_0;
+}
+
+#if defined(PDW_RTL_SOURCE_TEST_HOOKS)
+void SetRtlStopThreadWaitFunctionForTesting(RtlStopThreadWaitFunction waitFunction)
+{
+	g_stopThreadWaitFunction = waitFunction;
+}
+#endif
 
 RtlTcpConfig::RtlTcpConfig()
 	: host("127.0.0.1"), port(1234), frequencyHz(148000000),
@@ -150,6 +175,20 @@ RtlTcpSource::RtlTcpSource()
 RtlTcpSource::~RtlTcpSource()
 {
 	Stop();
+	if (thread_)
+	{
+		// A bounded Stop quarantines a source whose thread exit was not confirmed.
+		// Destruction is the final ownership boundary for this object and its
+		// non-owning sink, so it must join rather than permit a use-after-free.
+		OutputDebugStringA(
+			"PDW RTL-TCP source remained quarantined during destruction; waiting for a safe thread exit.\n");
+		if (stopEvent_) SetEvent(stopEvent_);
+		ShutdownCurrentSocket();
+		const DWORD waitResult = WaitForSingleObject(thread_, INFINITE);
+		if (!RtlThreadResourcesMayBeReleased(waitResult))
+			RaiseFailFastException(NULL, NULL, 0);
+		CleanupStoppedThread();
+	}
 	DeleteCriticalSection(&lock_);
 }
 
@@ -157,7 +196,7 @@ bool RtlTcpSource::Start(const RtlTcpConfig& config, AudioSampleSink* sink)
 {
 	if (!sink || config.host.empty() || config.port == 0 || config.sampleRate < 48000)
 		return false;
-	Stop();
+	if (!Stop()) return false;
 	config_ = config;
 	sink_ = sink;
 	stopEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -182,25 +221,68 @@ bool RtlTcpSource::Start(const RtlTcpConfig& config, AudioSampleSink* sink)
 		Stop();
 		return false;
 	}
-	return state() == RTL_TCP_RUNNING;
+	const bool running = state() == RTL_TCP_RUNNING;
+	if (!running) Stop();
+	return running;
 }
 
-void RtlTcpSource::Stop()
+bool RtlTcpSource::Stop()
 {
 	if (stopEvent_) SetEvent(stopEvent_);
-	if (socketValue_ != INVALID_SOCKET_VALUE)
-		shutdown(static_cast<SOCKET>(socketValue_), SD_BOTH);
+	ShutdownCurrentSocket();
 	if (thread_)
 	{
-		WaitForSingleObject(thread_, 5000);
-		CloseHandle(thread_);
-		thread_ = NULL;
+		const DWORD waitResult = WaitForSourceThread(thread_, 5000);
+		if (!RtlThreadResourcesMayBeReleased(waitResult))
+		{
+			SetState(RTL_TCP_FAILED,
+				waitResult == WAIT_TIMEOUT ?
+				"RTL-TCP network capture did not stop in time; the source is quarantined and will not be reused." :
+				"Windows could not confirm that the RTL-TCP network thread stopped; the source is quarantined and will not be reused.");
+			return false;
+		}
 	}
+	CleanupStoppedThread();
+	if (state() != RTL_TCP_FAILED) SetState(RTL_TCP_STOPPED, NULL);
+	return true;
+}
+
+void RtlTcpSource::CleanupStoppedThread()
+{
+	// The caller must have positively observed a signalled thread handle (or no
+	// thread at all). The quarantine path retains every handle and the sink.
+	if (thread_) { CloseHandle(thread_); thread_ = NULL; }
 	if (readyEvent_) { CloseHandle(readyEvent_); readyEvent_ = NULL; }
 	if (stopEvent_) { CloseHandle(stopEvent_); stopEvent_ = NULL; }
+	EnterCriticalSection(&lock_);
 	socketValue_ = INVALID_SOCKET_VALUE;
+	LeaveCriticalSection(&lock_);
 	sink_ = NULL;
-	if (state() != RTL_TCP_FAILED) SetState(RTL_TCP_STOPPED, NULL);
+}
+
+void RtlTcpSource::PublishSocket(UINT_PTR socketValue)
+{
+	EnterCriticalSection(&lock_);
+	socketValue_ = socketValue;
+	LeaveCriticalSection(&lock_);
+}
+
+void RtlTcpSource::RetireSocket(UINT_PTR socketValue)
+{
+	EnterCriticalSection(&lock_);
+	if (socketValue_ == socketValue) socketValue_ = INVALID_SOCKET_VALUE;
+	LeaveCriticalSection(&lock_);
+}
+
+void RtlTcpSource::ShutdownCurrentSocket()
+{
+	// Hold the lock until shutdown has consumed the published value. The network
+	// thread retires the value under the same lock before closing it, preventing
+	// a stale SOCKET value from targeting a subsequently reused handle.
+	EnterCriticalSection(&lock_);
+	if (socketValue_ != INVALID_SOCKET_VALUE)
+		shutdown(static_cast<SOCKET>(socketValue_), SD_BOTH);
+	LeaveCriticalSection(&lock_);
 }
 
 RtlTcpState RtlTcpSource::state() const
@@ -293,7 +375,7 @@ bool RtlTcpSource::ConnectAndReceive()
 		SetEvent(readyEvent_);
 		return false;
 	}
-	socketValue_ = static_cast<UINT_PTR>(socketValue);
+	PublishSocket(static_cast<UINT_PTR>(socketValue));
 
 	unsigned char dongleInfo[12];
 	if (!ReceiveExact(socketValue, dongleInfo, sizeof(dongleInfo), stopEvent_) ||
@@ -301,8 +383,8 @@ bool RtlTcpSource::ConnectAndReceive()
 	{
 		SetState(RTL_TCP_FAILED, "The server did not provide a valid RTL-TCP header.");
 		SetEvent(readyEvent_);
+		RetireSocket(static_cast<UINT_PTR>(socketValue));
 		closesocket(socketValue);
-		socketValue_ = INVALID_SOCKET_VALUE;
 		return false;
 	}
 
@@ -317,8 +399,8 @@ bool RtlTcpSource::ConnectAndReceive()
 	{
 		SetState(RTL_TCP_FAILED, "RTL-TCP rejected the tuner configuration.");
 		SetEvent(readyEvent_);
+		RetireSocket(static_cast<UINT_PTR>(socketValue));
 		closesocket(socketValue);
-		socketValue_ = INVALID_SOCKET_VALUE;
 		return false;
 	}
 
@@ -349,8 +431,8 @@ bool RtlTcpSource::ConnectAndReceive()
 			break;
 		}
 	}
+	RetireSocket(static_cast<UINT_PTR>(socketValue));
 	closesocket(socketValue);
-	socketValue_ = INVALID_SOCKET_VALUE;
 	return StopRequested(stopEvent_);
 }
 
@@ -397,13 +479,24 @@ RtlSdrSource::RtlSdrSource()
 RtlSdrSource::~RtlSdrSource()
 {
 	Stop();
+	if (thread_)
+	{
+		OutputDebugStringA(
+			"PDW RTL-SDR source remained quarantined during destruction; waiting for a safe thread exit.\n");
+		if (stopEvent_) SetEvent(stopEvent_);
+		RequestDeviceCancellation();
+		const DWORD waitResult = WaitForSingleObject(thread_, INFINITE);
+		if (!RtlThreadResourcesMayBeReleased(waitResult))
+			RaiseFailFastException(NULL, NULL, 0);
+		CleanupStoppedThread();
+	}
 	DeleteCriticalSection(&lock_);
 }
 
 bool RtlSdrSource::Start(const RtlTcpConfig& config, unsigned int deviceIndex, AudioSampleSink* sink)
 {
 	if (!sink || config.sampleRate < 48000) return false;
-	Stop();
+	if (!Stop()) return false;
 	config_ = config;
 	deviceIndex_ = deviceIndex;
 	sink_ = sink;
@@ -432,27 +525,53 @@ bool RtlSdrSource::Start(const RtlTcpConfig& config, unsigned int deviceIndex, A
 		Stop();
 		return false;
 	}
-	return state() == RTL_TCP_RUNNING;
+	const bool running = state() == RTL_TCP_RUNNING;
+	if (!running) Stop();
+	return running;
 }
 
-void RtlSdrSource::Stop()
+bool RtlSdrSource::Stop()
 {
 	if (stopEvent_) SetEvent(stopEvent_);
+	RequestDeviceCancellation();
+	if (thread_)
+	{
+		const DWORD waitResult = WaitForSourceThread(thread_, 5000);
+		if (!RtlThreadResourcesMayBeReleased(waitResult))
+		{
+			SetState(RTL_TCP_FAILED,
+				waitResult == WAIT_TIMEOUT ?
+				"RTL-SDR capture did not stop in time; the source is quarantined and will not be reused." :
+				"Windows could not confirm that the RTL-SDR capture thread stopped; the source is quarantined and will not be reused.");
+			return false;
+		}
+	}
+	CleanupStoppedThread();
+	if (state() != RTL_TCP_FAILED) SetState(RTL_TCP_STOPPED, NULL);
+	return true;
+}
+
+void RtlSdrSource::RequestDeviceCancellation()
+{
+	// The worker publishes the DLL function and device under this lock, then
+	// clears them under the same lock before closing the device and unloading the
+	// DLL. Keep the lock through the call so neither borrowed value can be retired
+	// while Stop is invoking it.
 	EnterCriticalSection(&lock_);
 	RtlCancelAsyncFunction cancel = reinterpret_cast<RtlCancelAsyncFunction>(cancelFunction_);
 	void* device = device_;
-	LeaveCriticalSection(&lock_);
 	if (cancel && device) cancel(device);
-	if (thread_)
-	{
-		WaitForSingleObject(thread_, 5000);
-		CloseHandle(thread_);
-		thread_ = NULL;
-	}
+	LeaveCriticalSection(&lock_);
+}
+
+void RtlSdrSource::CleanupStoppedThread()
+{
+	// The direct receiver thread owns the DLL, device and callback lifecycle.
+	// Only a confirmed join permits release of the containing handles and sink.
+	if (thread_) { CloseHandle(thread_); thread_ = NULL; }
 	if (readyEvent_) { CloseHandle(readyEvent_); readyEvent_ = NULL; }
 	if (stopEvent_) { CloseHandle(stopEvent_); stopEvent_ = NULL; }
 	sink_ = NULL;
-	if (state() != RTL_TCP_FAILED) SetState(RTL_TCP_STOPPED, NULL);
 }
 
 RtlTcpState RtlSdrSource::state() const

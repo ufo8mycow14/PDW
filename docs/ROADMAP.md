@@ -16,10 +16,10 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 
 | Area | Current state | Next gate |
 | --- | --- | --- |
-| Win32 build | PDW v5.4 2026 Release builds locally and passes the complete test suite | Keep the suite green in dual-architecture CI |
+| Win32 build | The v5.5 candidate uses the explicit Visual Studio 2026/MSVC v145 release toolchain for Win32 and x64; no fresh v5.5 final-candidate result is recorded yet | Clean-build and test every Release target, including device-smoke compilation, then pass exact-head CI |
 | Windows interface | Approved 2026 command bar, live meter, modeless 10-page Settings Center, encrypted configuration backup/restore, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
 | Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
-| Windows audio | WinMM and WASAPI captured from the real default device on the development machine | Live device-loss, hot-plug, and broader device-matrix acceptance |
+| Windows audio | WinMM and WASAPI remain available; the v5.5 candidate adds stable endpoint IDs and endpoint-specific WASAPI capture for an explicit SDR#/VB-CABLE profile | Dual-architecture regression, missing-endpoint fail-closed, device-loss, hot-plug, and broader device-matrix acceptance |
 | Direct radio | `rtl_tcp` and optional RTL-SDR USB implemented | Multi-device live-radio matrix and recovery tests |
 | Recording/diagnostics | WAV/SigMF, waveform, quality, error, and calibration tools implemented | Operator workflow and privacy review |
 | Secure transfer | FTP/FTPS/SFTP implemented | Disposable-server success and deliberate failure tests |
@@ -31,12 +31,13 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | FLEX fragments | Additive non-group K/F/C alpha/secure reassembly is wrap-aware, bounded, replay-safe, and disabled by default; original fragments remain authoritative | Recording-backed live acceptance; Group Mode remains legacy |
 | Repository hygiene | File-by-file x64/Win32 audit complete; obsolete VC6/VS2017 state, caches, duplicate archive, and unused code/assets removed; CMake is authoritative | Enforce `scripts/audit-release.ps1` and repeat the review when adding native dependencies or release-only assets |
 | Local operations | Capcode Directory, optional bounded history, loopback-only dashboard, spectrum/waterfall, isolated multi-channel workers, and optional RTL conditioning are implemented | Complete signed-in operator UI and physical multi-receiver acceptance without changing decoder behavior |
-| Release packaging | The guided `PDW-v5.4-2026-Release-Setup.exe` pipeline selects x64 or Win32, preserves mutable files, and removes exact renamed v5/v5.1/v5.2/v5.3 predecessors during upgrade | Pass current PR installer CI; apply trusted Authenticode signing before public release; retain portable packages as the no-install alternative |
-| x64 | PDW v5.4 2026 Release builds locally and passes the complete test suite; receiver DLL architecture is validated before load | Complete PR CI, native UI, and physical receiver acceptance while keeping Win32 available |
+| Named local-input profile | The active v5.5 worktree defines an explicit clean-install Adelaide FLEX profile, stable exact endpoint identity, fail-closed capture, and a default-No verified-backup apply action; SDR# and VB-CABLE remain external and operator-installed | Complete fresh dual-architecture verification, exact installer/profile smoke, dual native UI acceptance, and licensed physical-workflow verification without touching Capcode Directory or filters |
+| Release packaging | The `PDW-v5.5-2026-Release-Setup.exe` identity is prepared; combined Setup, v5.4 predecessor cleanup, profile selection, portable packages, Defender, and signing evidence are still pending | Pass clean dual package and installer smoke, exact-head PR CI, and trusted Authenticode signing before public release |
+| x64 | The v5.5 candidate retains architecture validation and the v5.4 green baseline; no fresh v5.5 x64 result is recorded yet | Clean-build/test, native UI, stable-identity/endpoint-specific-WASAPI audio, package, installer, PR CI, and physical receiver acceptance while keeping Win32 available |
 
 ## Safe integration sequence
 
-The active release branch is `pdw-v5.4-flex-reassembly-display`. The approved interface,
+The active release branch is `pdw-v5.5-sdr-vbcable-reconciliation`. The approved interface,
 defaults, and legacy behavior remain authoritative. The `spiral` remote is
 fetch-only; work is selectively adopted and independently tested rather than
 wholesale merged.
@@ -58,6 +59,7 @@ wholesale merged.
 | 13 | PDW v5.2 complete Message History CSV export | Implemented with all-filtered-row snapshot export, spreadsheet hardening, atomic destination replacement, and dual-architecture regression coverage; PR CI and manual native UI acceptance remain gates |
 | 14 | PDW v5.3 Capcode Directory live filtering | Implemented with legacy-rule migration, immediate runtime matching, expanded CSV fields, multiword `+` conditions, and dual-architecture regression coverage; PR CI and manual native UI acceptance remain gates |
 | 15 | PDW v5.4 FLEX fragment joining and wide message layout | Implemented as an optional shadow path with original fragments retained, bounded wrap/replay handling, and synthetic regression coverage; dual CI and compact-to-ultrawide manual native UI acceptance remain gates |
+| 16 | PDW v5.5 explicit SDR# + VB-Audio Cable Adelaide FLEX profile and endpoint-specific WASAPI capture | In progress in the active worktree; existing settings and Capcode Directory/filter ownership remain authoritative, while dual builds/tests, Setup/profile smoke, UI, packages, CI, Defender, and signing remain pending |
 
 Delivery Health stores no pager addresses or decoded text and cannot alter a
 delivery result. FLEX shadow assembly cannot suppress a legacy fragment on

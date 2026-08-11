@@ -1,0 +1,9 @@
+if(NOT DEFINED PDW_PROVENANCE_OUTPUT OR
+   NOT DEFINED PDW_PROVENANCE_COMMIT)
+  message(FATAL_ERROR "PDW provenance invalidation arguments are incomplete.")
+endif()
+get_filename_component(PDW_PROVENANCE_DIRECTORY
+  "${PDW_PROVENANCE_OUTPUT}" DIRECTORY)
+file(MAKE_DIRECTORY "${PDW_PROVENANCE_DIRECTORY}")
+file(WRITE "${PDW_PROVENANCE_OUTPUT}"
+  "commit=${PDW_PROVENANCE_COMMIT}\nstate=dirty\n")

@@ -31,6 +31,18 @@ jobs:
         shell: pwsh
         run: .\scripts\audit-release.ps1
 
+      - name: Regress immutable release-input provenance
+        shell: pwsh
+        run: |
+          .\tests\release_provenance_smoke.ps1 `
+            -TestRoot "out\release-provenance-smoke"
+
+      - name: Regress fail-closed Setup publication
+        shell: pwsh
+        run: |
+          .\tests\installer_build_fail_closed_smoke.ps1 `
+            -TestRoot "out\installer-build-fail-closed-smoke"
+
       - name: Audit Visual Studio 2026 toolchain
         shell: pwsh
         run: |
@@ -43,7 +55,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: out/dependencies/${{ matrix.architecture }}
-          key: pdw-${{ matrix.architecture }}-dependencies-${{ hashFiles('scripts/build-dependencies.ps1') }}
+          key: pdw-${{ matrix.architecture }}-dependencies-${{ hashFiles('scripts/build-dependencies.ps1', 'scripts/resolve-cmake-generator.ps1') }}
 
       - name: Build pinned ${{ matrix.label }} dependencies
         shell: pwsh
@@ -56,7 +68,7 @@ jobs:
         shell: pwsh
         run: |
           $generator = .\scripts\resolve-cmake-generator.ps1 -VisualStudioMajor 18
-          cmake -S . -B "build-${{ matrix.architecture }}" `
+          cmake -S . -B "out\build-${{ matrix.architecture }}" `
             -G "$generator" `
             -A "${{ matrix.platform }}" `
             -T v145 `
@@ -65,28 +77,49 @@ jobs:
 
       - name: Build
         shell: pwsh
-        run: cmake --build "build-${{ matrix.architecture }}" --config Release --parallel
+        run: cmake --build "out\build-${{ matrix.architecture }}" --config Release --parallel
+
+      - name: Compile optional device smoke programs
+        shell: pwsh
+        run: |
+          cmake --build "out\build-${{ matrix.architecture }}" --config Release `
+            --target PDWWasapiDeviceSmoke PDWWinmmDeviceSmoke --parallel
 
       - name: Test
         shell: pwsh
-        run: ctest --test-dir "build-${{ matrix.architecture }}" -C Release --output-on-failure
+        run: ctest --test-dir "out\build-${{ matrix.architecture }}" -C Release --output-on-failure
 
       - name: Stage architecture-correct installer input
         shell: pwsh
         run: |
           .\scripts\stage-installer-input.ps1 `
             -Architecture "${{ matrix.platform }}" `
-            -BuildDirectory "build-${{ matrix.architecture }}\Release" `
+            -BuildDirectory "out\build-${{ matrix.architecture }}\Release" `
             -Destination "out\installer-input"
 
-      - name: Upload artifact
+      - name: Build deterministic ${{ matrix.label }} portable package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "out\packages" -Force | Out-Null
+          .\scripts\package-release.ps1 `
+            -Architecture "${{ matrix.platform }}" `
+            -BuildDirectory "out\build-${{ matrix.architecture }}\Release" `
+            -OutputRoot "out\packages"
+
+      - name: Rebuild and tamper-test extracted ${{ matrix.label }} Source
+        shell: pwsh
+        run: |
+          .\tests\source_archive_smoke.ps1 `
+            -PackageZip "out\packages\PDW-v5.5-2026-Release-${{ matrix.label }}-package\PDW-v5.5-2026-Release-${{ matrix.label }}.zip" `
+            -TestRoot "out\source-archive-smoke-${{ matrix.architecture }}" `
+            -Architecture "${{ matrix.platform }}" `
+            -DependencyRoot "out\dependencies\${{ matrix.architecture }}"
+
+      - name: Upload dependency-build evidence (not a runnable PDW package)
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v5.4-2026-Release-${{ matrix.label }}
+          name: PDW-v5.5-2026-Release-DependencyEvidence-${{ matrix.label }}
           path: |
-            build-${{ matrix.architecture }}\Release\PDW v5.4 2026 Release.exe
-            License
-            THIRD_PARTY_NOTICES.md
             out\dependencies\${{ matrix.architecture }}\pdw-dependencies.lock
             out\dependencies\${{ matrix.architecture }}\licenses\*
           if-no-files-found: error
@@ -94,8 +127,15 @@ jobs:
       - name: Upload installer input
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v5.4-2026-Release-InstallerInput-${{ matrix.label }}
+          name: PDW-v5.5-2026-Release-InstallerInput-${{ matrix.label }}
           path: out\installer-input\*
+          if-no-files-found: error
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v7
+        with:
+          name: PDW-v5.5-2026-Release-Portable-${{ matrix.label }}
+          path: out\packages\PDW-v5.5-2026-Release-${{ matrix.label }}-package\PDW-v5.5-2026-Release-${{ matrix.label }}.zip
           if-no-files-found: error
 
   installer:
@@ -110,14 +150,14 @@ jobs:
       - name: Download Win32 installer input
         uses: actions/download-artifact@v8
         with:
-          name: PDW-v5.4-2026-Release-InstallerInput-Win32
-          path: installer-input\Win32
+          name: PDW-v5.5-2026-Release-InstallerInput-Win32
+          path: out\installer-input\Win32
 
       - name: Download x64 installer input
         uses: actions/download-artifact@v8
         with:
-          name: PDW-v5.4-2026-Release-InstallerInput-x64
-          path: installer-input\x64
+          name: PDW-v5.5-2026-Release-InstallerInput-x64
+          path: out\installer-input\x64
 
       - name: Install pinned Inno Setup compiler
         shell: pwsh
@@ -130,8 +170,8 @@ jobs:
         shell: pwsh
         run: |
           .\scripts\build-installer.ps1 `
-            -Win32ApplicationDirectory "installer-input\Win32" `
-            -X64ApplicationDirectory "installer-input\x64" `
+            -Win32ApplicationDirectory "out\installer-input\Win32" `
+            -X64ApplicationDirectory "out\installer-input\x64" `
             -OutputDirectory "out\installer" `
             -ScanWithDefender
 
@@ -139,20 +179,20 @@ jobs:
         shell: pwsh
         run: |
           .\scripts\audit-installer.ps1 `
-            -Setup "out\installer\PDW-v5.4-2026-Release-Setup.exe"
+            -Setup "out\installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe"
 
       - name: Test Win32 and x64 install, settings co-location, upgrade and uninstall
         shell: pwsh
         run: |
           .\tests\installer_smoke.ps1 `
-            -Setup "out\installer\PDW-v5.4-2026-Release-Setup.exe" `
+            -Setup "out\installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe" `
             -TestRoot "out\installer-smoke-${{ github.run_id }}"
 
       - name: Upload unsigned CI Setup candidate
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v5.4-2026-Release-Setup-Unsigned-CI
+          name: PDW-v5.5-2026-Release-Setup-Unsigned-CI
           path: |
-            out\installer\PDW-v5.4-2026-Release-Setup.exe
-            out\installer\PDW-v5.4-2026-Release-Setup.exe.sha256
+            out\installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe
+            out\installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe.sha256
           if-no-files-found: error

@@ -6,7 +6,8 @@
 
 A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
-![Version](https://img.shields.io/badge/version-v5.4%202026%20Release-2E74B5)
+![Version](https://img.shields.io/badge/version-v5.5%202026%20Release-2E74B5)
+![Status](https://img.shields.io/badge/status-candidate%20%28unreleased%29-F0A000)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
 ![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20Win32-555555)
 ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
@@ -41,6 +42,8 @@ Originally developed by Jason Petty and Peter Hunt, PDW became open source in 20
 PDW supports both established and modern receiver workflows:
 
 - Windows audio capture
+- Stable Windows endpoint identity with endpoint-specific WASAPI capture for
+  named local-input profiles
 - Legacy serial and slicer interfaces
 - RS232 input
 - Reconnecting RTL-TCP receivers
@@ -49,7 +52,10 @@ PDW supports both established and modern receiver workflows:
 - WAV signal recording and replay
 - SigMF recording and replay
 
-The original local audio and serial inputs remain available. Optional receiver packages are loaded only when selected.
+The original local audio and serial inputs remain available. Optional receiver
+packages are loaded only when selected. The named SDR# + VB-Audio Cable profile
+uses an operator-installed external audio path; PDW does not install, license,
+tune, or configure SDR# or VB-CABLE.
 
 ## Windows Architectures
 
@@ -62,12 +68,32 @@ Configuration and decoder behaviour are shared between the builds. Native DLLs m
 
 ## Install on Windows
 
-For most users, download and run **PDW-v5.4-2026-Release-Setup.exe**. One guided
-Setup contains both architectures, keeps the executable, `PDW.INI`, filters,
-receivers, WAV files and logs together in one PDW folder, creates normal
-Windows shortcuts, preserves operator settings during upgrades, and leaves
-user data intact during uninstall. Use **Settings > General > Backup / Restore**
-to move configuration from another PDW copy.
+The v5.5 candidate is intended to ship as
+**PDW-v5.5-2026-Release-Setup.exe** after its dual-architecture, installer,
+Defender, CI, and signing gates pass. It is not yet a downloadable v5.5
+release. The guided Setup is designed to contain both architectures, keep the
+executable, `PDW.INI`, Capcode Directory database, any existing legacy
+`filters.ini` recovery file, receivers, WAV files and logs together in one PDW
+folder, create normal Windows shortcuts, preserve operator settings during
+upgrades, and leave user data intact during uninstall. Use **Settings > General
+> Backup / Restore** to move configuration from another PDW copy.
+
+Setup enforces Windows build 10586 as the technical API floor. Production use
+requires a Windows 10/11 edition and build still receiving Microsoft security
+servicing (including applicable ESU or LTSC servicing), or a serviced Windows
+Server 2016-or-newer release. The Visual Studio 2026/MSVC v145 build and Windows
+SQLite binding no longer support Windows 7/8/8.1.
+
+On a clean install, the candidate Setup is intended to offer **Standard PDW
+settings** or the named
+**SDR# + VB-Audio Cable (Adelaide FLEX)** input profile. The profile resolves
+`CABLE Output (VB-Audio Virtual Cable)` to its stable Windows endpoint identity
+and fails closed, with an operator prompt, if that exact endpoint is no longer
+available. Existing `PDW.INI` always takes precedence on upgrade. The profile
+does not create, replace, import, or modify Capcode Directory entries or
+`filters.ini`. See
+[`docs/SDRSHARP_VBCABLE_PROFILE.md`](docs/SDRSHARP_VBCABLE_PROFILE.md) for the
+SDR# signal path, explicit apply transaction, and upgrade safeguards.
 
 The portable Win32 and x64 packages remain supported for existing deployments,
 recovery, and computers where software installation is restricted. They use
@@ -77,8 +103,10 @@ behavior. See [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 ## Build on Windows
 
 Install Visual Studio 2026 Build Tools with the Desktop development with C++
-workload, plus Perl and `tar`. PDW release builds require the stable MSVC v145
-toolset and the `Visual Studio 18 2026` CMake generator.
+workload, Windows `tar.exe`, and a full Perl distribution that provides
+`Locale::Maketext::Simple` (tested with Strawberry Perl). PDW release builds
+require the stable MSVC v145 toolset and the `Visual Studio 18 2026` CMake
+generator.
 
 `CMakeLists.txt` is the only maintained project definition. Open the repository
 as a CMake project in Visual Studio; obsolete VC6 and hand-maintained VS2017
@@ -254,6 +282,19 @@ PDW is being modernised conservatively.
 
 ## Release History
 
+### Current candidate
+
+**PDW v5.5 2026 Release** is the prepared source identity for the explicit
+clean-install SDR# + VB-Audio Cable Adelaide FLEX profile, stable fail-closed
+Windows endpoint identity, and endpoint-specific WASAPI capture. It does not
+change Capcode Directory or filter ownership. No release date is assigned and
+the build, test, UI, package, installer, Defender, CI/CodeQL, and signing gates
+remain pending.
+
+| Version | Status | Highlights |
+| --- | --- | --- |
+| **PDW v5.5 2026 Release** | **Candidate - no release date assigned** | Clean-install Adelaide FLEX profile, stable fail-closed endpoint identity, and endpoint-specific WASAPI capture; every release gate remains pending. |
+
 ### Current Generation
 
 | Version | Release Date | Highlights |
@@ -331,6 +372,9 @@ See the repository’s `License` file for the complete terms.
 
 ## Project Links
 
+- [Maintained PDW project](https://github.com/ufo8mycow14/PDW)
+- [Current issues](https://github.com/ufo8mycow14/PDW/issues)
+- [Current releases](https://github.com/ufo8mycow14/PDW/releases)
 - [Official PDW website](https://www.discriminator.nl/pdw/index-en.html)
 - [Original PDW repository](https://github.com/Discriminator/PDW)
 - [PDW 3.12 release](https://github.com/Discriminator/PDW/releases/tag/3.12)

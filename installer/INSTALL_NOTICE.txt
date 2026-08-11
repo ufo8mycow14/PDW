@@ -1,6 +1,12 @@
-PDW v5.4 2026 Release keeps all established decoder, receiver, slicer, audio,
+PDW v5.5 2026 Release keeps all established decoder, receiver, slicer, audio,
 serial, filter and output paths. This Setup installs the same PDW application
 that remains available in portable form.
+
+Setup enforces Windows build 10586 as the technical API floor. Production use
+requires a Windows 10/11 edition and build still receiving Microsoft security
+servicing (including applicable ESU or LTSC servicing), or a serviced Windows
+Server 2016-or-newer release. Windows 7/8/8.1 are not supported by the current
+compiler and Windows SQLite boundary.
 
 Only receive or share messages where monitoring and publication are lawful and
 authorised in your country. Every internet and notification output remains
@@ -9,11 +15,23 @@ disabled by default.
 Setup never stores passwords in its log. Existing supported PDW credentials
 remain in Windows Credential Manager for the same Windows user.
 
-The executable, PDW.INI, filters, receivers, WAV files and logs remain together
-in the selected PDW folder. Setup does not offer a separate settings location.
-Use Settings > General > Backup / Restore after installation to move settings
-from another PDW copy.
+The executable, PDW.INI, Capcode Directory data, any existing legacy
+filters.ini recovery file, receivers, WAV files and logs remain together in the
+selected PDW folder. Setup does not offer a separate settings location. Use
+Settings > General > Backup / Restore after installation to move settings from
+another PDW copy.
+
+On a clean installation, Setup can offer the explicit SDR# + VB-Audio Cable
+(Adelaide FLEX) profile. SDR# and VB-CABLE are external, operator-installed
+products; Setup does not download, install, license, tune, or configure either
+one. The profile changes only local audio and decoder settings. It does not
+create, replace, import, or modify Capcode Directory entries or filters.ini.
+Existing PDW.INI and operator data always take precedence during upgrade.
 
 Win32 compatibility should be selected when an existing receiver requires an
 x86-only DLL. x64 should be selected only with x64-compatible receiver DLLs;
 rtl_tcp remains architecture-neutral.
+
+Current packages do not add the obsolete untracked COMPRT.VXD, Comprt2.vxd or
+xp_driver.zip Windows 9x/XP-era slicer-driver artifacts. Maintained Win32 COM/RS232
+and serial-slicer paths remain, and Setup preserves pre-existing operator files.

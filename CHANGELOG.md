@@ -1,5 +1,46 @@
 # Changelog
 
+## PDW v5.5 2026 Release
+
+An additive local-audio profile release. Existing protocol decoders, signal
+sources, Capcode Directory rules, filter behavior, message history, display,
+logging, notifications, and optional outputs remain available with their
+established semantics.
+
+### Added
+
+- An explicit clean-install **SDR# + VB-Audio Cable (Adelaide FLEX)** choice
+  beside the standard PDW settings. The profile records the intended decoder
+  and local-audio settings without installing or configuring either external
+  product.
+- Stable Windows audio-endpoint identity for named local-input profiles. PDW
+  resolves the configured friendly name only to establish an exact endpoint,
+  persists the opaque Windows endpoint ID before capture, and opens that same
+  exact ID through WASAPI from the start rather than converting it to a mutable
+  WinMM ordinal or selecting the default recording device.
+- An explicit, default-No in-app Adelaide FLEX apply action for existing and
+  portable installs. It previews the complete known-good local-input, decoder,
+  and Custom-slicer reset, probes the exact endpoint before changing settings,
+  and creates a verified same-folder byte-exact backup. There is no automatic
+  startup prompt or generic-profile migration.
+- Explicit Visual Studio 2026/MSVC v145 release builds for both x64 and Win32,
+  with the selected compiler version recorded in each dependency lock marker
+  and both optional device-smoke programs compile-checked in CI.
+
+### Compatibility and security
+
+- Existing `PDW.INI` files always take precedence during upgrade. The profile
+  does not create, replace, import, or modify Capcode Directory entries or
+  `filters.ini`.
+- A missing or changed saved endpoint fails closed and asks the operator to
+  choose an input; PDW does not silently capture the default microphone.
+- SDR# and VB-CABLE remain external, operator-installed products. PDW does not
+  download, bundle, license, tune, or configure them, and no network or data
+  output is enabled by the profile.
+- Dual-architecture clean builds/tests, native UI acceptance, portable-package
+  audit, guided-installer smoke, Defender scanning, CI/CodeQL, and trusted
+  Authenticode signing are pending for the v5.5 candidate.
+
 ## PDW v5.4 2026 Release
 
 An additive FLEX fragment and display-layout release. Existing protocol

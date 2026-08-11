@@ -704,6 +704,12 @@
 #define IDC_MULTI_STOP             1580
 #define IDC_MULTI_STATUS           1581
 
+#define IDC_AUDIO_BIND             1590
+#define IDC_AUDIO_PROFILE_APPLY    1591
+#define IDC_ABOUT_ARCHITECTURE     1592
+#define IDC_ABOUT_FEATURES         1593
+#define IDC_ABOUT_HISTORICAL       1594
+
 #define IDS_SIGIND                1250
 #define IDS_EXCLAM                1251
 #define IDS_ABOUTLOGO             1252

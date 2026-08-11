@@ -31,6 +31,8 @@
 #include "utils\audio_signal_core.h"
 #include "utils\signal_recording_core.h"
 #include "utils\signal_diagnostics.h"
+#include "utils\local_audio_profile.h"
+#include "utils\winmm_capture_cleanup.h"
 #include "utils\wasapi_capture.h"
 #include "utils\rtl_tcp_source.h"
 #include "utils\receiver_catalog.h"
@@ -70,6 +72,8 @@ volatile LONG buffers_ready=0;       // Used by callback function to indicate bu
 int last_buff_processed = -1;        // Used for predicting next buffer to be filled.
 bool bCapturing=false;               // Used to check to see if capturing is enabled.
 bool bUsingWasapiFallback=false;
+bool g_modernCaptureQuarantined=false;
+bool g_winmmCaptureQuarantined=false;
 char high_audio=DEFAULT_HI_AUDIO;
 char low_audio =DEFAULT_LO_AUDIO;
 
@@ -184,11 +188,15 @@ namespace
 	pdw::signal::SignalDiagnostics g_signalDiagnostics;
 	std::uint32_t g_activeAudioSampleRate = 44100;
 	int g_modernCaptureKind = 0; // 0=none, 1=WASAPI fallback, 2=rtl_tcp, 3=RTL-SDR
+	bool g_wasapiUsesConfiguredEndpoint = false;
+	std::string g_wasapiConfiguredEndpointId;
+	std::string g_wasapiStartError;
 	std::string g_receiverStartError;
 	std::string g_lastReceiverError;
 	std::string g_receiverStatus = "Not started";
 	DWORD g_lastModernStartAttempt = 0;
 	bool g_suppressCaptureError = false;
+	std::size_t g_winmmPreparedHeaderCount = 0;
 	pdw::signal::SignalRecording g_diagnosticRecording;
 	std::string g_diagnosticRecordingPath;
 	bool g_diagnosticRecordingActive = false;
@@ -293,34 +301,142 @@ namespace
 		}
 	}
 
-	void StopDiagnosticReplayInternal(bool resumeInput)
+	bool StopDiagnosticReplayInternal(bool resumeInput)
 	{
-		if (!g_diagnosticReplayActive) return;
+		if (!g_diagnosticReplayActive) return true;
 		g_diagnosticReplayActive = false;
 		g_diagnosticReplay.samples.clear();
 		g_diagnosticReplayPosition = 0;
 		bCapturing = false;
 		Reset_ATB();
+		bool inputRestored = true;
 		if (resumeInput)
 		{
-			if (g_diagnosticReplayResumeSerial) LoadDriver();
-			else if (g_diagnosticReplayResumeAudio) Start_Capturing();
-			SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC)NULL);
+			if (g_diagnosticReplayResumeSerial) inputRestored = LoadDriver();
+			else if (g_diagnosticReplayResumeAudio)
+				inputRestored = Start_Capturing() != FALSE;
+			if (inputRestored) SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC)NULL);
 		}
 		g_diagnosticReplayResumeAudio = false;
 		g_diagnosticReplayResumeSerial = false;
+		return inputRestored;
 	}
 
-	bool TryStartWasapiFallback()
+	bool TryStartWasapiFallback(const std::string* configuredEndpointId)
 	{
-		if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
+		if (g_winmmCaptureQuarantined || hWaveIn || hWaveOut || audio_buffer_cnt != 0)
+		{
+			g_wasapiStartError =
+				"A previous WinMM input still owns audio resources; WASAPI fallback was blocked.";
+			return false;
+		}
 		g_wasapiFallbackSink.Clear();
-		if (!g_wasapiFallbackSource.StartDefault(&g_wasapiFallbackSink)) return false;
+		g_wasapiStartError.clear();
+		const bool useConfiguredEndpoint = configuredEndpointId != NULL;
+		if (useConfiguredEndpoint && configuredEndpointId->empty())
+		{
+			g_wasapiStartError =
+				"PDW could not obtain a stable Windows endpoint identifier for this device.";
+			return false;
+		}
+		const bool started = useConfiguredEndpoint ?
+			g_wasapiFallbackSource.StartEndpoint(*configuredEndpointId, &g_wasapiFallbackSink) :
+			g_wasapiFallbackSource.StartDefault(&g_wasapiFallbackSink);
+		if (!started)
+		{
+			g_wasapiStartError = g_wasapiFallbackSource.lastError();
+			if (!g_wasapiFallbackSource.Stop())
+			{
+				// A failed start can still own a live thread (for example, a ready
+				// timeout followed by a stop timeout). Preserve the shared sink and
+				// source ownership so no alternate producer can be started.
+				g_modernCaptureQuarantined = true;
+				g_wasapiUsesConfiguredEndpoint = useConfiguredEndpoint;
+				g_wasapiConfiguredEndpointId = useConfiguredEndpoint ?
+					*configuredEndpointId : std::string();
+				bUsingWasapiFallback = true;
+				g_modernCaptureKind = 1;
+				bCapturing = true;
+			}
+			return false;
+		}
+		g_modernCaptureQuarantined = false;
+		g_wasapiUsesConfiguredEndpoint = useConfiguredEndpoint;
+		g_wasapiConfiguredEndpointId = useConfiguredEndpoint ?
+			*configuredEndpointId : std::string();
 		bUsingWasapiFallback = true;
 		g_modernCaptureKind = 1;
 		bCapturing = true;
 		Reset_ATB();
 		return true;
+	}
+
+	pdw::signal::WinmmCaptureCleanupApi WinmmCleanupApi()
+	{
+		pdw::signal::WinmmCaptureCleanupApi api = {
+			waveInReset, waveInUnprepareHeader, waveInClose
+		};
+		return api;
+	}
+
+	bool ReleaseWinmmResourcesFailClosed()
+	{
+		if (hWaveIn && !pdw::signal::ReleaseWinmmCaptureFailClosed(hWaveIn,
+			WaveHeader, g_winmmPreparedHeaderCount, WinmmCleanupApi()))
+		{
+			g_winmmCaptureQuarantined = true;
+			bCapturing = true;
+			return false;
+		}
+		if (hWaveIn)
+		{
+			hWaveIn = NULL;
+			g_winmmPreparedHeaderCount = 0;
+		}
+		if (audio_buffer_cnt != 0) free_audio_buffers();
+
+		if (hWaveOut && !pdw::signal::ReleaseWinmmOutputFailClosed(hWaveOut, waveOutClose))
+		{
+			g_winmmCaptureQuarantined = true;
+			bCapturing = true;
+			return false;
+		}
+		if (hWaveOut) hWaveOut = NULL;
+		g_winmmCaptureQuarantined = false;
+		bCapturing = false;
+		InterlockedExchange(&buffers_ready, 0);
+		last_buff_processed = -1;
+		return true;
+	}
+
+	void ReportWinmmCleanupFailure()
+	{
+		const char* message =
+			"Windows did not confirm that the previous WinMM audio input released all handles and buffers. PDW retained ownership and blocked every fallback or replacement source. Try Stop again; if it still fails, restart PDW before selecting another input.";
+		lstrcpynA(szDialogErrorMsg, message, static_cast<int>(_countof(szDialogErrorMsg)));
+		if (!g_suppressCaptureError)
+			MessageBoxA(ghWnd, message, "PDW Soundcard", MB_ICONERROR);
+	}
+
+	void ReportConfiguredCaptureFailure(const char* reason)
+	{
+		std::string message = reason ? reason :
+			"The configured audio capture endpoint could not be started.";
+		const std::string wasapiError = g_wasapiStartError;
+		if (!wasapiError.empty()) message += std::string("\n\nWindows audio: ") + wasapiError;
+		lstrcpynA(szDialogErrorMsg, message.c_str(), static_cast<int>(_countof(szDialogErrorMsg)));
+		if (!g_suppressCaptureError)
+			MessageBoxA(ghWnd, message.c_str(), "PDW Soundcard", MB_ICONERROR);
+	}
+
+	void CommitStableCaptureDevice(
+		const pdw::audio_profile::DeviceResolution& resolution)
+	{
+		if (pdw::audio_profile::CommitCaptureDeviceResolution(resolution)) return;
+		if (!g_suppressCaptureError)
+			MessageBoxA(ghWnd,
+				"Audio capture started, but PDW could not remember the stable Windows endpoint. Check the endpoint name and settings file permissions.",
+				"PDW Soundcard", MB_ICONWARNING);
 	}
 
 	bool TryStartRtlTcp()
@@ -337,7 +453,19 @@ namespace
 		config.automaticGain = Profile.rtlAutomaticGain != 0;
 		config.signalConditionerEnabled = Profile.rtlSignalConditionerEnabled != 0;
 		g_wasapiFallbackSink.Clear();
-		if (!g_rtlTcpSource.Start(config, &g_wasapiFallbackSink)) return false;
+		if (!g_rtlTcpSource.Start(config, &g_wasapiFallbackSink))
+		{
+			if (!g_rtlTcpSource.Stop())
+			{
+				g_modernCaptureQuarantined = true;
+				bUsingWasapiFallback = true;
+				g_modernCaptureKind = 2;
+				bCapturing = true;
+			}
+			else g_wasapiFallbackSink.Clear();
+			return false;
+		}
+		g_modernCaptureQuarantined = false;
 		bUsingWasapiFallback = true;
 		g_modernCaptureKind = 2;
 		bCapturing = true;
@@ -367,7 +495,19 @@ namespace
 		config.signalConditionerEnabled = Profile.rtlSignalConditionerEnabled != 0;
 		g_wasapiFallbackSink.Clear();
 		if (!g_rtlSdrSource.Start(config, static_cast<unsigned int>(Profile.rtlDeviceIndex),
-			&g_wasapiFallbackSink)) return false;
+			&g_wasapiFallbackSink))
+		{
+			if (!g_rtlSdrSource.Stop())
+			{
+				g_modernCaptureQuarantined = true;
+				bUsingWasapiFallback = true;
+				g_modernCaptureKind = 3;
+				bCapturing = true;
+			}
+			else g_wasapiFallbackSink.Clear();
+			return false;
+		}
+		g_modernCaptureQuarantined = false;
 		bUsingWasapiFallback = true;
 		g_modernCaptureKind = 3;
 		bCapturing = true;
@@ -518,9 +658,28 @@ BOOL Start_Capturing(void)
 	MMRESULT result;
 	char *msg;
 
+	if (g_modernCaptureQuarantined)
+	{
+		if (!g_suppressCaptureError)
+			MessageBoxA(ghWnd,
+				"The previous capture thread is still stopping. PDW will not start or mix another input until Windows confirms it has exited.",
+				"PDW Soundcard", MB_ICONERROR);
+		return(FALSE);
+	}
+	if (g_winmmCaptureQuarantined || hWaveIn || hWaveOut || audio_buffer_cnt != 0)
+	{
+		if (!g_suppressCaptureError)
+			MessageBoxA(ghWnd,
+				"The previous WinMM audio input has not released every handle and buffer safely. PDW will not start another input until Stop confirms cleanup or PDW is restarted.",
+				"PDW Soundcard", MB_ICONERROR);
+		return(FALSE);
+	}
 	bCapturing = false;
 	bUsingWasapiFallback = false;
 	g_modernCaptureKind = 0;
+	g_wasapiUsesConfiguredEndpoint = false;
+	g_wasapiConfiguredEndpointId.clear();
+	g_wasapiStartError.clear();
 	g_activeAudioSampleRate = static_cast<std::uint32_t>(Profile.audioSampleRate);
 	if (Profile.audioSource == AUDIO_SOURCE_RTL_TCP)
 	{
@@ -562,6 +721,63 @@ BOOL Start_Capturing(void)
 		return(FALSE);
 	}
 
+	const bool namedAudioSelection = pdw::audio_profile::IsAdelaideFlexPresetSelected();
+	const bool hasStableAudioIdentity =
+		Profile.audioDeviceEndpointId[0] != '\0' || Profile.audioDeviceName[0] != '\0';
+	const bool hasAudioProfileIdentity =
+		Profile.audioProfileId[0] != '\0' || Profile.audioProfileName[0] != '\0';
+	const bool stableAudioSelection = namedAudioSelection || hasStableAudioIdentity ||
+		hasAudioProfileIdentity || Profile.audioDeviceIdentityInvalid != 0;
+	pdw::audio_profile::DeviceResolution configuredDevice;
+	std::string configuredEndpointId;
+	UINT_PTR captureDevice = static_cast<UINT_PTR>(Profile.audioDevice);
+	if (stableAudioSelection)
+	{
+		if (!hasStableAudioIdentity)
+		{
+			ReportConfiguredCaptureFailure(
+				"The named audio profile does not contain a Windows capture endpoint. Open Interface Setup and choose its input.");
+			return(FALSE);
+		}
+		std::string resolutionError;
+		if (!pdw::audio_profile::ResolveConfiguredCaptureDevice(configuredDevice,
+			resolutionError))
+		{
+			if (resolutionError.empty())
+				resolutionError = "The configured audio capture endpoint is not available.";
+			lstrcpynA(szDialogErrorMsg, resolutionError.c_str(),
+				static_cast<int>(_countof(szDialogErrorMsg)));
+			if (!g_suppressCaptureError)
+				MessageBoxA(ghWnd, resolutionError.c_str(), "PDW Soundcard", MB_ICONERROR);
+			return(FALSE);
+		}
+		configuredEndpointId = configuredDevice.endpointId;
+		if (configuredEndpointId.empty())
+		{
+			ReportConfiguredCaptureFailure(
+				"PDW could not obtain a stable Windows endpoint identifier for the configured device.");
+			return(FALSE);
+		}
+		if (!Profile.audioDeviceEndpointId[0] &&
+			!pdw::audio_profile::CommitCaptureDeviceResolution(configuredDevice))
+		{
+			ReportConfiguredCaptureFailure(
+				"PDW resolved the configured recording device but could not save its stable Windows identity. Capture was not started. Check PDW.INI permissions, then try again.");
+			return(FALSE);
+		}
+		// A saved endpoint ID is authoritative. WinMM can open only by a mutable
+		// ordinal, so every stable selection uses endpoint-specific WASAPI to
+		// prevent a hot-plug reorder from opening a different recording device.
+		if (TryStartWasapiFallback(&configuredEndpointId))
+		{
+			CommitStableCaptureDevice(configuredDevice);
+			return(TRUE);
+		}
+		ReportConfiguredCaptureFailure(
+			"The configured audio capture endpoint could not be opened by exact Windows identity through WASAPI.");
+		return(FALSE);
+	}
+
 	// Describe the type of audio connection we want to open
 	my_wave_format.wFormatTag		= WAVE_FORMAT_PCM;
 	my_wave_format.nChannels		= 1;
@@ -578,7 +794,7 @@ BOOL Start_Capturing(void)
 		hWaveOut = NULL;
 	}
 
-	result = waveInOpen(&hWaveIn, Profile.audioDevice, &my_wave_format,
+	result = waveInOpen(&hWaveIn, captureDevice, &my_wave_format,
 			(DWORD_PTR)Callback_Function, 0, CALLBACK_FUNCTION);
 
 	if (result) // error?
@@ -605,13 +821,32 @@ BOOL Start_Capturing(void)
 				break;
 		}
 
-		if (TryStartWasapiFallback()) return(TRUE);
+		if (!ReleaseWinmmResourcesFailClosed())
+		{
+			ReportWinmmCleanupFailure();
+			return(FALSE);
+		}
 
-		lstrcpy(szDialogErrorMsg, TEXT(msg));
-		MessageBox(ghWnd, msg, "PDW Soundcard",MB_ICONERROR);
+		if (TryStartWasapiFallback(stableAudioSelection ? &configuredEndpointId : NULL))
+		{
+			if (stableAudioSelection) CommitStableCaptureDevice(configuredDevice);
+			return(TRUE);
+		}
+
+		if (stableAudioSelection)
+		{
+			ReportConfiguredCaptureFailure(
+				"The configured audio capture endpoint could not be opened through WinMM or WASAPI.");
+		}
+		else
+		{
+			lstrcpy(szDialogErrorMsg, TEXT(msg));
+			MessageBox(ghWnd, msg, "PDW Soundcard",MB_ICONERROR);
+		}
 
 		return(FALSE);
 	}
+	g_winmmPreparedHeaderCount = 0;
     
 	// Prepare buffers and add them to the input queue for the Audio API to fill.
 	for (int ctr=0; ctr<NUMBER_BUFFERS; ctr++)
@@ -620,13 +855,7 @@ BOOL Start_Capturing(void)
 
 		if(!h_memory_block)
 		{
-			waveInReset(hWaveIn);
-			for (int header = 0; header < ctr; ++header)
-				waveInUnprepareHeader(hWaveIn, &WaveHeader[header], (UINT)sizeof(WaveHeader[header]));
-			waveInClose(hWaveIn);
-			hWaveIn = NULL;
-			free_audio_buffers();
-			if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
+			if (!ReleaseWinmmResourcesFailClosed()) ReportWinmmCleanupFailure();
 			return(FALSE);
 		}
 		lp_memory_block = (LPSTR)GlobalLock(h_memory_block);
@@ -634,13 +863,7 @@ BOOL Start_Capturing(void)
 		if(!lp_memory_block)
 		{
 			GlobalFree(h_memory_block);
-			waveInReset(hWaveIn);
-			for (int header = 0; header < ctr; ++header)
-				waveInUnprepareHeader(hWaveIn, &WaveHeader[header], (UINT)sizeof(WaveHeader[header]));
-			waveInClose(hWaveIn);
-			hWaveIn = NULL;
-			free_audio_buffers();
-			if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
+			if (!ReleaseWinmmResourcesFailClosed()) ReportWinmmCleanupFailure();
 			return(FALSE);
 		}
 
@@ -658,20 +881,26 @@ BOOL Start_Capturing(void)
 
 		const MMRESULT prepareResult = waveInPrepareHeader(hWaveIn, &WaveHeader[ctr],
 			(UINT)sizeof(WaveHeader[ctr]));
+		if (prepareResult == MMSYSERR_NOERROR)
+			g_winmmPreparedHeaderCount = static_cast<std::size_t>(ctr + 1);
 		const MMRESULT addResult = prepareResult == MMSYSERR_NOERROR ?
 			waveInAddBuffer(hWaveIn, &WaveHeader[ctr], (UINT)sizeof(WaveHeader[ctr])) :
 			prepareResult;
 		if (prepareResult != MMSYSERR_NOERROR || addResult != MMSYSERR_NOERROR)
 		{
-			waveInReset(hWaveIn);
-			const int preparedHeaders = ctr + (prepareResult == MMSYSERR_NOERROR ? 1 : 0);
-			for (int header = 0; header < preparedHeaders; ++header)
-				waveInUnprepareHeader(hWaveIn, &WaveHeader[header], (UINT)sizeof(WaveHeader[header]));
-			waveInClose(hWaveIn);
-			hWaveIn = NULL;
-			free_audio_buffers();
-			if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
-			if (TryStartWasapiFallback()) return(TRUE);
+			if (!ReleaseWinmmResourcesFailClosed())
+			{
+				ReportWinmmCleanupFailure();
+				return(FALSE);
+			}
+			if (TryStartWasapiFallback(stableAudioSelection ? &configuredEndpointId : NULL))
+			{
+				if (stableAudioSelection) CommitStableCaptureDevice(configuredDevice);
+				return(TRUE);
+			}
+			if (stableAudioSelection)
+				ReportConfiguredCaptureFailure(
+					"The configured audio capture endpoint could not prepare its input buffers.");
 			return(FALSE);
 		}
 	}
@@ -684,16 +913,22 @@ BOOL Start_Capturing(void)
 	if (waveInStart(hWaveIn) == MMSYSERR_NOERROR)
 	{
 		bCapturing = true;
+		if (stableAudioSelection) CommitStableCaptureDevice(configuredDevice);
 		return(TRUE);     // OK!
 	}
-	waveInReset(hWaveIn);
-	for (int header = 0; header < audio_buffer_cnt; ++header)
-		waveInUnprepareHeader(hWaveIn, &WaveHeader[header], (UINT)sizeof(WaveHeader[header]));
-	waveInClose(hWaveIn);
-	hWaveIn = NULL;
-	free_audio_buffers();
-	if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
-	if (TryStartWasapiFallback()) return(TRUE);
+	if (!ReleaseWinmmResourcesFailClosed())
+	{
+		ReportWinmmCleanupFailure();
+		return(FALSE);
+	}
+	if (TryStartWasapiFallback(stableAudioSelection ? &configuredEndpointId : NULL))
+	{
+		if (stableAudioSelection) CommitStableCaptureDevice(configuredDevice);
+		return(TRUE);
+	}
+	if (stableAudioSelection)
+		ReportConfiguredCaptureFailure(
+			"The configured audio capture endpoint could not start through WinMM or WASAPI.");
 	return(FALSE);
 }
 
@@ -736,41 +971,48 @@ BOOL Stop_Capturing(void)
 		StopDiagnosticReplayInternal(false);
 		return(TRUE);
 	}
-	bCapturing = false;
 	if (bUsingWasapiFallback)
 	{
-		if (g_modernCaptureKind == 2) g_rtlTcpSource.Stop();
-		else if (g_modernCaptureKind == 3) g_rtlSdrSource.Stop();
-		else g_wasapiFallbackSource.Stop();
+		bool stopped = true;
+		if (g_modernCaptureKind == 2) stopped = g_rtlTcpSource.Stop();
+		else if (g_modernCaptureKind == 3) stopped = g_rtlSdrSource.Stop();
+		else stopped = g_wasapiFallbackSource.Stop();
+		if (!stopped)
+		{
+			// The capture thread may still call the shared sink. Preserve every
+			// ownership flag and buffer until a later Stop positively observes the
+			// thread exit; alternate producers are blocked by the quarantine flag.
+			g_modernCaptureQuarantined = true;
+			return(FALSE);
+		}
+		g_modernCaptureQuarantined = false;
+		bCapturing = false;
 		g_wasapiFallbackSink.Clear();
 		bUsingWasapiFallback = false;
 		g_modernCaptureKind = 0;
+		g_wasapiUsesConfiguredEndpoint = false;
+		g_wasapiConfiguredEndpointId.clear();
+		g_wasapiStartError.clear();
 		InterlockedExchange(&buffers_ready, 0);
 		last_buff_processed = -1;
-		return(FALSE);
+		return(TRUE);
 	}
 	if (!hWaveIn)
 	{
-		if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
-		return(FALSE);
+		if (!ReleaseWinmmResourcesFailClosed()) return(FALSE);
+		g_wasapiUsesConfiguredEndpoint = false;
+		g_wasapiConfiguredEndpointId.clear();
+		g_wasapiStartError.clear();
+		bCapturing = false;
+		return(TRUE);
 	}
 
-	// Reset the audio connection... takes waiting buffers out of input queue
-	waveInReset(hWaveIn);
+	if (!ReleaseWinmmResourcesFailClosed()) return(FALSE);
+	g_wasapiUsesConfiguredEndpoint = false;
+	g_wasapiConfiguredEndpointId.clear();
+	g_wasapiStartError.clear();
 
-	for (int header = 0; header < audio_buffer_cnt; ++header)
-		waveInUnprepareHeader(hWaveIn, &WaveHeader[header], (UINT)sizeof(WaveHeader[header]));
-	const MMRESULT closeResult = waveInClose(hWaveIn);
-	hWaveIn = NULL;
-	if (hWaveOut) { waveOutClose(hWaveOut); hWaveOut = NULL; }
-
-	// Free memory used for audio buffers.
-	free_audio_buffers();
-
-	InterlockedExchange(&buffers_ready, 0);
-	last_buff_processed = -1;
-
-	return(closeResult == MMSYSERR_NOERROR ? TRUE : FALSE);
+	return(TRUE);
 }
 
 // Freeup audio buffers and reset "audio_buffer_cnt".
@@ -837,14 +1079,20 @@ void Process_ReadyBuffers(HWND hwnd)
 			FeedNormalizedSamples(samples, chunk);
 			g_diagnosticReplayPosition += chunk;
 		}
-		if (g_diagnosticReplayPosition >= g_diagnosticReplay.samples.size())
-			StopDiagnosticReplayInternal(true);
+		if (g_diagnosticReplayPosition >= g_diagnosticReplay.samples.size() &&
+			!StopDiagnosticReplayInternal(true))
+		{
+			MessageBoxA(hwnd,
+				"Replay completed, but PDW could not restart the previous live input. Review Interface Setup and Radio and Signal Sources.",
+				"PDW Signal Replay", MB_ICONERROR);
+		}
 		return;
 	}
 	if (bUsingWasapiFallback)
 	{
+		if (g_modernCaptureQuarantined) return;
 		const pdw::signal::WasapiCaptureState wasapiState = g_wasapiFallbackSource.state();
-		if (g_modernCaptureKind == 1 &&
+		if (!g_modernCaptureQuarantined && g_modernCaptureKind == 1 &&
 			(wasapiState == pdw::signal::WASAPI_CAPTURE_DEVICE_LOST ||
 			wasapiState == pdw::signal::WASAPI_CAPTURE_FAILED))
 		{
@@ -853,12 +1101,33 @@ void Process_ReadyBuffers(HWND hwnd)
 			if (now - lastRestartAttempt >= 2000)
 			{
 				lastRestartAttempt = now;
-				g_wasapiFallbackSource.StartDefault(&g_wasapiFallbackSink);
+				g_wasapiFallbackSink.Clear();
+				bool restarted = false;
+				if (g_wasapiUsesConfiguredEndpoint)
+					restarted = g_wasapiFallbackSource.StartEndpoint(g_wasapiConfiguredEndpointId,
+						&g_wasapiFallbackSink);
+				else restarted = g_wasapiFallbackSource.StartDefault(&g_wasapiFallbackSink);
+				if (restarted) Reset_ATB();
+				else
+				{
+					g_wasapiStartError = g_wasapiFallbackSource.lastError();
+					if (!g_wasapiFallbackSource.Stop())
+					{
+						// A failed device-loss restart can still own a capture
+						// thread. Preserve the existing global ownership and block
+						// all further producers until a confirmed Stop.
+						g_modernCaptureQuarantined = true;
+						bUsingWasapiFallback = true;
+						g_modernCaptureKind = 1;
+						bCapturing = true;
+					}
+				}
 			}
 		}
 		ProcessWasapiFallbackBlocks();
 		return;
 	}
+	if (g_winmmCaptureQuarantined) return;
 	old_buffs_ready = (int)InterlockedExchange(&buffers_ready, 0);
 	if (old_buffs_ready > NUMBER_BUFFERS) old_buffs_ready = NUMBER_BUFFERS;
 	bool requeueFailed = false;
@@ -926,9 +1195,11 @@ void Process_ReadyBuffers(HWND hwnd)
 	}
 	if (requeueFailed)
 	{
-		Stop_Capturing();
+		const bool stoppedSafely = Stop_Capturing() != FALSE;
 		KillTimer(ghWnd, PDW_TIMER);
-		MessageBox(hwnd, "The audio capture device stopped accepting buffers.\n\nCapture has been stopped safely; select or reconnect the source and try again.",
+		MessageBox(hwnd, stoppedSafely ?
+			"The audio capture device stopped accepting buffers.\n\nCapture has been stopped safely; select or reconnect the source and try again." :
+			"The audio capture device stopped accepting buffers, but Windows did not confirm a safe close. PDW will not start another input. Try Stop again; if it still fails, restart PDW before selecting a source.",
 			"PDW audio capture", MB_ICONWARNING);
 	}
 }
@@ -1017,10 +1288,26 @@ bool SignalDiagnosticStartReplay(const char *path, char *error, size_t errorSize
 		return false;
 	}
 
-	g_diagnosticReplayResumeSerial = nDriverLoaded != 0;
-	g_diagnosticReplayResumeAudio = bCapturing;
-	if (g_diagnosticReplayResumeSerial) UnloadDriver();
-	else if (g_diagnosticReplayResumeAudio) Stop_Capturing();
+	const bool resumeSerial = nDriverLoaded != 0;
+	const bool resumeAudio = bCapturing;
+	if (resumeSerial)
+	{
+		UnloadDriver();
+		if (nDriverLoaded != 0)
+		{
+			CopyDiagnosticError(error, errorSize,
+				"PDW could not stop the current serial input safely; replay was not started.");
+			return false;
+		}
+	}
+	else if (resumeAudio && !Stop_Capturing())
+	{
+		CopyDiagnosticError(error, errorSize,
+			"PDW could not stop the current audio input safely; replay was not started.");
+		return false;
+	}
+	g_diagnosticReplayResumeSerial = resumeSerial;
+	g_diagnosticReplayResumeAudio = resumeAudio;
 	g_diagnosticReplay = recording;
 	g_diagnosticReplayPosition = 0;
 	g_diagnosticReplayActive = true;
@@ -1033,9 +1320,9 @@ bool SignalDiagnosticStartReplay(const char *path, char *error, size_t errorSize
 	return true;
 }
 
-void SignalDiagnosticStopReplay(void)
+bool SignalDiagnosticStopReplay(void)
 {
-	StopDiagnosticReplayInternal(true);
+	return StopDiagnosticReplayInternal(true);
 }
 
 bool SignalDiagnosticIsRecording(void)
@@ -2207,6 +2494,176 @@ namespace
 			"Calibration applied as Custom; legacy receiver presets remain available in Interface settings.");
 		return true;
 	}
+
+	bool ApplyAdelaideFlexFromDialog(HWND dialog)
+	{
+		pdw::audio_profile::DeviceResolution resolution;
+		std::string error;
+		if (!pdw::audio_profile::ResolveAdelaideFlexCaptureDevice(resolution, error))
+		{
+			MessageBoxA(dialog, error.c_str(), "PDW Adelaide FLEX profile", MB_ICONERROR);
+			return true;
+		}
+
+		const std::string preview =
+			"Apply the SDR# + VB-Audio Cable (Adelaide FLEX) profile?\n\n"
+			"PDW will use this exact recording endpoint:\n" + resolution.friendlyName +
+			"\n\nThe verified settings transaction will:\n"
+			"- select local Windows audio at 44.1 kHz and disable serial input;\n"
+			"- enable POCSAG and FLEX display, FLEX 1600, both POCSAG views and CFS;\n"
+			"- set Audio Configuration=Custom, bit sync=13107, minimum message length=15, "
+			"invert=1, pane split=69 and FLEX 1600 threshold=2;\n"
+			"- reset only the Custom slicer threshold/centering/resync values used by this preset; and\n"
+			"- save the exact Windows endpoint identity in ASCII-safe form.\n\n"
+			"PDW.INI is backed up byte-for-byte first. Capcode Directory data, message history, "
+			"receivers, WAV files and any legacy filters recovery file are not changed.\n\n"
+			"SDR# and VB-Audio Cable are external products and are not installed or configured by PDW.";
+		if (MessageBoxA(dialog, preview.c_str(), "PDW Adelaide FLEX profile",
+			MB_ICONQUESTION | MB_YESNO | MB_DEFBUTTON2) != IDYES) return true;
+
+		const PROFILE previousProfile = Profile;
+		const int previousBitSync = mb.bitsync;
+		const int previousBitSyncReverse = mb.bitsync_rev;
+		const int previousMinimumMessageLength = mb.min_msg_len;
+		const bool previousCaptureWasRunning = bCapturing;
+		const bool previousSerialWasRunning = nDriverLoaded != 0;
+
+		auto restorePreviousInput = [&]() -> bool
+		{
+			Profile = previousProfile;
+			mb.bitsync = previousBitSync;
+			mb.bitsync_rev = previousBitSyncReverse;
+			mb.min_msg_len = previousMinimumMessageLength;
+			SetAudioConfig(Profile.audioConfig);
+			bool restored = !bCapturing && nDriverLoaded == 0;
+			if (restored && previousSerialWasRunning) restored = LoadDriver();
+			else if (restored && previousCaptureWasRunning && Profile.audioEnabled)
+				restored = Start_Capturing() != FALSE;
+			if (restored && (previousSerialWasRunning || previousCaptureWasRunning))
+				SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC)NULL);
+			return restored;
+		};
+
+		// Probe the exact endpoint before touching PDW.INI. This catches an
+		// unavailable or non-openable VB-Cable endpoint while the byte-exact
+		// settings backup and current configuration are still untouched.
+		KillTimer(ghWnd, PDW_TIMER);
+		bool previousCaptureStopped = true;
+		if (bCapturing) previousCaptureStopped = Stop_Capturing() != FALSE;
+		if (nDriverLoaded) UnloadDriver();
+		if (!previousCaptureStopped || bCapturing || nDriverLoaded != 0)
+		{
+			if (previousSerialWasRunning || previousCaptureWasRunning)
+				SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC)NULL);
+			MessageBoxA(dialog,
+				"PDW could not stop the current input safely, so no profile changes were made.",
+				"PDW Adelaide FLEX profile", MB_ICONERROR);
+			return true;
+		}
+
+		if (!TryStartWasapiFallback(&resolution.endpointId))
+		{
+			const std::string probeError = g_wasapiStartError;
+			const bool previousInputRestored = restorePreviousInput();
+			std::string message =
+				"The selected VB-Cable endpoint could not be opened by exact Windows identity. No settings were changed.";
+			if (!probeError.empty()) message += "\n\nWindows audio: " + probeError;
+			if (!previousInputRestored)
+				message += "\n\nThe previous live input also could not be restarted; review Radio and Signal Sources.";
+			MessageBoxA(dialog, message.c_str(), "PDW Adelaide FLEX profile", MB_ICONERROR);
+			return true;
+		}
+		if (!Stop_Capturing())
+		{
+			MessageBoxA(dialog,
+				"The VB-Cable probe opened, but Windows did not confirm that its audio thread stopped. No settings were changed and PDW will not start another input until Windows confirms exit or PDW is restarted.",
+				"PDW Adelaide FLEX profile", MB_ICONERROR);
+			return true;
+		}
+
+		std::string backupPath;
+		const pdw::audio_profile::SettingsTransactionOutcome presetOutcome =
+			pdw::audio_profile::ApplyAdelaideFlexPreset(resolution, backupPath, error);
+		if (!pdw::audio_profile::SettingsTransactionCommitted(presetOutcome))
+		{
+			const bool previousInputRestored = restorePreviousInput();
+			std::string message = error.empty() ?
+				"PDW did not change the input profile." : error;
+			if (!previousInputRestored)
+				message += "\n\nThe previous live input also could not be restarted; review Radio and Signal Sources.";
+			MessageBoxA(dialog, message.c_str(),
+				"PDW Adelaide FLEX profile", MB_ICONERROR);
+			return true;
+		}
+		const std::string presetWarning =
+			presetOutcome == pdw::audio_profile::SETTINGS_TRANSACTION_COMMITTED_WITH_WARNING ?
+			error : std::string();
+
+		if (!Start_Capturing())
+		{
+			if (bCapturing)
+			{
+				std::string message =
+					"The selected VB-Cable endpoint did not finish starting, and Windows did "
+					"not confirm that its input resources were released. The committed "
+					"Adelaide profile remains in PDW.INI and in memory; PDW will not restore "
+					"or start another input while this source is quarantined. Restart PDW "
+					"before selecting another signal source.";
+				if (!presetWarning.empty())
+					message += "\n\nInitial settings warning: " + presetWarning;
+				MessageBoxA(dialog, message.c_str(), "PDW Adelaide FLEX profile",
+					MB_ICONERROR);
+				return true;
+			}
+			std::string restoreError;
+			const pdw::audio_profile::SettingsTransactionOutcome restoreOutcome =
+				pdw::audio_profile::RestoreAudioProfileBackup(backupPath, restoreError);
+			const bool restored =
+				pdw::audio_profile::SettingsTransactionCommitted(restoreOutcome);
+			std::string message = "The selected VB-Cable endpoint could not be started.";
+			if (restored)
+			{
+				const bool previousInputRestored = restorePreviousInput();
+				message += " The Adelaide profile was not retained; PDW.INI was restored "
+					"from the verified backup.";
+				if (!presetWarning.empty())
+					message += "\n\nInitial settings warning: " + presetWarning;
+				if (restoreOutcome ==
+					pdw::audio_profile::SETTINGS_TRANSACTION_COMMITTED_WITH_WARNING)
+					message += "\n\nRestore warning: " + restoreError;
+				if (!previousInputRestored)
+					message += "\n\nThe previous live input also could not be restarted; review Radio and Signal Sources.";
+			}
+			else
+			{
+				message +=
+					" PDW could not restore the verified backup, so the committed Adelaide "
+					"profile remains in PDW.INI and in memory. PDW did not overwrite it or "
+					"restart another input. Repair the reported settings issue, then restart "
+					"PDW or select a working signal source.";
+				if (!restoreError.empty())
+					message += "\n\nBackup restore error: " + restoreError;
+				if (!presetWarning.empty())
+					message += "\n\nInitial settings warning: " + presetWarning;
+			}
+			MessageBoxA(dialog, message.c_str(), "PDW Adelaide FLEX profile", MB_ICONERROR);
+			return true;
+		}
+
+		SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC)NULL);
+		SendDlgItemMessage(dialog, IDC_SIGNAL_SOURCE, CB_SETCURSEL, AUDIO_SOURCE_LOCAL, 0);
+		EnableRtlControls(dialog, AUDIO_SOURCE_LOCAL);
+		SetDlgItemTextA(dialog, IDC_RTL_STATUS,
+			"Adelaide FLEX profile applied; the exact VB-Cable endpoint is running.");
+		std::string confirmation =
+			"The Adelaide FLEX profile is active on the exact saved VB-Cable endpoint.\n\n"
+			"Verified settings backup:\n" + backupPath;
+		if (!presetWarning.empty())
+			confirmation += "\n\nSettings warning:\n" + presetWarning;
+		MessageBoxA(dialog, confirmation.c_str(), "PDW Adelaide FLEX profile",
+			(presetWarning.empty() ? MB_ICONINFORMATION : MB_ICONWARNING) | MB_OK);
+		return true;
+	}
 }
 
 BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -2245,6 +2702,9 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 		case WM_COMMAND:
 			switch (LOWORD(wParam))
 			{
+				case IDC_AUDIO_PROFILE_APPLY:
+					return ApplyAdelaideFlexFromDialog(hDlg) ? TRUE : FALSE;
+
 				case IDC_SIGNAL_SOURCE:
 					if (HIWORD(wParam) == CBN_SELCHANGE)
 					{
@@ -2278,7 +2738,18 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 					const int source = static_cast<int>(SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_GETCURSEL, 0, 0));
 					if (source == AUDIO_SOURCE_LOCAL)
 					{
-						SetDlgItemText(hDlg, IDC_RTL_STATUS, "Local input is available. WinMM is retained and WASAPI fallback passed its device test.");
+						pdw::audio_profile::DeviceResolution device;
+						std::string error;
+						if (!pdw::audio_profile::ResolveConfiguredCaptureDevice(device, error))
+						{
+							SetDlgItemText(hDlg, IDC_RTL_STATUS, error.c_str());
+							return TRUE;
+						}
+						std::string status = "Resolved local capture endpoint: " +
+							(device.friendlyName.empty() ? std::string("Windows audio input") :
+								device.friendlyName) +
+							". This identity check does not prove decoder traffic; verify the live meter and real messages.";
+						SetDlgItemText(hDlg, IDC_RTL_STATUS, status.c_str());
 						return TRUE;
 					}
 					pdw::signal::RtlTcpConfig config;
@@ -2300,8 +2771,9 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 						pdw::signal::RtlSdrSource test;
 						if (test.Start(config, static_cast<unsigned int>(deviceIndex), &sink))
 						{
-							SetDlgItemText(hDlg, IDC_RTL_STATUS, "RTL-SDR device opened and accepted the tuner configuration.");
-							test.Stop();
+							if (test.Stop())
+								SetDlgItemText(hDlg, IDC_RTL_STATUS, "RTL-SDR device opened, accepted the tuner configuration and stopped safely.");
+							else SetDlgItemText(hDlg, IDC_RTL_STATUS, test.lastError().c_str());
 						}
 						else SetDlgItemText(hDlg, IDC_RTL_STATUS, test.lastError().c_str());
 					}
@@ -2310,8 +2782,9 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 						pdw::signal::RtlTcpSource test;
 						if (test.Start(config, &sink))
 						{
-							SetDlgItemText(hDlg, IDC_RTL_STATUS, "RTL-TCP connected and accepted the tuner configuration.");
-							test.Stop();
+							if (test.Stop())
+								SetDlgItemText(hDlg, IDC_RTL_STATUS, "RTL-TCP connected, accepted the tuner configuration and stopped safely.");
+							else SetDlgItemText(hDlg, IDC_RTL_STATUS, test.lastError().c_str());
 						}
 						else SetDlgItemText(hDlg, IDC_RTL_STATUS, test.lastError().c_str());
 					}
@@ -2362,9 +2835,17 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 				}
 
 				case IDC_SIGNAL_REPLAY_STOP:
-					SignalDiagnosticStopReplay();
-					SetDlgItemText(hDlg, IDC_SIGNAL_DIAGNOSTIC_STATUS,
-						"Replay stopped and the previous live input was restored.");
+					if (SignalDiagnosticStopReplay())
+						SetDlgItemText(hDlg, IDC_SIGNAL_DIAGNOSTIC_STATUS,
+							"Replay stopped and the previous live input was restored.");
+					else
+					{
+						SetDlgItemText(hDlg, IDC_SIGNAL_DIAGNOSTIC_STATUS,
+							"Replay stopped, but the previous live input could not be restored.");
+						MessageBoxA(hDlg,
+							"Replay stopped, but PDW could not restart the previous live input. Review Interface Setup and Radio and Signal Sources.",
+							"PDW Signal Replay", MB_ICONERROR);
+					}
 					UpdateDiagnosticControls(hDlg);
 					return TRUE;
 
@@ -2380,8 +2861,26 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 					if (source != AUDIO_SOURCE_LOCAL && !ReadRtlDialog(hDlg, config, deviceIndex)) return TRUE;
 
 					const PROFILE previousProfile = Profile;
-					if (bCapturing) Stop_Capturing();
-					if (source != AUDIO_SOURCE_LOCAL) UnloadDriver();
+					const bool previousCaptureWasRunning = bCapturing;
+					const bool previousSerialWasRunning = nDriverLoaded != 0;
+					if (bCapturing && !Stop_Capturing())
+					{
+						MessageBoxA(hDlg,
+							"PDW could not stop the current audio input safely. The signal source was not changed.",
+							"PDW Signal Source", MB_ICONERROR);
+						return TRUE;
+					}
+					if (source != AUDIO_SOURCE_LOCAL && nDriverLoaded)
+					{
+						UnloadDriver();
+						if (nDriverLoaded)
+						{
+							MessageBoxA(hDlg,
+								"PDW could not stop the current serial input safely. The signal source was not changed.",
+								"PDW Signal Source", MB_ICONERROR);
+							return TRUE;
+						}
+					}
 					Profile.audioSource = source;
 					if (source != AUDIO_SOURCE_LOCAL)
 					{
@@ -2410,15 +2909,47 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 
 					bool started = true;
 					if (Profile.audioEnabled) started = Start_Capturing() != FALSE;
-					if (!started && source == AUDIO_SOURCE_LOCAL)
+					const bool settingsSaved = started && TryWriteSettings();
+					if (!started || !settingsSaved)
 					{
+						bool selectedInputReleased = true;
+						if (bCapturing)
+							selectedInputReleased = Stop_Capturing() != FALSE;
+						if (!selectedInputReleased || bCapturing)
+						{
+							MessageBoxA(hDlg,
+								"PDW could not confirm that the selected signal source released its resources. The current in-memory source and ownership were preserved, no previous source was started, and the unsaved change will not be retried automatically. Restart PDW before selecting another source.",
+								"PDW Signal Source", MB_ICONERROR);
+							return TRUE;
+						}
+						if (nDriverLoaded && !previousSerialWasRunning) UnloadDriver();
+						if (nDriverLoaded && !previousSerialWasRunning)
+						{
+							MessageBoxA(hDlg,
+								"PDW could not confirm that the selected serial input released its resources. The current in-memory source was preserved and no previous source was started. Restart PDW before selecting another source.",
+								"PDW Signal Source", MB_ICONERROR);
+							return TRUE;
+						}
 						Profile = previousProfile;
-						if (Profile.comPortEnabled) LoadDriver();
-						else if (Profile.audioEnabled) Start_Capturing();
+						SetAudioConfig(Profile.audioConfig);
+						bool previousInputRestored = !bCapturing &&
+							(nDriverLoaded == 0 || previousSerialWasRunning);
+						if (previousInputRestored && previousSerialWasRunning && !nDriverLoaded)
+							previousInputRestored = LoadDriver();
+						else if (previousInputRestored && previousCaptureWasRunning)
+							previousInputRestored = Start_Capturing() != FALSE;
+						if (previousInputRestored &&
+							(previousSerialWasRunning || previousCaptureWasRunning))
+							SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC)NULL);
+						std::string message = started ?
+							"PDW could not save the signal-source settings. The previous source was restored." :
+							"PDW could not start the selected signal source. The change was not retained.";
+						if (!previousInputRestored)
+							message += "\n\nThe previous live input also could not be restarted; review Interface Setup.";
+						MessageBoxA(hDlg, message.c_str(), "PDW Signal Source", MB_ICONERROR);
 						return TRUE;
 					}
 					SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC)NULL);
-					WriteSettings();
 					EndDialog(hDlg, TRUE);
 					return TRUE;
 				}

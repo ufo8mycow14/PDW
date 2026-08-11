@@ -77,7 +77,7 @@ int main()
 		"PRAGMA application_id=1346656049;PRAGMA user_version=1;"
 		"CREATE TABLE capcode_directory(protocol TEXT NOT NULL,address TEXT NOT NULL,display_name TEXT NOT NULL,"
 		"agency TEXT NOT NULL,color INTEGER NOT NULL,notes TEXT NOT NULL,enabled INTEGER NOT NULL,updated_utc TEXT NOT NULL);"
-		"INSERT INTO capcode_directory VALUES('POCSAG','1708068','SAAS Unit Goolwa','SAAS',13369344,'legacy mapping',1,'2026-08-11');",
+		"INSERT INTO capcode_directory VALUES('POCSAG','1110001','Synthetic Legacy Unit','Synthetic Agency',13369344,'legacy mapping',1,'2026-08-11');",
 		NULL, NULL, NULL) == SQLITE_OK, "version-one directory fixture is populated");
 	sqlite3_close(versionOne);
 	pdw::archive::MessageArchive migratedArchive;
@@ -86,8 +86,8 @@ int main()
 		"version-one Capcode Directory migrates in place");
 	std::vector<pdw::archive::CapcodeEntry> migratedRows;
 	Expect(migratedArchive.ListCapcodes(std::string(), migratedRows, migrationError) &&
-		migratedRows.size() == 1 && migratedRows[0].displayName == "SAAS Unit Goolwa" &&
-		migratedRows[0].filterLabel == "SAAS Unit Goolwa" && migratedRows[0].matchText.empty(),
+		migratedRows.size() == 1 && migratedRows[0].displayName == "Synthetic Legacy Unit" &&
+		migratedRows[0].filterLabel == "Synthetic Legacy Unit" && migratedRows[0].matchText.empty(),
 		"existing directory mappings become capcode-only filter rules without a false text requirement");
 	migratedArchive.Close();
 	DeleteFileA(databasePath);
@@ -210,7 +210,7 @@ int main()
 
 	pdw::archive::CapcodeEntry exportAlias;
 	exportAlias.protocol = "FLEX";
-	exportAlias.address = "1705428";
+	exportAlias.address = "1110002";
 	exportAlias.displayName = " \t=Formula Name";
 	exportAlias.agency = std::string("Agency, \"West\" ") + "\xE2\x82\xAC";
 	Expect(archive.UpsertCapcode(exportAlias, error),
@@ -226,7 +226,7 @@ int main()
 		bulk.id = id;
 		bulk.timestamp = "2026-08-09T00:00:00.000Z";
 		bulk.source = "PDW archive export test";
-		bulk.address = "1705428";
+		bulk.address = "1110002";
 		bulk.time = "09:00:00";
 		bulk.date = "2026-08-09";
 		bulk.mode = "FLEX-A";
@@ -243,7 +243,7 @@ int main()
 	edge.id = "export-edge";
 	edge.timestamp = "2026-08-10T00:00:00.000Z";
 	edge.source = "PDW archive export test";
-	edge.address = "1705428";
+	edge.address = "1110002";
 	edge.mode = "FLEX-A";
 	edge.messageType = " +ALPHA";
 	edge.message = " \t=\"bulk export, quoted\"\r\nsecond line";

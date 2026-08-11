@@ -1,0 +1,74 @@
+if(NOT DEFINED PDW_SOURCE_DIRECTORY OR
+   NOT DEFINED PDW_PROVENANCE_OUTPUT OR
+   NOT DEFINED PDW_CONFIGURED_COMMIT OR
+   NOT DEFINED PDW_CONFIGURED_STATE OR
+   NOT DEFINED PDW_SOURCE_PROVENANCE_MODE)
+  message(FATAL_ERROR "PDW build provenance arguments are incomplete.")
+endif()
+
+# Fail closed before inspecting Git. If inspection itself fails, no earlier
+# clean marker remains available beside a newly linked executable.
+file(WRITE "${PDW_PROVENANCE_OUTPUT}" "commit=unknown\nstate=dirty\n")
+
+if(PDW_SOURCE_PROVENANCE_MODE STREQUAL "git")
+  if(NOT DEFINED PDW_GIT_EXECUTABLE OR PDW_GIT_EXECUTABLE STREQUAL "")
+    message(FATAL_ERROR "Git is unavailable for build-time provenance.")
+  endif()
+  execute_process(
+    COMMAND "${PDW_GIT_EXECUTABLE}" -C "${PDW_SOURCE_DIRECTORY}"
+      rev-parse --verify HEAD
+    RESULT_VARIABLE PDW_HEAD_RESULT
+    OUTPUT_VARIABLE PDW_CURRENT_COMMIT
+    ERROR_VARIABLE PDW_HEAD_ERROR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  execute_process(
+    COMMAND "${PDW_GIT_EXECUTABLE}" -C "${PDW_SOURCE_DIRECTORY}"
+      rev-parse --show-toplevel
+    RESULT_VARIABLE PDW_ROOT_RESULT
+    OUTPUT_VARIABLE PDW_GIT_ROOT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  file(REAL_PATH "${PDW_SOURCE_DIRECTORY}" PDW_SOURCE_REAL_PATH)
+  if(PDW_ROOT_RESULT EQUAL 0)
+    file(REAL_PATH "${PDW_GIT_ROOT}" PDW_GIT_ROOT_REAL_PATH)
+  endif()
+  string(LENGTH "${PDW_CURRENT_COMMIT}" PDW_CURRENT_COMMIT_LENGTH)
+  if(NOT PDW_HEAD_RESULT EQUAL 0 OR
+     NOT PDW_ROOT_RESULT EQUAL 0 OR
+     NOT PDW_GIT_ROOT_REAL_PATH STREQUAL PDW_SOURCE_REAL_PATH OR
+     NOT PDW_CURRENT_COMMIT_LENGTH EQUAL 40 OR
+     NOT PDW_CURRENT_COMMIT MATCHES "^[0-9a-fA-F]+$")
+    message(FATAL_ERROR "Unable to record build-time PDW HEAD: ${PDW_HEAD_ERROR}")
+  endif()
+  string(TOLOWER "${PDW_CURRENT_COMMIT}" PDW_CURRENT_COMMIT)
+
+  execute_process(
+    COMMAND "${PDW_GIT_EXECUTABLE}" -C "${PDW_SOURCE_DIRECTORY}"
+      status --porcelain --untracked-files=all
+    RESULT_VARIABLE PDW_STATUS_RESULT
+    OUTPUT_VARIABLE PDW_CURRENT_STATUS
+    ERROR_VARIABLE PDW_STATUS_ERROR
+  )
+  if(NOT PDW_STATUS_RESULT EQUAL 0)
+    message(FATAL_ERROR "Unable to record build-time PDW status: ${PDW_STATUS_ERROR}")
+  endif()
+elseif(PDW_SOURCE_PROVENANCE_MODE STREQUAL "archive")
+  include("${PDW_SOURCE_DIRECTORY}/scripts/validate-source-archive.cmake")
+  pdw_validate_source_archive("${PDW_SOURCE_DIRECTORY}" PDW_CURRENT_COMMIT)
+  set(PDW_CURRENT_STATUS "")
+else()
+  message(FATAL_ERROR "Unknown PDW source-provenance mode.")
+endif()
+
+set(PDW_CURRENT_STATE "clean")
+if(NOT "${PDW_CURRENT_STATUS}" STREQUAL "" OR
+   NOT "${PDW_CONFIGURED_STATE}" STREQUAL "clean" OR
+   NOT "${PDW_CURRENT_COMMIT}" STREQUAL "${PDW_CONFIGURED_COMMIT}")
+  set(PDW_CURRENT_STATE "dirty")
+endif()
+
+set(PDW_PROVENANCE_TEMP "${PDW_PROVENANCE_OUTPUT}.new")
+file(WRITE "${PDW_PROVENANCE_TEMP}"
+  "commit=${PDW_CURRENT_COMMIT}\nstate=${PDW_CURRENT_STATE}\n")
+file(RENAME "${PDW_PROVENANCE_TEMP}" "${PDW_PROVENANCE_OUTPUT}")

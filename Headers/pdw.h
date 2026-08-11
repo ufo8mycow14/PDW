@@ -13,6 +13,10 @@
 #define MAX_STR_LEN			5120
 #define PDW_WINDOW_TITLE_LEN 63
 #define AUDIO_CUSTOM_RATE_COUNT 4
+#define AUDIO_PROFILE_ID_LEN 63
+#define AUDIO_PROFILE_NAME_LEN 127
+#define AUDIO_ENDPOINT_ID_LEN 511
+#define AUDIO_ENDPOINT_NAME_LEN 255
 #define RTL_TCP_HOST_LEN 255
 #define RTL_RECEIVER_ID_LEN 63
 #define PUBLISH_PATH_LEN 511
@@ -334,6 +338,11 @@ typedef struct
 	int audioSampleRate;
 	int audioConfig;
 	int audioSource;
+	char audioProfileId[AUDIO_PROFILE_ID_LEN+1];
+	char audioProfileName[AUDIO_PROFILE_NAME_LEN+1];
+	char audioDeviceEndpointId[AUDIO_ENDPOINT_ID_LEN+1];
+	char audioDeviceName[AUDIO_ENDPOINT_NAME_LEN+1];
+	int audioDeviceIdentityInvalid;
 	char rtlTcpHost[RTL_TCP_HOST_LEN+1];
 	int rtlTcpPort;
 	unsigned int rtlFrequencyHz;
@@ -517,7 +526,7 @@ void PaneVScroll(PaneStruct *pane, WPARAM wParam, LPARAM lParam);
 void BuildFilterString(char *temp_str, FILTER filter);
 void ChangeDataMode(HWND hWnd, int mode);
 
-VOID NEAR GoModalDialogBoxParam(HINSTANCE hInstance, LPCSTR lpszTemplate, HWND hWnd, DLGPROC lpDlgProc, LPARAM lParam);
+INT_PTR NEAR GoModalDialogBoxParam(HINSTANCE hInstance, LPCSTR lpszTemplate, HWND hWnd, DLGPROC lpDlgProc, LPARAM lParam);
 UINT_PTR CALLBACK CenterOpenDlgBox(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 BOOL CenterWindow(HWND hWnd);
 
@@ -555,6 +564,7 @@ BOOL NEAR SetTitle(HWND hWnd, TCHAR *cTitle);
 
 BOOL ErrorMessageBox(LPCTSTR lpszText, LPCTSTR lpszTitle, LPCTSTR lpszFile, INT Line);
 BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PPROFILE pProfile);
+bool TryWriteSettings();
 void WriteSettings();
 void WriteFilters(PPROFILE pProfile, int backup);
 bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew);

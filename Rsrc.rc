@@ -177,20 +177,22 @@ END
 // Dialog
 //
 
-ABOUTDLGBOX DIALOG 10, 10, 282, 166
-STYLE DS_SETFONT | DS_MODALFRAME | DS_3DLOOK | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
-CAPTION "About..."
-FONT 8, "Verdana"
+ABOUTDLGBOX DIALOGEX 0, 0, 430, 250
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About PDW"
+FONT 9, "Segoe UI"
 BEGIN
-    GROUPBOX        "",IDC_STATIC,0,0,75,114,NOT WS_VISIBLE
-    LTEXT           "PDW version",IDC_VERSION,81,6,72,8
-    LTEXT           "POCSAG, FLEX, ACARS, MOBITEX && ERMES Decoder",IDC_STATIC,78,19,175,8
-    LTEXT           "Copyright (c) 2001 - 2004 Jason Petty",IDC_STATIC,79,33,126,8
-    LTEXT           "2004 - 2010 Peter Hunt",IDC_STATIC,122,45,100,8
-    LTEXT           "Win2k/XP RS232 support by: Herman Withaar",IDC_STATIC,113,106,152,8
-    LTEXT           "Contributor: Kieran O'Rourke",IDC_STATIC,79,122,190,8
-    PUSHBUTTON      "Visit PDW website",IDC_WEBSITE,121,68,68,15
-    LTEXT           "2013 GNU GENERAL PUBLIC LICENSE",IDC_STATIC,124,57,124,8
+    GROUPBOX        "",IDC_STATIC,8,8,72,64
+    LTEXT           "PDW version",IDC_VERSION,90,12,326,12
+    LTEXT           "Architecture",IDC_ABOUT_ARCHITECTURE,90,29,326,12
+    LTEXT           "Native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.",IDC_STATIC,90,46,326,22
+    LTEXT           "Inputs include established audio and serial/slicer paths, RTL-TCP, direct RTL-SDR, and WAV/SigMF replay. Current tools include the Capcode Directory, live filtering, optional bounded Message History with CSV export, diagnostics, multi-receiver support, and optional additive FLEX fragment joining.",IDC_ABOUT_FEATURES,14,82,402,52
+    LTEXT           "The optional SDR# + VB-Audio Cable profile is selected by the operator. PDW does not install or configure those external products. Network and data outputs remain disabled until configured.",IDC_STATIC,14,140,402,34
+    LTEXT           "Use PDW only where monitoring is lawful and authorised. Protect decoded content.",IDC_STATIC,14,179,402,12
+    LTEXT           "GNU GPL v3 or later. Credits: Jason Petty, Peter Hunt, Herman Withaar, open-source contributors, Kieran O'Rourke and spiralshapeturtl.",IDC_STATIC,14,196,402,22
+    PUSHBUTTON      "GitHub project",IDC_WEBSITE,14,226,84,18
+    PUSHBUTTON      "Historical PDW site",IDC_ABOUT_HISTORICAL,104,226,104,18
+    DEFPUSHBUTTON   "Close",IDOK,352,226,64,18
 END
 
 CLEARSCREENDLGBOX DIALOG 30, 20, 113, 66
@@ -329,6 +331,7 @@ BEGIN
     COMBOBOX        IDC_AUDIODEVICES,62,117,143,40,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
     LTEXT           "Sample &Rate",IDC_STATIC,17,100,43,8
     COMBOBOX        IDC_AUDIOSAMPLERATE,62,98,39,50,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Use selected input",IDC_AUDIO_BIND,111,98,94,14
     PUSHBUTTON      "OK",IDOK,54,143,44,14
     PUSHBUTTON      "Cancel",IDCANCEL,121,143,44,14
 END
@@ -899,7 +902,7 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "Comments", "Native Win32 decoder for current Windows systems"
+            VALUE "Comments", "Native Windows decoder for current Windows systems"
             VALUE "CompanyName", "PDW Open Source Project"
             VALUE "FileDescription", "POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder"
             VALUE "FileVersion", PDW_VERSION_RESOURCE_STRING
@@ -1083,7 +1086,7 @@ BEGIN
     PUSHBUTTON      "Publish to web...",IDC_SETTINGS_PUBLISH,268,242,82,20
     PUSHBUTTON      "Data outputs...",IDC_SETTINGS_DATA_OUTPUTS,356,242,94,20
 
-    LTEXT           "Changes use PDW's existing configuration; secrets stay in Windows Credential Manager.",IDC_STATIC,16,282,270,22
+    LTEXT           "Supported output secrets use Windows Credential Manager; legacy SMTP credentials remain INI-backed.",IDC_STATIC,16,282,270,22
     PUSHBUTTON      "Output health...",IDC_SETTINGS_OUTPUT_HEALTH,294,293,88,20
     DEFPUSHBUTTON   "Close",IDOK,390,293,64,20
 END
@@ -1095,6 +1098,7 @@ FONT 9, "Segoe UI", 0, 0, 0x0
 BEGIN
     LTEXT           "Signal source",IDC_STATIC,14,15,62,10
     COMBOBOX        IDC_SIGNAL_SOURCE,82,11,220,70,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Apply Adelaide FLEX...",IDC_AUDIO_PROFILE_APPLY,310,11,126,18
     LTEXT           "Local inputs retain WinMM, serial and slicer behaviour; WASAPI remains an automatic fallback.",IDC_STATIC,14,34,422,12
 
     GROUPBOX        "Receiver",IDC_STATIC,8,51,434,146

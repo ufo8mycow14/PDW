@@ -252,32 +252,33 @@ int main()
 
 	FILTER generated = {};
 	generated.type = POCSAG_FILTER;
-	std::strcpy(generated.capcode, "1708068");
-	std::strcpy(generated.label, "SAAS Unit Goolwa");
-	std::strcpy(generated.text, "SAAS Unit Goolwa");
+	std::strcpy(generated.capcode, "1110001");
+	std::strcpy(generated.label, "Synthetic Legacy Unit");
+	std::strcpy(generated.text, "Synthetic Legacy Unit");
 	generated.label_enabled = 1;
 	FILTERLIST legacyFilters;
 	legacyFilters.push_back(generated);
 	pdw::archive::CapcodeEntry healthyDirectory;
 	healthyDirectory.protocol = "POCSAG";
-	healthyDirectory.address = "1708068";
+	healthyDirectory.address = "1110001";
 	healthyDirectory.displayName = "Healthy Directory Name";
-	healthyDirectory.agency = "SAAS";
+	healthyDirectory.agency = "Synthetic Agency";
 	healthyDirectory.filterType = POCSAG_FILTER;
 	Expect(MessageArchiveUpsertCapcode(healthyDirectory, error) &&
 		MessageArchiveMergeLegacyFilters(legacyFilters, error),
 		"legacy migration merges with an existing healthy directory");
 	std::vector<pdw::archive::CapcodeEntry> mergedRows;
-	Expect(MessageArchiveListCapcodes("1708068", mergedRows, error) && mergedRows.size() == 1 &&
-		mergedRows[0].displayName == "Healthy Directory Name" && mergedRows[0].agency == "SAAS" &&
-		mergedRows[0].matchText.empty() && mergedRows[0].filterLabel == "SAAS Unit Goolwa",
+	Expect(MessageArchiveListCapcodes("1110001", mergedRows, error) && mergedRows.size() == 1 &&
+		mergedRows[0].displayName == "Healthy Directory Name" &&
+		mergedRows[0].agency == "Synthetic Agency" &&
+		mergedRows[0].matchText.empty() && mergedRows[0].filterLabel == "Synthetic Legacy Unit",
 		"merge removes duplicate rules while preserving directory metadata and legacy filter behavior");
 	Expect(MessageArchiveReplaceLegacyFilters(legacyFilters, error),
 		"legacy filters migrate transactionally into the directory");
 	Expect(Profile.filters.size() == 1 && Profile.filters[0].directory_id > 0 &&
 		Profile.filters[0].type == POCSAG_FILTER &&
-		std::string(Profile.filters[0].capcode) == "1708068" &&
-		std::string(Profile.filters[0].label) == "SAAS Unit Goolwa" &&
+		std::string(Profile.filters[0].capcode) == "1110001" &&
+		std::string(Profile.filters[0].label) == "Synthetic Legacy Unit" &&
 		std::string(Profile.filters[0].text).empty(),
 		"generator label duplication is repaired without losing the capcode label");
 	Profile.filters[0].hitcounter = 9;
@@ -287,7 +288,7 @@ int main()
 		"runtime hit state persists to the directory database");
 	std::string directoryCsv;
 	Expect(MessageArchiveExportCapcodesCsv(directoryCsv, error) &&
-		directoryCsv.find("SAAS Unit Goolwa") != std::string::npos,
+		directoryCsv.find("Synthetic Legacy Unit") != std::string::npos,
 		"configuration backup can export the expanded directory CSV");
 	int rejected = -1;
 	Expect(MessageArchiveReplaceCapcodesCsv(directoryCsv, rejected, error) && rejected == 0 &&

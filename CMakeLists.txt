@@ -44,6 +44,82 @@ else()
 endif()
 message(STATUS "Configuring PDW ${PROJECT_VERSION} for ${PDW_TARGET_ARCH}")
 
+# Bind every executable to the exact source state seen by its fresh configure.
+# Release staging accepts only a clean marker that matches the then-current
+# HEAD, so a later rebuild cannot silently combine a newer source tree with an
+# older (or locally modified) configured binary.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+  set(PDW_SOURCE_PROVENANCE_MODE "git")
+  find_package(Git QUIET)
+  if(NOT Git_FOUND)
+    message(FATAL_ERROR "Git is required to validate a PDW checkout build.")
+  endif()
+  execute_process(
+    COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}"
+      rev-parse --verify HEAD
+    RESULT_VARIABLE PDW_GIT_COMMIT_RESULT
+    OUTPUT_VARIABLE PDW_BUILD_COMMIT
+    ERROR_VARIABLE PDW_GIT_COMMIT_ERROR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  execute_process(
+    COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}"
+      rev-parse --show-toplevel
+    RESULT_VARIABLE PDW_GIT_ROOT_RESULT
+    OUTPUT_VARIABLE PDW_GIT_ROOT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  file(REAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}" PDW_SOURCE_REAL_PATH)
+  if(PDW_GIT_ROOT_RESULT EQUAL 0)
+    file(REAL_PATH "${PDW_GIT_ROOT}" PDW_GIT_ROOT_REAL_PATH)
+  endif()
+  string(LENGTH "${PDW_BUILD_COMMIT}" PDW_BUILD_COMMIT_LENGTH)
+  if(NOT PDW_GIT_COMMIT_RESULT EQUAL 0 OR
+     NOT PDW_GIT_ROOT_RESULT EQUAL 0 OR
+     NOT PDW_GIT_ROOT_REAL_PATH STREQUAL PDW_SOURCE_REAL_PATH OR
+     NOT PDW_BUILD_COMMIT_LENGTH EQUAL 40 OR
+     NOT PDW_BUILD_COMMIT MATCHES "^[0-9a-fA-F]+$")
+    message(FATAL_ERROR
+      "Unable to validate the exact PDW Git checkout: ${PDW_GIT_COMMIT_ERROR}")
+  endif()
+  string(TOLOWER "${PDW_BUILD_COMMIT}" PDW_BUILD_COMMIT)
+  execute_process(
+    COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}"
+      status --porcelain --untracked-files=all
+    RESULT_VARIABLE PDW_GIT_STATUS_RESULT
+    OUTPUT_VARIABLE PDW_GIT_STATUS
+    ERROR_VARIABLE PDW_GIT_STATUS_ERROR
+  )
+  if(NOT PDW_GIT_STATUS_RESULT EQUAL 0)
+    message(FATAL_ERROR
+      "Unable to record the PDW build-tree state: ${PDW_GIT_STATUS_ERROR}")
+  endif()
+  if(PDW_GIT_STATUS STREQUAL "")
+    set(PDW_BUILD_TREE_STATE "clean")
+  else()
+    set(PDW_BUILD_TREE_STATE "dirty")
+  endif()
+else()
+  set(PDW_SOURCE_PROVENANCE_MODE "archive")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate-source-archive.cmake")
+  pdw_validate_source_archive("${CMAKE_CURRENT_SOURCE_DIR}" PDW_BUILD_COMMIT)
+  set(PDW_BUILD_TREE_STATE "clean")
+endif()
+if(PDW_BUILD_TREE_STATE STREQUAL "clean")
+  set(PDW_CONFIGURE_MARKER_STATE "pending")
+else()
+  set(PDW_CONFIGURE_MARKER_STATE "dirty")
+endif()
+set(PDW_BUILD_METADATA_DIRECTORY
+  "${CMAKE_CURRENT_BINARY_DIR}/pdw-build-metadata")
+file(MAKE_DIRECTORY "${PDW_BUILD_METADATA_DIRECTORY}")
+file(GENERATE
+  OUTPUT "${PDW_BUILD_METADATA_DIRECTORY}/PDW_BUILD_COMMIT.txt"
+  CONTENT "commit=${PDW_BUILD_COMMIT}\nstate=${PDW_CONFIGURE_MARKER_STATE}\n"
+)
+message(STATUS
+  "PDW build provenance: ${PDW_BUILD_COMMIT} (${PDW_BUILD_TREE_STATE}, ${PDW_SOURCE_PROVENANCE_MODE})")
+
 set(PDW_GFXS)
 set(PDW_INCLUDES)
 set(PDW_SRCS)
@@ -126,6 +202,104 @@ add_executable(PDW WIN32
   ${PDW_SRCS}
 )
 
+# PDW stays dynamically linked (/MD). Distribute only the release Microsoft
+# VC runtime DLLs selected by CMake for the current target architecture. The
+# allowlist deliberately excludes the UCRT, debug runtimes, MFC, OpenMP,
+# vccorlib, runtime installers and every future filename pending review.
+set(CMAKE_INSTALL_DEBUG_LIBRARIES FALSE)
+set(CMAKE_INSTALL_DEBUG_LIBRARIES_ONLY FALSE)
+set(CMAKE_INSTALL_UCRT_LIBRARIES FALSE)
+set(CMAKE_INSTALL_MFC_LIBRARIES FALSE)
+set(CMAKE_INSTALL_OPENMP_LIBRARIES FALSE)
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+include(InstallRequiredSystemLibraries)
+
+set(PDW_MSVC_RUNTIME_ALLOWLIST
+  concrt140.dll
+  msvcp140.dll
+  msvcp140_1.dll
+  msvcp140_2.dll
+  msvcp140_atomic_wait.dll
+  msvcp140_codecvt_ids.dll
+  vcruntime140.dll
+  vcruntime140_1.dll
+)
+set(PDW_REQUIRED_MSVC_RUNTIME_NAMES
+  concrt140.dll
+  msvcp140.dll
+  msvcp140_1.dll
+  msvcp140_2.dll
+  msvcp140_atomic_wait.dll
+  msvcp140_codecvt_ids.dll
+  vcruntime140.dll
+)
+if(PDW_TARGET_ARCH STREQUAL "x64")
+  list(APPEND PDW_REQUIRED_MSVC_RUNTIME_NAMES vcruntime140_1.dll)
+endif()
+
+set(PDW_MSVC_RUNTIME_LIBS)
+set(PDW_SELECTED_MSVC_RUNTIME_NAMES)
+foreach(PDW_RUNTIME_PATH IN LISTS CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+  get_filename_component(PDW_RUNTIME_NAME "${PDW_RUNTIME_PATH}" NAME)
+  string(TOLOWER "${PDW_RUNTIME_NAME}" PDW_RUNTIME_NAME)
+  list(FIND PDW_MSVC_RUNTIME_ALLOWLIST "${PDW_RUNTIME_NAME}"
+    PDW_RUNTIME_ALLOWLIST_INDEX)
+  if(PDW_RUNTIME_ALLOWLIST_INDEX EQUAL -1)
+    message(FATAL_ERROR
+      "InstallRequiredSystemLibraries selected unreviewed runtime '${PDW_RUNTIME_NAME}'.")
+  endif()
+  list(APPEND PDW_MSVC_RUNTIME_LIBS "${PDW_RUNTIME_PATH}")
+  list(APPEND PDW_SELECTED_MSVC_RUNTIME_NAMES "${PDW_RUNTIME_NAME}")
+endforeach()
+
+foreach(PDW_RUNTIME_NAME IN LISTS PDW_REQUIRED_MSVC_RUNTIME_NAMES)
+  list(FIND PDW_SELECTED_MSVC_RUNTIME_NAMES "${PDW_RUNTIME_NAME}"
+    PDW_RUNTIME_FOUND_INDEX)
+  if(PDW_RUNTIME_FOUND_INDEX EQUAL -1)
+    message(FATAL_ERROR
+      "Required ${PDW_TARGET_ARCH} Microsoft VC runtime was not found: ${PDW_RUNTIME_NAME}")
+  endif()
+endforeach()
+list(LENGTH PDW_SELECTED_MSVC_RUNTIME_NAMES PDW_SELECTED_RUNTIME_COUNT)
+list(LENGTH PDW_REQUIRED_MSVC_RUNTIME_NAMES PDW_REQUIRED_RUNTIME_COUNT)
+if(NOT PDW_SELECTED_RUNTIME_COUNT EQUAL PDW_REQUIRED_RUNTIME_COUNT)
+  message(FATAL_ERROR
+    "InstallRequiredSystemLibraries did not select the exact reviewed ${PDW_TARGET_ARCH} runtime set.")
+endif()
+message(STATUS
+  "PDW app-local Microsoft VC runtime set: ${PDW_SELECTED_MSVC_RUNTIME_NAMES}")
+
+# Invalidate the marker beside the existing executable before the linker may
+# replace it. POST_BUILD promotes it back to clean only after build-time source
+# validation succeeds, so a failed validator can never leave a prior clean
+# marker beside a newly linked binary.
+add_custom_command(TARGET PDW PRE_LINK
+  COMMAND ${CMAKE_COMMAND}
+    "-DPDW_PROVENANCE_OUTPUT=$<TARGET_FILE_DIR:PDW>/PDW_BUILD_COMMIT.txt"
+    "-DPDW_PROVENANCE_COMMIT=${PDW_BUILD_COMMIT}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/scripts/invalidate-build-provenance.cmake"
+  COMMENT "Invalidating PDW build provenance before link"
+)
+
+add_custom_command(TARGET PDW POST_BUILD
+  COMMAND ${CMAKE_COMMAND}
+    "-DPDW_GIT_EXECUTABLE=${GIT_EXECUTABLE}"
+    "-DPDW_SOURCE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}"
+    "-DPDW_PROVENANCE_OUTPUT=${PDW_BUILD_METADATA_DIRECTORY}/PDW_BUILD_COMMIT.txt"
+    "-DPDW_CONFIGURED_COMMIT=${PDW_BUILD_COMMIT}"
+    "-DPDW_CONFIGURED_STATE=${PDW_BUILD_TREE_STATE}"
+    "-DPDW_SOURCE_PROVENANCE_MODE=${PDW_SOURCE_PROVENANCE_MODE}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/scripts/write-build-provenance.cmake"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${PDW_MSVC_RUNTIME_LIBS}
+    "$<TARGET_FILE_DIR:PDW>"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${PDW_BUILD_METADATA_DIRECTORY}/PDW_BUILD_COMMIT.txt"
+    "$<TARGET_FILE_DIR:PDW>/PDW_BUILD_COMMIT.txt"
+  COMMAND_EXPAND_LISTS
+  COMMENT "Copying PDW provenance and app-local Microsoft VC runtime"
+)
+
 # New isolation/routing modules are warning-clean even though the untouched
 # decoder translation units still require their historical warning profile.
 set_source_files_properties(
@@ -136,6 +310,8 @@ set_source_files_properties(
   utils/flex_fragment_reassembly_core.cpp
   utils/filter_match_core.cpp
   utils/local_dashboard_server.cpp
+  utils/local_audio_profile.cpp
+  utils/local_audio_profile_core.cpp
   utils/message_archive.cpp
   utils/message_archive_manager.cpp
   utils/message_centre.cpp
@@ -379,6 +555,19 @@ if(BUILD_TESTING)
 	target_link_libraries(PDWWasapiCaptureTests PRIVATE Ole32.lib Mmdevapi.lib Uuid.lib)
 	add_test(NAME wasapi-capture-core COMMAND PDWWasapiCaptureTests)
 
+	add_executable(PDWWinmmCaptureCleanupTests
+		tests/winmm_capture_cleanup_tests.cpp
+	)
+	target_include_directories(PDWWinmmCaptureCleanupTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWWinmmCaptureCleanupTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME winmm-capture-cleanup COMMAND PDWWinmmCaptureCleanupTests)
+
 	add_executable(PDWRtlTcpTests
 		tests/rtl_tcp_source_tests.cpp
 		utils/audio_signal_core.cpp
@@ -388,9 +577,12 @@ if(BUILD_TESTING)
 	target_include_directories(PDWRtlTcpTests PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
 	)
-	target_compile_definitions(PDWRtlTcpTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+	target_compile_definitions(PDWRtlTcpTests PRIVATE
+		_CRT_SECURE_NO_WARNINGS
+		PDW_RTL_SOURCE_TEST_HOOKS
+	)
 	target_compile_options(PDWRtlTcpTests PRIVATE
-		/W4 /WX
+		/W4 /WX /EHsc
 		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
@@ -402,6 +594,7 @@ if(BUILD_TESTING)
 	)
 	add_dependencies(PDWRtlTcpTests PDWMockRtlSdr)
 	set_target_properties(PDWMockRtlSdr PROPERTIES PREFIX "")
+	target_compile_options(PDWMockRtlSdr PRIVATE /W4 /WX)
 
 	add_executable(PDWReceiverCatalogTests
 		tests/receiver_catalog_tests.cpp
@@ -646,6 +839,7 @@ target_compile_definitions(PDWMessageArchiveManagerTests PRIVATE
 	add_executable(PDWIniPreservationTests
 		tests/ini_preservation_core_tests.cpp
 		utils/ini_preservation_core.cpp
+		utils/local_audio_profile_core.cpp
 	)
 	target_include_directories(PDWIniPreservationTests PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
@@ -655,6 +849,11 @@ target_compile_definitions(PDWMessageArchiveManagerTests PRIVATE
 		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
+	target_compile_definitions(PDWIniPreservationTests PRIVATE
+		PDW_LOCAL_AUDIO_PROFILE_TEST_HOOKS
+		PDW_INI_PRESERVATION_TEST_HOOKS
+	)
+	target_link_libraries(PDWIniPreservationTests PRIVATE Advapi32.lib)
 	add_test(NAME ini-preservation COMMAND PDWIniPreservationTests)
 
 	add_executable(PDWReleaseDefaultsTests
@@ -666,7 +865,26 @@ target_compile_definitions(PDWMessageArchiveManagerTests PRIVATE
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	add_test(NAME release-defaults COMMAND PDWReleaseDefaultsTests
-		"${CMAKE_CURRENT_SOURCE_DIR}/packaging/PDW.INI")
+		"${CMAKE_CURRENT_SOURCE_DIR}/packaging/PDW.INI"
+		"${CMAKE_CURRENT_SOURCE_DIR}/packaging/PDW-Adelaide-FLEX.INI")
+
+	add_executable(PDWLocalAudioProfileTests
+		tests/local_audio_profile_tests.cpp
+		utils/local_audio_profile_core.cpp
+	)
+	target_include_directories(PDWLocalAudioProfileTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_definitions(PDWLocalAudioProfileTests PRIVATE
+		PDW_LOCAL_AUDIO_PROFILE_TEST_HOOKS
+	)
+	target_link_libraries(PDWLocalAudioProfileTests PRIVATE Advapi32.lib)
+	target_compile_options(PDWLocalAudioProfileTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME local-audio-profile COMMAND PDWLocalAudioProfileTests)
 
 	add_executable(PDWFlexFragmentReassemblyTests
 		tests/flex_fragment_reassembly_core_tests.cpp

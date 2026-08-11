@@ -43,6 +43,11 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
   embedded by `Rsrc.rc`.
 - `resrc1.h` - VC6 resource-editor defaults, now maintained at the end of
   `Headers/Resource.h`.
+- `COMPRT.VXD`, `Comprt2.vxd`, and `xp_driver.zip` - obsolete, untracked
+  Windows 9x/XP-era slicer-driver artifacts that an older packaging script copied
+  opportunistically from outside the repository. They are no longer release
+  inputs. PDW's maintained Win32 COM/RS232 and serial-slicer code remains, and
+  Setup preserves pre-existing operator files.
 
 ## Intentionally retained files
 
@@ -57,6 +62,12 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 - `packaging/PDW.INI` is the sanitized release default, not operator data.
   Filter persistence is owned by the Capcode Directory in `pdw-history.sqlite3`;
   fresh packages intentionally do not ship `filters.ini`.
+- `packaging/PDW-Adelaide-FLEX.INI` is the sanitized, explicit clean-install
+  SDR# + VB-Audio Cable profile. It contains no machine endpoint ID, traffic,
+  credential, or filter data and does not replace `packaging/PDW.INI`.
+- `docs/SDRSHARP_VBCABLE_PROFILE.md` documents the external/operator-installed
+  signal path, stable-identity fail-closed boundary, endpoint-specific WASAPI
+  capture, and lawful-use acceptance.
 - `packaging/Wavfiles` and `packaging/Legacy` contain reviewed, non-private
   installer/package inputs required for reproducible clean-clone staging.
 - `installer/PDW.iss` is the maintained guided Windows Setup definition; Inno
@@ -72,7 +83,7 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 | Application source, resources, tests, docs | Included | Included | Shared behavior and UI |
 | Pinned OpenSSL/curl/libssh2 dependencies | x86 build | x64 build | Native code must match the process |
 | Bundled `rtlsdr.dll` | Included | Excluded | Distributed DLL is x86 |
-| Legacy VxD/serial support assets | Included when present | Excluded | Compatibility-only Win32 files |
+| Obsolete external Windows 9x/XP-era slicer-driver artifacts | Excluded | Excluded | Untracked ambient files are not deterministic release inputs; maintained serial code remains |
 | RTL-TCP support | Included | Included | TCP boundary is architecture-neutral |
 
 ## Required validation after file cleanup
@@ -89,7 +100,10 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 8. Confirm the Git tree and every attached worktree are clean before
    publication.
 
-## Current validation state
+## Predecessor validation evidence
+
+The results below belong to the merged v5.4 baseline and earlier releases.
+They remain useful regression evidence but do not prove the v5.5 candidate:
 
 - Fresh Visual Studio 2026 Build Tools 18.8.2, MSVC 19.51.36252/v145, and
   CMake Release builds completed from new build directories for Win32 and x64.
@@ -120,11 +134,42 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
   co-located settings, upgrade-preservation, exact renamed-v5/v5.1/v5.2/v5.3 executable
   cleanup, and uninstall-preservation smoke. Microsoft Defender reports no
   threat in the unsigned local candidate.
-- `scripts/audit-release.ps1` enforces the v5.4 identity, both CI architectures,
-  installer build/smoke coverage, Visual Basic review, obsolete-file
-  exclusion, dependency-notice alignment, and prepared-statement SQL
-  safeguards.
+- `scripts/audit-release.ps1` derives and enforces the current identity, both CI architectures,
+  portable-package generation, installer build/smoke coverage, recursive
+  fresh-`filters.ini` exclusion, architecture-marker and receiver-backup
+  coverage, Visual Basic review, obsolete/ambient-file exclusion,
+  dependency-notice alignment, and prepared-statement SQL safeguards.
 - Operator-selected message archives fail closed unless current Windows SQLite
   connection defenses and a first-on-open bounded quick integrity check pass.
 - Trusted Authenticode signing remains mandatory before the installer is
   promoted as the public stable release.
+
+## PDW v5.5 validation state
+
+The v5.5 source identity is **PDW v5.5 2026 Release**, product version
+`5.5.0 2026 Release`, file/manifest version `5.5.0.0`, and branch
+`pdw-v5.5-sdr-vbcable-reconciliation`. The candidate adds an explicit
+clean-install Adelaide FLEX profile plus stable endpoint identity and
+endpoint-specific WASAPI capture.
+The maintained v5.5 release build uses Visual Studio 2026/MSVC v145 on the
+explicit `windows-2025-vs2026` runner for both x64 and Win32. Dependency locks
+bind the exact compiler, CMake generator/version, toolset and resolver recipe;
+Visual Studio 2022 remains a local rollback path only.
+Release builds copy only the explicit architecture-matched Microsoft VC145
+runtime allowlist beside PDW; package and installer staging PE/version-validate
+that set, reject the UCRT and installers, and bind each output to the exact
+clean source commit recorded in `PDW_BUILD_COMMIT.txt` at link time. Tracked
+release inputs come from one immutable archive of that commit, mutable build
+files are hash-checked across copying, and each architecture's exact staged file
+set is bound by `PDW_INSTALLER_INPUT_SHA256SUMS.txt` through Setup compilation.
+SDR# and VB-CABLE are external/operator-installed and are not repository or
+package dependencies. The profile does not create, import, replace, or modify
+Capcode Directory entries or `filters.ini`.
+
+No fresh v5.5 validation result is recorded yet. Release audit, clean Win32 and
+x64 builds/tests, optional device-smoke compilation, PE/version/manifest/About
+inspection, stable-identity/endpoint-specific-WASAPI and explicit-apply tests, native UI matrices, independent
+portable-package audit, guided installer/profile/upgrade/uninstall smoke,
+Defender, exact-head CI/CodeQL, Authenticode signing, and clean-worktree review
+all remain pending. Evidence must name the exact candidate commit and artifact;
+predecessor results must not be relabelled as v5.5 results.

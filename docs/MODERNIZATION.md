@@ -7,7 +7,7 @@ boundary at a time.
 
 ## Non-negotiable compatibility boundaries
 
-- Ship one product as `PDW v5.4 2026 Release.exe`, with architecture-matched x64
+- Ship one product as `PDW v5.5 2026 Release.exe`, with architecture-matched x64
   and Win32 applications inside one guided installer, one settings experience,
   and one consolidated message stream. Retain portable packages; do not create
   separate legacy/enhanced editions or helper services.
@@ -77,6 +77,17 @@ Current foundation:
 Implemented in 4.1.0 Beta: event-driven WASAPI fallback and recovery, a shared
 normalized sample sink for modern inputs, actual-device smoke coverage, and a
 visually verified Radio and Signal Sources dialog. WinMM remains first choice.
+
+The v5.5 candidate adds one explicit clean-install SDR# + VB-Audio Cable
+(Adelaide FLEX) profile. A friendly name is used only to establish the intended
+Windows endpoint; PDW persists its opaque ID before capture and opens that
+identity through endpoint-specific WASAPI from the start instead of selecting
+the default device or converting it to a mutable WinMM ordinal. A
+missing saved endpoint fails closed rather than falling back to a microphone.
+SDR# and VB-CABLE remain external and
+operator-installed, existing `PDW.INI` remains authoritative, and the profile
+does not create or change Capcode Directory entries or `filters.ini`. Fresh
+dual-architecture and native-device acceptance is still required.
 
 ## Phase 4: safety and maintainability
 
@@ -151,19 +162,25 @@ legacy non-group alpha fragments are always shown first and a complete strict
 chain can add one marked assembled copy. FLEX Group Mode stays on its legacy
 path; fragment assembly is not required to publish a website or webhook.
 
-## Release gate for PDW v5.4 2026 Release
+## Release gate for PDW v5.5 2026 Release
 
-A public PDW v5.4 2026 Release build requires:
+A public PDW v5.5 2026 Release build requires all of the following; none is
+implied complete merely by preparing the source identity:
 
 1. Successful clean Visual Studio 2026/MSVC v145 x64 and Win32 Release builds.
 2. Startup and shutdown tests on current Windows.
-3. Audio-device capture smoke testing.
-4. Representative POCSAG and FLEX regression recordings at minimum.
-5. Confirmation that existing configuration and filter files round-trip.
-6. Review of every release artifact for bundled private logs or traffic data.
-7. FTP, FTPS, and SFTP upload smoke tests against disposable test accounts,
+3. WinMM, ordinary WASAPI, named-profile endpoint-specific WASAPI, missing-endpoint, and
+   device-loss capture smoke testing on both architectures.
+4. Clean-install standard/profile selection, explicit default-No apply with a
+   verified backup, and existing-INI preservation tests without creating or
+   changing filters. No startup migration prompt is permitted.
+5. Representative POCSAG and FLEX regression recordings at minimum.
+6. Confirmation that existing configuration and filter files round-trip.
+7. Review of every release artifact for bundled private logs or traffic data.
+8. FTP, FTPS, and SFTP upload smoke tests against disposable test accounts,
    including deliberate certificate and SSH host-key mismatch failures.
-8. Dual-architecture install, co-located-settings, upgrade-preservation,
+9. Dual-architecture install, co-located-settings, upgrade-preservation,
    uninstall, and portable-operation smoke testing.
-9. Trusted Authenticode signatures on the public installer and installed
+10. Exact-head PR Build/Setup and CodeQL results.
+11. Trusted Authenticode signatures on the public installer and installed
    executables, followed by Microsoft Defender scanning.

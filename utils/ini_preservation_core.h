@@ -3,6 +3,8 @@
 
 #include <string>
 
+#include "local_audio_profile_core.h"
+
 namespace pdw
 {
 namespace ini
@@ -16,8 +18,25 @@ std::string MergeKnownSettings(const std::string& existing,
 
 // Atomically replace path with the merged settings using a temporary file in
 // the same directory. The original remains in place if any step fails.
-bool WriteMergedSettingsFile(const std::string& path,
+pdw::audio_profile::SettingsTransactionOutcome WriteMergedSettingsFile(const std::string& path,
 	const std::string& generated, std::string& error);
+
+// Full generated settings can include credentials. These helpers create a
+// protected same-directory snapshot and require checked, explicitly reported
+// removal before its bytes may be applied to PDW.INI.
+bool CreateSensitiveSettingsTemporaryFile(const std::string& referencePath,
+	const char* prefix, std::string& temporaryPath, void*& nativeHandle,
+	std::string& error);
+bool MarkSensitiveSettingsTemporaryFileForDeletion(void* nativeHandle,
+	const std::string& path, std::string& error);
+
+#ifdef PDW_INI_PRESERVATION_TEST_HOOKS
+typedef void (*BeforeMissingIniCommitTestHook)(const char* targetPath,
+	const char* stagedPath);
+typedef void (*BeforeExistingIniCommitTestHook)(const char* targetPath);
+void SetBeforeMissingIniCommitTestHook(BeforeMissingIniCommitTestHook hook);
+void SetBeforeExistingIniCommitTestHook(BeforeExistingIniCommitTestHook hook);
+#endif
 
 } // namespace ini
 } // namespace pdw

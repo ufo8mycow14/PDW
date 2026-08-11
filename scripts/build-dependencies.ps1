@@ -2,7 +2,7 @@
 param(
     [ValidateSet("x86", "x64")]
     [string]$Architecture = "x86",
-    [ValidateRange(17, 99)]
+    [ValidateSet(17, 18)]
     [int]$VisualStudioMajor = 18,
     [string]$InstallRoot = "",
     [switch]$Force
@@ -32,12 +32,6 @@ function Assert-PathUnderOut {
 
 Assert-PathUnderOut -Path $InstallRoot
 
-foreach ($commandName in @("perl", "tar")) {
-    if (-not (Get-Command $commandName -ErrorAction SilentlyContinue)) {
-        throw "Required build tool '$commandName' was not found. See Readme > Build on Windows."
-    }
-}
-
 $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
 $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
 if (-not (Test-Path -LiteralPath $vswhere)) {
@@ -57,10 +51,21 @@ if (-not (Test-Path -LiteralPath $toolsetVersionFile -PathType Leaf)) {
     throw "The default MSVC toolset version file was not found at '$toolsetVersionFile'."
 }
 $msvcToolsetVersion = (Get-Content -LiteralPath $toolsetVersionFile -Raw).Trim()
-$cmakeToolset = if ($VisualStudioMajor -ge 18) { "v145" } else { "v143" }
-$cmakeGenerator = & (Join-Path $PSScriptRoot "resolve-cmake-generator.ps1") `
+$cmakeToolset = if ($VisualStudioMajor -eq 18) { "v145" } else { "v143" }
+$resolverPath = Join-Path $PSScriptRoot "resolve-cmake-generator.ps1"
+$cmakeGenerator = & $resolverPath `
     -VisualStudioMajor $VisualStudioMajor
-Write-Host "Using CMake generator '$cmakeGenerator' and MSVC $msvcToolsetVersion ($cmakeToolset)."
+$cmakeCommand = Get-Command cmake.exe -ErrorAction Stop
+$cmakeExecutable = $cmakeCommand.Source
+$cmakeVersionOutput = @(& $cmakeExecutable --version)
+$cmakeVersionExitCode = $LASTEXITCODE
+$cmakeVersionLine = ($cmakeVersionOutput | Select-Object -First 1)
+if ($cmakeVersionExitCode -ne 0 -or $cmakeVersionLine -notmatch '^cmake version\s+([^\s]+)') {
+    throw "The selected CMake executable did not report a valid version."
+}
+$cmakeVersion = $Matches[1]
+$resolverSha256 = (Get-FileHash -LiteralPath $resolverPath -Algorithm SHA256).Hash
+Write-Host "Using CMake $cmakeVersion generator '$cmakeGenerator' and MSVC $msvcToolsetVersion ($cmakeToolset)."
 
 $recipeSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
 $versions = [ordered]@{
@@ -70,6 +75,10 @@ $versions = [ordered]@{
     architecture = $Architecture
     visualStudioMajor = $VisualStudioMajor
     msvcToolset = $msvcToolsetVersion
+    cmakeToolset = $cmakeToolset
+    cmakeGenerator = $cmakeGenerator
+    cmakeVersion = $cmakeVersion
+    resolverSha256 = $resolverSha256
     recipeSha256 = $recipeSha256
 }
 
@@ -123,9 +132,82 @@ if ($dependencySetIsCurrent) {
     exit 0
 }
 
+$tarExecutable = Join-Path $env:SystemRoot "System32\tar.exe"
+if (-not (Test-Path -LiteralPath $tarExecutable -PathType Leaf)) {
+    throw "Required Windows build tool '$tarExecutable' was not found. See Readme > Build on Windows."
+}
+
+$perlCandidates = @()
+$currentPerl = Get-Command perl.exe -ErrorAction SilentlyContinue
+if ($currentPerl) {
+    $perlCandidates += $currentPerl.Source
+}
+$perlCandidates += @(
+    "C:\Strawberry\perl\bin\perl.exe",
+    (Join-Path ([Environment]::GetFolderPath("ProgramFiles")) "Git\usr\bin\perl.exe")
+)
+$perlExecutable = ""
+foreach ($candidate in ($perlCandidates | Select-Object -Unique)) {
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        continue
+    }
+    & $candidate -MLocale::Maketext::Simple -e "1" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $perlExecutable = $candidate
+        break
+    }
+}
+if ([string]::IsNullOrWhiteSpace($perlExecutable)) {
+    throw "A Perl installation with Locale::Maketext::Simple was not found. See Readme > Build on Windows."
+}
+$env:Path = "$(Split-Path -Parent $perlExecutable);$env:Path"
+
 $vsDevCmd = Join-Path $visualStudioRoot "Common7\Tools\VsDevCmd.bat"
 if (-not (Test-Path -LiteralPath $vsDevCmd)) {
     throw "Visual Studio developer command script was not found at '$vsDevCmd'."
+}
+
+# CMake's Visual Studio generator still probes compiler/binutils from the
+# process environment on this toolchain. Import the exact target developer
+# environment once so every direct CMake configure/build uses the same MSVC
+# instance as the OpenSSL nmake build below.
+$environmentCommand = "call `"$vsDevCmd`" -no_logo -arch=$Architecture -host_arch=x64 >nul && set"
+$environmentLines = & $env:ComSpec /d /s /c $environmentCommand
+$environmentExitCode = $LASTEXITCODE
+if ($environmentExitCode -ne 0) {
+    throw "Visual Studio developer environment initialization failed with exit code $environmentExitCode."
+}
+$developerPathLine = $environmentLines |
+    Where-Object {
+        $_ -match '^(?i:path)=' -and
+        $_ -like "*$visualStudioRoot\VC\Tools\MSVC*"
+    } |
+    Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($developerPathLine)) {
+    throw "Visual Studio developer environment did not return a canonical PATH."
+}
+$developerPath = $developerPathLine.Substring($developerPathLine.IndexOf('=') + 1)
+foreach ($environmentLine in $environmentLines) {
+    if ($environmentLine -match '^([^=][^=]*)=(.*)$') {
+        if (-not [string]::Equals($Matches[1], 'Path', [StringComparison]::OrdinalIgnoreCase)) {
+            [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+        }
+    }
+}
+$processEnvironment = [Environment]::GetEnvironmentVariables('Process')
+foreach ($entry in $processEnvironment.GetEnumerator()) {
+    if ([string]::Equals([string]$entry.Key, 'Path', [StringComparison]::OrdinalIgnoreCase)) {
+        [Environment]::SetEnvironmentVariable([string]$entry.Key, $null, 'Process')
+    }
+}
+[Environment]::SetEnvironmentVariable(
+    'Path',
+    "$(Split-Path -Parent $perlExecutable);$developerPath",
+    'Process'
+)
+$validatedGenerator = & $resolverPath -VisualStudioMajor $VisualStudioMajor
+if ($validatedGenerator -ne $cmakeGenerator) {
+    throw "The Visual Studio developer environment changed the selected CMake generator."
 }
 
 function Invoke-VsDevCommand {
@@ -149,7 +231,7 @@ function Invoke-CMake {
     )
 
     Write-Host $Description
-    & cmake @Arguments
+    & $cmakeExecutable @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "$Description failed with exit code $LASTEXITCODE."
     }
@@ -226,7 +308,7 @@ foreach ($archive in $archives) {
     }
 
     Write-Host "Extracting $($archive.Name)..."
-    & tar -xf $archivePath -C $sourceRoot
+    & $tarExecutable -xf $archivePath -C $sourceRoot
     if ($LASTEXITCODE -ne 0) {
         throw "Extraction failed for '$($archive.Name)'."
     }
@@ -236,7 +318,7 @@ $opensslSource = Join-Path $sourceRoot "openssl-$($versions.openssl)"
 $libssh2Source = Join-Path $sourceRoot "libssh2-$($versions.libssh2)"
 $curlSource = Join-Path $sourceRoot "curl-$($versions.curl)"
 
-$opensslCommand = "cd /d `"$opensslSource`" && perl Configure $opensslTarget no-shared no-module no-tests no-apps no-docs no-asm --prefix=`"$InstallRoot`" --openssldir=`"$InstallRoot\ssl`" --libdir=lib && nmake /NOLOGO && nmake /NOLOGO install_sw"
+$opensslCommand = "cd /d `"$opensslSource`" && `"$perlExecutable`" Configure $opensslTarget no-shared no-module no-tests no-apps no-docs no-asm --prefix=`"$InstallRoot`" --openssldir=`"$InstallRoot\ssl`" --libdir=lib && nmake /NOLOGO && nmake /NOLOGO install_sw"
 Invoke-VsDevCommand -Command $opensslCommand -Description "Building OpenSSL $($versions.openssl) for $cmakePlatform"
 
 $libssh2Build = Join-Path $buildRoot "libssh2"

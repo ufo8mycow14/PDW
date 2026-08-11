@@ -22,6 +22,18 @@ int main()
 {
 	using namespace pdw::signal;
 
+	Expect(WasapiThreadResourcesMayBeReleased(WAIT_OBJECT_0),
+		"a signalled capture thread may be torn down");
+	Expect(!WasapiThreadResourcesMayBeReleased(WAIT_TIMEOUT),
+		"a timed-out capture thread must remain quarantined");
+	Expect(!WasapiThreadResourcesMayBeReleased(WAIT_FAILED),
+		"a failed thread wait must remain quarantined");
+	{
+		WasapiCaptureSource idleSource;
+		Expect(idleSource.Stop(), "an idle capture source stops successfully");
+		Expect(idleSource.Stop(), "stopping an idle capture source is idempotent");
+	}
+
 	WAVEFORMATEX pcm16 = {};
 	pcm16.wFormatTag = WAVE_FORMAT_PCM;
 	pcm16.nChannels = 2;

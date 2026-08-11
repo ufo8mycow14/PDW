@@ -529,17 +529,32 @@ void PdwThemeSystemSettingChanged(HWND hWnd)
 	SettingsCenterNotifyThemeChanged();
 }
 
-void PdwThemeSetMode(int mode, HWND owner)
+bool PdwThemeSetMode(int mode, HWND owner)
 {
 	if (mode < PDW_THEME_SYSTEM || mode > PDW_THEME_DARK) mode = PDW_THEME_SYSTEM;
+	const int previousMode = Profile.uiTheme;
 	Profile.uiTheme = mode;
 	RefreshPalette();
 	PdwThemeApplyToMainWindow(ghWnd, hToolbar);
 	EnumThreadWindows(GetCurrentThreadId(), ApplyThreadWindow, 0);
 	SettingsCenterNotifyThemeChanged();
 	set_menu_items();
-	WriteSettings();
+	if (!TryWriteSettings())
+	{
+		Profile.uiTheme = previousMode;
+		RefreshPalette();
+		PdwThemeApplyToMainWindow(ghWnd, hToolbar);
+		EnumThreadWindows(GetCurrentThreadId(), ApplyThreadWindow, 0);
+		SettingsCenterNotifyThemeChanged();
+		set_menu_items();
+		if (owner) InvalidateRect(owner, NULL, TRUE);
+		MessageBoxA(owner ? owner : ghWnd,
+			"PDW could not save the appearance setting. The previous appearance was restored. Choose a writable portable folder or correct PDW.INI permissions, then try again.",
+			"PDW Appearance", MB_OK | MB_ICONERROR);
+		return false;
+	}
 	if (owner) InvalidateRect(owner, NULL, TRUE);
+	return true;
 }
 
 bool PdwThemeIsDark(void) { return g_dark; }
@@ -594,7 +609,12 @@ BOOL FAR PASCAL SettingsHubDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM)
 					if (HIWORD(wParam) == CBN_SELCHANGE)
 					{
 						int mode = static_cast<int>(SendDlgItemMessage(hDlg, IDC_SETTINGS_THEME, CB_GETCURSEL, 0, 0));
-						PdwThemeSetMode(mode, hDlg);
+						if (!PdwThemeSetMode(mode, hDlg))
+						{
+							mode = Profile.uiTheme;
+							SendDlgItemMessage(hDlg, IDC_SETTINGS_THEME,
+								CB_SETCURSEL, mode, 0);
+						}
 						SetDlgItemText(hDlg, IDC_SETTINGS_THEME_STATUS,
 							mode == PDW_THEME_SYSTEM ? "PDW changes automatically with Windows." :
 							"PDW will keep this appearance until you change it.");

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateRange(17, 99)]
+    [ValidateSet(17, 18)]
     [int]$VisualStudioMajor = 18
 )
 

@@ -1,3 +1,6 @@
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 #include "rtl_tcp_source.h"
 
 #include <cmath>
@@ -8,6 +11,21 @@
 
 namespace
 {
+volatile LONG g_injectedWaitCalls = 0;
+
+DWORD WINAPI ReturnWaitTimeout(HANDLE, DWORD)
+{
+	InterlockedIncrement(&g_injectedWaitCalls);
+	return WAIT_TIMEOUT;
+}
+
+DWORD WINAPI ReturnWaitFailed(HANDLE, DWORD)
+{
+	InterlockedIncrement(&g_injectedWaitCalls);
+	SetLastError(ERROR_INVALID_HANDLE);
+	return WAIT_FAILED;
+}
+
 class CollectingSink : public pdw::signal::AudioSampleSink
 {
 public:
@@ -21,6 +39,23 @@ public:
 	std::size_t samples;
 };
 
+struct RtlSdrStopThreadContext
+{
+	pdw::signal::RtlSdrSource* source;
+	HANDLE done;
+	bool result;
+
+	RtlSdrStopThreadContext() : source(NULL), done(NULL), result(false) {}
+};
+
+DWORD WINAPI RtlSdrStopThread(LPVOID context)
+{
+	RtlSdrStopThreadContext* stop = static_cast<RtlSdrStopThreadContext*>(context);
+	stop->result = stop->source->Stop();
+	SetEvent(stop->done);
+	return 0;
+}
+
 void Expect(bool condition, const char* message)
 {
 	if (!condition)
@@ -28,6 +63,166 @@ void Expect(bool condition, const char* message)
 		std::cerr << "FAILED: " << message << '\n';
 		std::exit(1);
 	}
+}
+
+struct RtlTcpLoopbackServer
+{
+	SOCKET listener;
+
+	RtlTcpLoopbackServer() : listener(INVALID_SOCKET) {}
+};
+
+bool SendAll(SOCKET socketValue, const unsigned char* bytes, int byteCount)
+{
+	int sent = 0;
+	while (sent < byteCount)
+	{
+		const int result = send(socketValue,
+			reinterpret_cast<const char*>(bytes + sent), byteCount - sent, 0);
+		if (result <= 0) return false;
+		sent += result;
+	}
+	return true;
+}
+
+DWORD WINAPI RtlTcpLoopbackServerThread(LPVOID context)
+{
+	RtlTcpLoopbackServer* server = static_cast<RtlTcpLoopbackServer*>(context);
+	const SOCKET client = accept(server->listener, NULL, NULL);
+	if (client == INVALID_SOCKET) return 1;
+	const unsigned char header[12] = {
+		'R', 'T', 'L', '0', 0, 0, 0, 1, 0, 0, 0, 0
+	};
+	if (!SendAll(client, header, static_cast<int>(sizeof(header))))
+	{
+		closesocket(client);
+		return 1;
+	}
+	DWORD timeout = 2000;
+	setsockopt(client, SOL_SOCKET, SO_RCVTIMEO,
+		reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+	char commands[64];
+	while (recv(client, commands, static_cast<int>(sizeof(commands)), 0) > 0)
+	{
+	}
+	closesocket(client);
+	return 0;
+}
+
+void ExerciseRtlTcpStopQuarantine()
+{
+	using namespace pdw::signal;
+	WSADATA sockets = {};
+	Expect(WSAStartup(MAKEWORD(2, 2), &sockets) == 0,
+		"RTL-TCP lifecycle test initializes Windows sockets");
+
+	RtlTcpLoopbackServer server;
+	server.listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	Expect(server.listener != INVALID_SOCKET,
+		"RTL-TCP lifecycle test creates its loopback listener");
+	sockaddr_in address = {};
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	address.sin_port = 0;
+	Expect(bind(server.listener, reinterpret_cast<const sockaddr*>(&address),
+		static_cast<int>(sizeof(address))) == 0,
+		"RTL-TCP lifecycle test binds its loopback listener");
+	Expect(listen(server.listener, 1) == 0,
+		"RTL-TCP lifecycle test listens on loopback");
+	int addressLength = static_cast<int>(sizeof(address));
+	Expect(getsockname(server.listener, reinterpret_cast<sockaddr*>(&address),
+		&addressLength) == 0,
+		"RTL-TCP lifecycle test resolves its allocated port");
+	HANDLE serverThread = CreateThread(NULL, 0, RtlTcpLoopbackServerThread,
+		&server, 0, NULL);
+	Expect(serverThread != NULL,
+		"RTL-TCP lifecycle test starts its loopback server");
+
+	RtlTcpConfig config;
+	config.host = "127.0.0.1";
+	config.port = ntohs(address.sin_port);
+	CollectingSink sink;
+	RtlTcpSource source;
+	Expect(source.Stop(), "an idle RTL-TCP source stops successfully");
+	Expect(source.Start(config, &sink), "RTL-TCP source starts against loopback");
+
+	InterlockedExchange(&g_injectedWaitCalls, 0);
+	SetRtlStopThreadWaitFunctionForTesting(ReturnWaitTimeout);
+	Expect(!source.Stop(), "RTL-TCP stop reports an injected thread timeout");
+	Expect(source.state() == RTL_TCP_FAILED,
+		"RTL-TCP timeout moves the source to failed quarantine");
+	Expect(source.lastError().find("quarantined") != std::string::npos,
+		"RTL-TCP timeout retains an actionable quarantine error");
+	Expect(!source.Start(config, &sink),
+		"RTL-TCP source cannot be reused before a confirmed thread exit");
+	Expect(InterlockedCompareExchange(&g_injectedWaitCalls, 0, 0) >= 2,
+		"RTL-TCP restart rechecks the quarantined thread");
+
+	SetRtlStopThreadWaitFunctionForTesting(NULL);
+	Expect(source.Stop(),
+		"RTL-TCP quarantine releases resources after a confirmed thread exit");
+	Expect(WaitForSingleObject(serverThread, 5000) == WAIT_OBJECT_0,
+		"RTL-TCP loopback server observes source shutdown");
+	DWORD serverExitCode = 1;
+	Expect(GetExitCodeThread(serverThread, &serverExitCode) != FALSE &&
+		serverExitCode == 0,
+		"RTL-TCP loopback server completed without an error");
+	CloseHandle(serverThread);
+	closesocket(server.listener);
+	WSACleanup();
+}
+
+void ExerciseRtlSdrCancellationOwnership(pdw::signal::RtlSdrSource& source,
+	const char* mockLibraryPath)
+{
+	typedef void (__cdecl *MockControlFunction)();
+	typedef LONG (__cdecl *MockStateFunction)();
+	HMODULE controlLibrary = LoadLibraryA(mockLibraryPath);
+	Expect(controlLibrary != NULL,
+		"RTL-SDR lifecycle test pins its mock control library");
+	MockControlFunction blockCancel = reinterpret_cast<MockControlFunction>(
+		GetProcAddress(controlLibrary, "rtlsdr_test_block_cancel_return"));
+	MockControlFunction allowCancel = reinterpret_cast<MockControlFunction>(
+		GetProcAddress(controlLibrary, "rtlsdr_test_allow_cancel_return"));
+	MockStateFunction cancelEntered = reinterpret_cast<MockStateFunction>(
+		GetProcAddress(controlLibrary, "rtlsdr_test_cancel_entered"));
+	MockStateFunction readAsyncReturning = reinterpret_cast<MockStateFunction>(
+		GetProcAddress(controlLibrary, "rtlsdr_test_read_async_returning"));
+	MockStateFunction closeCount = reinterpret_cast<MockStateFunction>(
+		GetProcAddress(controlLibrary, "rtlsdr_test_close_count"));
+	Expect(blockCancel && allowCancel && cancelEntered && readAsyncReturning && closeCount,
+		"RTL-SDR lifecycle mock exposes cancellation ownership controls");
+
+	blockCancel();
+	RtlSdrStopThreadContext stop;
+	stop.source = &source;
+	stop.done = CreateEvent(NULL, TRUE, FALSE, NULL);
+	Expect(stop.done != NULL,
+		"RTL-SDR lifecycle test creates its stop completion event");
+	HANDLE stopThread = CreateThread(NULL, 0, RtlSdrStopThread, &stop, 0, NULL);
+	Expect(stopThread != NULL,
+		"RTL-SDR lifecycle test starts its stop worker");
+
+	const DWORD waitStarted = GetTickCount();
+	while (!cancelEntered() && GetTickCount() - waitStarted < 2000) Sleep(1);
+	Expect(cancelEntered() != 0,
+		"RTL-SDR cancellation entered the injected blocking call");
+	while (!readAsyncReturning() && GetTickCount() - waitStarted < 2000) Sleep(1);
+	Expect(readAsyncReturning() != 0,
+		"RTL-SDR device worker reached its post-capture cleanup boundary");
+	Expect(closeCount() == 0,
+		"RTL-SDR device cannot close while cancellation still owns its DLL call");
+
+	allowCancel();
+	Expect(WaitForSingleObject(stop.done, 5000) == WAIT_OBJECT_0,
+		"RTL-SDR stop completes after cancellation ownership is released");
+	Expect(WaitForSingleObject(stopThread, 5000) == WAIT_OBJECT_0 && stop.result,
+		"RTL-SDR stop confirms the device thread exited");
+	Expect(closeCount() == 1,
+		"RTL-SDR device closes exactly once after cancellation returns");
+	CloseHandle(stopThread);
+	CloseHandle(stop.done);
+	FreeLibrary(controlLibrary);
 }
 
 float ClampNormalizedForReference(float value)
@@ -138,6 +333,14 @@ double FskSignAccuracy(const std::vector<float>& audio,
 int main(int argc, char** argv)
 {
 	using namespace pdw::signal;
+	Expect(RtlThreadResourcesMayBeReleased(WAIT_OBJECT_0),
+		"a signalled RTL source thread may be torn down");
+	Expect(!RtlThreadResourcesMayBeReleased(WAIT_TIMEOUT),
+		"a timed-out RTL source thread must remain quarantined");
+	Expect(!RtlThreadResourcesMayBeReleased(WAIT_FAILED),
+		"a failed RTL source wait must remain quarantined");
+	ExerciseRtlTcpStopQuarantine();
+
 	const std::uint32_t iqRate = 960000;
 	const std::uint32_t audioRate = 48000;
 	RtlFmDemodulator demodulator(iqRate, audioRate);
@@ -242,7 +445,28 @@ int main(int argc, char** argv)
 			GetTickCount() - waitStarted < 2000) Sleep(5);
 		Expect(InterlockedCompareExchange(&sink.callbacks, 0, 0) > 0,
 			"RTL-SDR callback reaches the audio sink");
-		source.Stop();
+		ExerciseRtlSdrCancellationOwnership(source, argv[1]);
+		Expect(source.Start(config, 0, &sink),
+			"RTL-SDR source restarts after cancellation ownership test");
+
+		InterlockedExchange(&g_injectedWaitCalls, 0);
+		SetRtlStopThreadWaitFunctionForTesting(ReturnWaitFailed);
+		Expect(!source.Stop(), "RTL-SDR stop reports an injected wait failure");
+		Expect(source.state() == RTL_TCP_FAILED,
+			"RTL-SDR wait failure moves the source to failed quarantine");
+		Expect(source.lastError().find("quarantined") != std::string::npos,
+			"RTL-SDR wait failure retains an actionable quarantine error");
+		Expect(!source.Start(config, 0, &sink),
+			"RTL-SDR source cannot be reused before a confirmed thread exit");
+		Expect(InterlockedCompareExchange(&g_injectedWaitCalls, 0, 0) >= 2,
+			"RTL-SDR restart rechecks the quarantined thread");
+
+		SetRtlStopThreadWaitFunctionForTesting(NULL);
+		Expect(source.Stop(),
+			"RTL-SDR quarantine releases resources after a confirmed thread exit");
+		Expect(source.Start(config, 0, &sink),
+			"RTL-SDR source can restart after confirmed quarantine cleanup");
+		Expect(source.Stop(), "mock RTL-SDR stops after quarantine recovery");
 		Expect(source.state() == RTL_TCP_STOPPED, "mock RTL-SDR stops cleanly");
 	}
 

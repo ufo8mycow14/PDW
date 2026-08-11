@@ -49,9 +49,12 @@ or packaging. Native metadata and UI still require post-build inspection.
   and both-architecture validation.
 - Pin and SHA-256 verify native source archives. Never silently substitute a
   downloaded binary or architecture.
-- Use Windows Credential Manager for secrets and redact errors. Do not store
-  secrets or decoded traffic in source, INIs, logs, packages, diagnostics,
-  tests, screenshots, or chat.
+- Use Windows Credential Manager for every supported output secret and redact
+  errors. Legacy SMTP password storage in an operator-owned `PDW.INI` remains
+  a narrow compatibility exception: release defaults and packages keep it
+  blank, backups must be protected, and operators should clear or migrate it
+  when practical. Never place secrets or decoded traffic in source, release
+  INI defaults, logs, packages, diagnostics, tests, screenshots, or chat.
 - Keep secure transport validation mandatory. Prefer FTPS/SFTP over classic
   FTP and document FTP's plaintext risk.
 - Keep network/data outputs disabled by default and isolated behind bounded
