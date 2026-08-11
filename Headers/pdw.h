@@ -39,6 +39,8 @@
 
 #define PDW_TIMER 101
 
+#include "output_routes.h"
+
 enum FILTER_TYPE {	UNUSED_FILTER  = 0,
 					FLEX_FILTER    = 1,
 					POCSAG_FILTER  = 2,
@@ -50,6 +52,9 @@ enum FILTER_TYPE {	UNUSED_FILTER  = 0,
 typedef struct
 {
 	long long	 directory_id;			// Capcode Directory row backing this runtime filter
+	int			 filter_to_pane;		// Match is copied to PDW's lower Filtered pane
+	int			 output_routing_configured; // Directory rule owns explicit output choices
+	unsigned int output_routes;		// PDW_OUTPUT_ROUTE bits; global settings remain authoritative
 	FILTER_TYPE  type;
 	char		 capcode[FILTER_CAPCODE_LEN+1];
 	char		 label[FILTER_LABEL_LEN+1];

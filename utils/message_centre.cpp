@@ -136,6 +136,63 @@ namespace
 		SendMessage(combo, CB_SETCURSEL, 0, 0);
 	}
 
+	void PopulateAgencyPositionCombo(HWND combo)
+	{
+		static const char* const positions[] = {
+			"Do not include in display name",
+			"Before display name",
+			"After display name"
+		};
+		for (std::size_t index = 0; index < _countof(positions); ++index)
+			SendMessageA(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(positions[index]));
+		SendMessage(combo, CB_SETCURSEL, PDW_AGENCY_LABEL_HIDDEN, 0);
+	}
+
+	const int kOutputControls[] = {
+		IDC_CAPCODE_OUTPUT_EMAIL, IDC_CAPCODE_OUTPUT_APPRISE,
+		IDC_CAPCODE_OUTPUT_PUBLISH, IDC_CAPCODE_OUTPUT_MQTT,
+		IDC_CAPCODE_OUTPUT_SQLITE, IDC_CAPCODE_OUTPUT_MYSQL,
+		IDC_CAPCODE_OUTPUT_TELNET, IDC_CAPCODE_OUTPUT_WINDOWS
+	};
+
+	const unsigned int kOutputBits[] = {
+		PDW_OUTPUT_ROUTE_EMAIL, PDW_OUTPUT_ROUTE_APPRISE,
+		PDW_OUTPUT_ROUTE_PUBLISHING, PDW_OUTPUT_ROUTE_MQTT,
+		PDW_OUTPUT_ROUTE_SQLITE, PDW_OUTPUT_ROUTE_MYSQL_ODBC,
+		PDW_OUTPUT_ROUTE_TELNET, PDW_OUTPUT_ROUTE_WINDOWS
+	};
+
+	unsigned int SelectedOutputRoutes(HWND dialog)
+	{
+		if (IsDlgButtonChecked(dialog, IDC_CAPCODE_SEND_OUTPUTS) != BST_CHECKED) return 0;
+		unsigned int routes = 0;
+		for (std::size_t index = 0; index < _countof(kOutputControls); ++index)
+			if (IsDlgButtonChecked(dialog, kOutputControls[index]) == BST_CHECKED)
+				routes |= kOutputBits[index];
+		return routes;
+	}
+
+	void SelectOutputRoutes(HWND dialog, unsigned int routes, bool routingConfigured = true)
+	{
+		CheckDlgButton(dialog, IDC_CAPCODE_SEND_OUTPUTS,
+			routingConfigured && routes ? BST_CHECKED : BST_UNCHECKED);
+		for (std::size_t index = 0; index < _countof(kOutputControls); ++index)
+			CheckDlgButton(dialog, kOutputControls[index],
+				(routes & kOutputBits[index]) ? BST_CHECKED : BST_UNCHECKED);
+	}
+
+	void UpdateEntryControlEnables(HWND dialog)
+	{
+		const BOOL send = IsDlgButtonChecked(dialog, IDC_CAPCODE_SEND_OUTPUTS) == BST_CHECKED;
+		for (std::size_t index = 0; index < _countof(kOutputControls); ++index)
+			EnableWindow(GetDlgItem(dialog, kOutputControls[index]), send);
+		const BOOL separate = IsDlgButtonChecked(dialog, IDC_CAPCODE_SEP_ENABLE) == BST_CHECKED;
+		EnableWindow(GetDlgItem(dialog, IDC_CAPCODE_SEP_FILE1), separate);
+		EnableWindow(GetDlgItem(dialog, IDC_CAPCODE_SEP_FILE2), separate);
+		EnableWindow(GetDlgItem(dialog, IDC_CAPCODE_SEP_FILE3), separate);
+		EnableWindow(GetDlgItem(dialog, IDC_CAPCODE_SEP_BROWSE), separate);
+	}
+
 	void SelectFilterType(HWND combo, int filterType)
 	{
 		SendMessage(combo, CB_SETCURSEL, filterType >= 0 && filterType <= 6 ? filterType : 0, 0);
@@ -192,21 +249,22 @@ namespace
 		SetDlgItemTextA(dialog, IDC_CAPCODE_AGENCY, "");
 		SetDlgItemTextA(dialog, IDC_CAPCODE_NOTES, "");
 		SetDlgItemTextA(dialog, IDC_CAPCODE_FILTER_TEXT, "");
-		SetDlgItemTextA(dialog, IDC_CAPCODE_FILTER_LABEL, "");
 		SetDlgItemTextA(dialog, IDC_CAPCODE_SEP_FILE1, "");
 		SetDlgItemTextA(dialog, IDC_CAPCODE_SEP_FILE2, "");
 		SetDlgItemTextA(dialog, IDC_CAPCODE_SEP_FILE3, "");
-		CheckDlgButton(dialog, IDC_CAPCODE_ENABLED, BST_CHECKED);
+		CheckDlgButton(dialog, IDC_CAPCODE_FILTER, BST_CHECKED);
 		CheckDlgButton(dialog, IDC_CAPCODE_REJECT, BST_UNCHECKED);
 		CheckDlgButton(dialog, IDC_CAPCODE_MATCH_EXACT, BST_UNCHECKED);
 		CheckDlgButton(dialog, IDC_CAPCODE_SHOW_LABEL, BST_CHECKED);
-		CheckDlgButton(dialog, IDC_CAPCODE_COMMAND, BST_UNCHECKED);
 		CheckDlgButton(dialog, IDC_CAPCODE_MONITOR_ONLY, BST_UNCHECKED);
-		CheckDlgButton(dialog, IDC_CAPCODE_EMAIL, BST_UNCHECKED);
+		SelectOutputRoutes(dialog, 0);
 		CheckDlgButton(dialog, IDC_CAPCODE_SEP_ENABLE, BST_UNCHECKED);
+		SendDlgItemMessage(dialog, IDC_CAPCODE_AGENCY_POSITION, CB_SETCURSEL,
+			PDW_AGENCY_LABEL_HIDDEN, 0);
 		SendDlgItemMessage(dialog, IDC_CAPCODE_LABEL_COLOR, CB_SETCURSEL, 0, 0);
 		SetDlgItemTextA(dialog, IDC_CAPCODE_HIT_COUNTER, "Number of hits: 0");
 		state->selectedColor = RGB(0, 102, 204);
+		UpdateEntryControlEnables(dialog);
 		SetDlgItemTextA(dialog, IDC_CAPCODE_STATUS,
 			"Enter a capcode filter, or choose Text and leave Capcode blank.");
 	}
@@ -233,16 +291,15 @@ namespace
 			InsertListText(list, static_cast<int>(index), 4,
 				entry.filterType >= 0 && entry.filterType <= 6 ? types[entry.filterType] : "Auto");
 			InsertListText(list, static_cast<int>(index), 5, entry.matchText);
-			InsertListText(list, static_cast<int>(index), 6,
-				entry.filterLabel.empty() ? entry.displayName : entry.filterLabel);
-			InsertListText(list, static_cast<int>(index), 7, entry.enabled ? "Yes" : "No");
+			InsertListText(list, static_cast<int>(index), 6, entry.filterEnabled ? "Yes" : "No");
+			InsertListText(list, static_cast<int>(index), 7,
+				entry.outputRoutingConfigured ? (entry.outputRoutes ? "Yes" : "No") : "Legacy");
 			char hits[32] = {};
 			snprintf(hits, sizeof(hits), "%u", entry.hitCounter);
 			InsertListText(list, static_cast<int>(index), 8, hits);
-			InsertListText(list, static_cast<int>(index), 9, entry.commandEnabled ? "Yes" : "");
-			InsertListText(list, static_cast<int>(index), 10, entry.monitorOnly ? "Yes" : "");
-			InsertListText(list, static_cast<int>(index), 11, entry.separateFileEnabled ? "Yes" : "");
-			InsertListText(list, static_cast<int>(index), 12, entry.reject ? "Yes" : "");
+			InsertListText(list, static_cast<int>(index), 9, entry.monitorOnly ? "Yes" : "");
+			InsertListText(list, static_cast<int>(index), 10, entry.separateFileEnabled ? "Yes" : "");
+			InsertListText(list, static_cast<int>(index), 11, entry.reject ? "Yes" : "");
 		}
 		std::ostringstream status;
 		status << state->entries.size() << " capcode directory entries.";
@@ -262,18 +319,20 @@ namespace
 		SetUtf8Control(dialog, IDC_CAPCODE_AGENCY, entry.agency);
 		SetUtf8Control(dialog, IDC_CAPCODE_NOTES, entry.notes);
 		SetUtf8Control(dialog, IDC_CAPCODE_FILTER_TEXT, entry.matchText);
-		SetUtf8Control(dialog, IDC_CAPCODE_FILTER_LABEL, entry.filterLabel);
 		SetUtf8Control(dialog, IDC_CAPCODE_SEP_FILE1, entry.separateFile1);
 		SetUtf8Control(dialog, IDC_CAPCODE_SEP_FILE2, entry.separateFile2);
 		SetUtf8Control(dialog, IDC_CAPCODE_SEP_FILE3, entry.separateFile3);
-		CheckDlgButton(dialog, IDC_CAPCODE_ENABLED, entry.enabled ? BST_CHECKED : BST_UNCHECKED);
+		CheckDlgButton(dialog, IDC_CAPCODE_FILTER, entry.filterEnabled ? BST_CHECKED : BST_UNCHECKED);
 		CheckDlgButton(dialog, IDC_CAPCODE_REJECT, entry.reject ? BST_CHECKED : BST_UNCHECKED);
 		CheckDlgButton(dialog, IDC_CAPCODE_MATCH_EXACT, entry.matchExactMessage ? BST_CHECKED : BST_UNCHECKED);
 		CheckDlgButton(dialog, IDC_CAPCODE_SHOW_LABEL, entry.showFilterLabel ? BST_CHECKED : BST_UNCHECKED);
-		CheckDlgButton(dialog, IDC_CAPCODE_COMMAND, entry.commandEnabled ? BST_CHECKED : BST_UNCHECKED);
 		CheckDlgButton(dialog, IDC_CAPCODE_MONITOR_ONLY, entry.monitorOnly ? BST_CHECKED : BST_UNCHECKED);
-		CheckDlgButton(dialog, IDC_CAPCODE_EMAIL, entry.emailEnabled ? BST_CHECKED : BST_UNCHECKED);
+		SelectOutputRoutes(dialog, entry.outputRoutes, entry.outputRoutingConfigured);
 		CheckDlgButton(dialog, IDC_CAPCODE_SEP_ENABLE, entry.separateFileEnabled ? BST_CHECKED : BST_UNCHECKED);
+		SendDlgItemMessage(dialog, IDC_CAPCODE_AGENCY_POSITION, CB_SETCURSEL,
+			entry.agencyLabelPosition >= PDW_AGENCY_LABEL_HIDDEN &&
+			entry.agencyLabelPosition <= PDW_AGENCY_LABEL_AFTER ?
+			entry.agencyLabelPosition : PDW_AGENCY_LABEL_HIDDEN, 0);
 		SendDlgItemMessage(dialog, IDC_CAPCODE_LABEL_COLOR, CB_SETCURSEL,
 			(entry.labelColor >= 0 && entry.labelColor <= 16) ? entry.labelColor : 0, 0);
 		std::ostringstream hitText;
@@ -282,6 +341,7 @@ namespace
 			hitText << " - last: " << entry.lastHitDate << ' ' << entry.lastHitTime;
 		SetUtf8Control(dialog, IDC_CAPCODE_HIT_COUNTER, hitText.str());
 		state->selectedColor = entry.color;
+		UpdateEntryControlEnables(dialog);
 	}
 
 	bool ChooseCsvPath(HWND dialog, bool save, char* path, std::size_t pathSize)
@@ -786,8 +846,8 @@ namespace
 	{
 		HWND list = GetDlgItem(dialog, IDC_CAPCODE_LIST);
 		const bool show = Checked(dialog, IDC_FILTERSEXTRA);
-		const int widths[4] = { 46, 46, 46, 52 };
-		for (int column = 9; column <= 12; ++column)
+		const int widths[3] = { 46, 46, 52 };
+		for (int column = 9; column <= 11; ++column)
 			ListView_SetColumnWidth(list, column, show ? widths[column - 9] : 0);
 	}
 
@@ -844,7 +904,8 @@ namespace
 		strcpy(Profile.ColFilterfile, selectedColumns);
 		WriteSettings();
 		UpdateDirectoryExtraColumns(dialog);
-		SetDlgItemTextA(dialog, IDC_CAPCODE_STATUS, "Directory and filter options saved.");
+		SetDlgItemTextA(dialog, IDC_CAPCODE_STATUS,
+			"Shared CSV, display, command and general settings saved.");
 		return true;
 	}
 
@@ -886,14 +947,17 @@ namespace
 		entry.agency = ControlText(dialog, IDC_CAPCODE_AGENCY);
 		entry.notes = ControlText(dialog, IDC_CAPCODE_NOTES);
 		entry.matchText = ControlText(dialog, IDC_CAPCODE_FILTER_TEXT);
-		entry.filterLabel = ControlText(dialog, IDC_CAPCODE_FILTER_LABEL);
-		entry.enabled = Checked(dialog, IDC_CAPCODE_ENABLED);
+		entry.filterLabel = entry.displayName;
+		entry.enabled = true;
+		entry.filterEnabled = Checked(dialog, IDC_CAPCODE_FILTER);
+		entry.outputRoutingConfigured = true;
+		entry.outputRoutes = SelectedOutputRoutes(dialog);
 		entry.reject = Checked(dialog, IDC_CAPCODE_REJECT);
 		entry.matchExactMessage = Checked(dialog, IDC_CAPCODE_MATCH_EXACT);
 		entry.showFilterLabel = Checked(dialog, IDC_CAPCODE_SHOW_LABEL);
-		entry.commandEnabled = Checked(dialog, IDC_CAPCODE_COMMAND);
+		entry.commandEnabled = true;
 		entry.monitorOnly = Checked(dialog, IDC_CAPCODE_MONITOR_ONLY);
-		entry.emailEnabled = Checked(dialog, IDC_CAPCODE_EMAIL);
+		entry.emailEnabled = (entry.outputRoutes & PDW_OUTPUT_ROUTE_EMAIL) != 0;
 		entry.separateFileEnabled = Checked(dialog, IDC_CAPCODE_SEP_ENABLE);
 		entry.separateFile1 = ControlText(dialog, IDC_CAPCODE_SEP_FILE1);
 		entry.separateFile2 = ControlText(dialog, IDC_CAPCODE_SEP_FILE2);
@@ -901,6 +965,11 @@ namespace
 		const int labelColor = static_cast<int>(SendDlgItemMessage(dialog,
 			IDC_CAPCODE_LABEL_COLOR, CB_GETCURSEL, 0, 0));
 		entry.labelColor = labelColor >= 0 && labelColor <= 16 ? labelColor : 0;
+		const int agencyPosition = static_cast<int>(SendDlgItemMessage(dialog,
+			IDC_CAPCODE_AGENCY_POSITION, CB_GETCURSEL, 0, 0));
+		entry.agencyLabelPosition = agencyPosition >= PDW_AGENCY_LABEL_HIDDEN &&
+			agencyPosition <= PDW_AGENCY_LABEL_AFTER ?
+			agencyPosition : PDW_AGENCY_LABEL_HIDDEN;
 		entry.color = state->selectedColor;
 		return entry;
 	}
@@ -932,21 +1001,20 @@ BOOL FAR PASCAL CapcodeDirectoryDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPA
 			AddListColumn(list, 2, "Display name", 150);
 			AddListColumn(list, 3, "Agency / service", 130);
 			AddListColumn(list, 4, "Filter type", 85);
-			AddListColumn(list, 5, "Message text", 150);
-			AddListColumn(list, 6, "Label", 150);
-			AddListColumn(list, 7, "Enabled", 60);
+			AddListColumn(list, 5, "Filter by keywords", 150);
+			AddListColumn(list, 6, "Filter", 54);
+			AddListColumn(list, 7, "Outputs", 62);
 			AddListColumn(list, 8, "Hits", 55);
-			AddListColumn(list, 9, "CMD", 46);
-			AddListColumn(list, 10, "MON", 46);
-			AddListColumn(list, 11, "SEP", 46);
-			AddListColumn(list, 12, "Reject", 52);
+			AddListColumn(list, 9, "MON", 46);
+			AddListColumn(list, 10, "SEP", 46);
+			AddListColumn(list, 11, "Reject", 52);
 			PopulateProtocolCombo(GetDlgItem(hDlg, IDC_CAPCODE_PROTOCOL), false);
 			PopulateFilterTypeCombo(GetDlgItem(hDlg, IDC_CAPCODE_FILTER_TYPE));
 			PopulateLabelColorCombo(GetDlgItem(hDlg, IDC_CAPCODE_LABEL_COLOR));
+			PopulateAgencyPositionCombo(GetDlgItem(hDlg, IDC_CAPCODE_AGENCY_POSITION));
 			SendDlgItemMessage(hDlg, IDC_CAPCODE_ADDRESS, EM_LIMITTEXT, 18, 0);
 			SendDlgItemMessage(hDlg, IDC_CAPCODE_NAME, EM_LIMITTEXT, FILTER_LABEL_LEN, 0);
 			SendDlgItemMessage(hDlg, IDC_CAPCODE_FILTER_TEXT, EM_LIMITTEXT, FILTER_TEXT_LEN, 0);
-			SendDlgItemMessage(hDlg, IDC_CAPCODE_FILTER_LABEL, EM_LIMITTEXT, FILTER_LABEL_LEN, 0);
 			SendDlgItemMessage(hDlg, IDC_CAPCODE_SEP_FILE1, EM_LIMITTEXT, FILTER_FILE_LEN, 0);
 			SendDlgItemMessage(hDlg, IDC_CAPCODE_SEP_FILE2, EM_LIMITTEXT, FILTER_FILE_LEN, 0);
 			SendDlgItemMessage(hDlg, IDC_CAPCODE_SEP_FILE3, EM_LIMITTEXT, FILTER_FILE_LEN, 0);
@@ -955,6 +1023,7 @@ BOOL FAR PASCAL CapcodeDirectoryDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPA
 			SendDlgItemMessage(hDlg, IDC_FILTERCMDARGS, EM_LIMITTEXT, MAX_FILE_LEN, 0);
 			InitializeDirectoryOptions(hDlg);
 			UpdateDirectoryOptionEnables(hDlg);
+			UpdateEntryControlEnables(hDlg);
 			UpdateDirectoryExtraColumns(hDlg);
 			ClearCapcodeEditor(hDlg, state);
 			RefreshCapcodes(hDlg, state);
@@ -1006,6 +1075,17 @@ BOOL FAR PASCAL CapcodeDirectoryDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPA
 				case IDC_FILTERFILEEN:
 				case IDC_FILTERCMDEN:
 					UpdateDirectoryOptionEnables(hDlg); return TRUE;
+				case IDC_CAPCODE_SEND_OUTPUTS:
+				case IDC_CAPCODE_SEP_ENABLE:
+					UpdateEntryControlEnables(hDlg); return TRUE;
+				case IDC_CAPCODE_FILTER:
+					if (Checked(hDlg, IDC_CAPCODE_FILTER))
+						CheckDlgButton(hDlg, IDC_CAPCODE_MONITOR_ONLY, BST_UNCHECKED);
+					return TRUE;
+				case IDC_CAPCODE_MONITOR_ONLY:
+					if (Checked(hDlg, IDC_CAPCODE_MONITOR_ONLY))
+						CheckDlgButton(hDlg, IDC_CAPCODE_FILTER, BST_UNCHECKED);
+					return TRUE;
 				case IDC_FILTERBROWSE:
 					ChooseOutputCsv(hDlg, IDC_FILTERFILE); return TRUE;
 				case IDC_FILTERCMDBROWSE:
@@ -1033,6 +1113,12 @@ BOOL FAR PASCAL CapcodeDirectoryDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPA
 				case IDC_CAPCODE_SAVE:
 				{
 					pdw::archive::CapcodeEntry entry = EntryFromDialog(hDlg, state);
+					if (Checked(hDlg, IDC_CAPCODE_SEND_OUTPUTS) && entry.outputRoutes == 0)
+					{
+						MessageBoxA(hDlg, "Select at least one enabled output destination, or clear Send to enabled outputs.",
+							"PDW Capcode Directory", MB_OK | MB_ICONWARNING);
+						return TRUE;
+					}
 					if (entry.separateFileEnabled && entry.separateFile1.empty() &&
 						entry.separateFile2.empty() && entry.separateFile3.empty())
 					{
@@ -1053,12 +1139,9 @@ BOOL FAR PASCAL CapcodeDirectoryDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPA
 				case IDC_CAPCODE_HIT_RESET:
 				{
 					if (state->editingId <= 0) return TRUE;
-					pdw::archive::CapcodeEntry entry = EntryFromDialog(hDlg, state);
-					entry.hitCounter = 0;
-					entry.lastHitDate.clear();
-					entry.lastHitTime.clear();
 					std::string error;
-					if (!MessageArchiveUpsertCapcode(entry, error) || !ReloadDirectoryRuntime(hDlg))
+					if (!MessageArchiveResetCapcodeHitCounter(state->editingId, error) ||
+						!ReloadDirectoryRuntime(hDlg))
 					{
 						if (!error.empty()) SetUtf8Control(hDlg, IDC_CAPCODE_STATUS, error);
 						return TRUE;

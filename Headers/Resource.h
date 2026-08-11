@@ -640,7 +640,7 @@
 #define IDC_CAPCODE_NAME           1524
 #define IDC_CAPCODE_AGENCY         1525
 #define IDC_CAPCODE_NOTES          1526
-#define IDC_CAPCODE_ENABLED        1527
+#define IDC_CAPCODE_FILTER         1527
 #define IDC_CAPCODE_COLOR          1528
 #define IDC_CAPCODE_SAVE           1529
 #define IDC_CAPCODE_NEW            1530
@@ -650,13 +650,13 @@
 #define IDC_CAPCODE_STATUS         1534
 #define IDC_CAPCODE_FILTER_TYPE    1591
 #define IDC_CAPCODE_FILTER_TEXT    1592
-#define IDC_CAPCODE_FILTER_LABEL   1593
+#define IDC_CAPCODE_FILTER_LABEL   1593 // retained for resource compatibility; no longer rendered
 #define IDC_CAPCODE_MATCH_EXACT    1594
 #define IDC_CAPCODE_SHOW_LABEL     1595
 #define IDC_CAPCODE_REJECT         1596
-#define IDC_CAPCODE_COMMAND        1597
+#define IDC_CAPCODE_COMMAND        1597 // retained for resource compatibility; no longer rendered
 #define IDC_CAPCODE_MONITOR_ONLY   1598
-#define IDC_CAPCODE_EMAIL          1599
+#define IDC_CAPCODE_SEND_OUTPUTS   1599
 #define IDC_CAPCODE_HIT_COUNTER    1600
 #define IDC_CAPCODE_HIT_RESET      1601
 #define IDC_CAPCODE_SEP_ENABLE     1602
@@ -666,6 +666,15 @@
 #define IDC_CAPCODE_SEP_BROWSE     1606
 #define IDC_CAPCODE_MULTIWORD_HELP 1607
 #define IDC_CAPCODE_LABEL_COLOR    1608
+#define IDC_CAPCODE_AGENCY_POSITION 1609
+#define IDC_CAPCODE_OUTPUT_EMAIL   1610
+#define IDC_CAPCODE_OUTPUT_APPRISE 1611
+#define IDC_CAPCODE_OUTPUT_PUBLISH 1612
+#define IDC_CAPCODE_OUTPUT_MQTT    1613
+#define IDC_CAPCODE_OUTPUT_SQLITE  1614
+#define IDC_CAPCODE_OUTPUT_MYSQL   1615
+#define IDC_CAPCODE_OUTPUT_TELNET  1616
+#define IDC_CAPCODE_OUTPUT_WINDOWS 1617
 
 #define IDC_HISTORY_ENABLE         1540
 #define IDC_HISTORY_MESSAGE        1541
@@ -735,7 +744,7 @@
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        1600
 #define _APS_NEXT_COMMAND_VALUE         40003
-#define _APS_NEXT_CONTROL_VALUE         1610
+#define _APS_NEXT_CONTROL_VALUE         1618
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

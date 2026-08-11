@@ -141,9 +141,128 @@ int main()
 	alias.address = "1234567";
 	alias.displayName = "Local Station";
 	alias.agency = "Local Test";
+	alias.filterEnabled = false;
+	alias.outputRoutes = PDW_OUTPUT_ROUTE_MQTT | PDW_OUTPUT_ROUTE_WINDOWS;
+	alias.agencyLabelPosition = PDW_AGENCY_LABEL_BEFORE;
 	const bool aliasInserted = MessageArchiveUpsertCapcode(alias, error);
 	if (!aliasInserted) std::cerr << "archive manager error: " << error << '\n';
 	Expect(aliasInserted, "capcode cache source inserted");
+	Expect(MessageArchiveReloadRuntimeFilters(error) && Profile.filters.size() == 1 &&
+		Profile.filters[0].filter_to_pane == 0 &&
+		Profile.filters[0].output_routing_configured == 1 &&
+		Profile.filters[0].output_routes == alias.outputRoutes &&
+		std::string(Profile.filters[0].label) == "Local Test - Local Station",
+		"directory rule keeps lower-pane filtering separate from selected enabled outputs");
+	pdw::archive::CapcodeEntry monitorAlias;
+	monitorAlias.protocol = "POCSAG";
+	monitorAlias.address = "7654321";
+	monitorAlias.displayName = "Monitor Command Rule";
+	monitorAlias.filterEnabled = false;
+	monitorAlias.outputRoutes = 0;
+	monitorAlias.monitorOnly = true;
+	Expect(MessageArchiveUpsertCapcode(monitorAlias, error) &&
+		MessageArchiveReloadRuntimeFilters(error) && Profile.filters.size() == 2,
+		"an active rule without Filter or outputs still reaches monitor and shared command handling");
+	bool monitorRuleLoaded = false;
+	for (FILTERLIST::const_iterator filter = Profile.filters.begin();
+		filter != Profile.filters.end(); ++filter)
+	{
+		if (std::string(filter->capcode) == "7654321")
+			monitorRuleLoaded = filter->monitor_only != 0 && filter->filter_to_pane == 0;
+	}
+	Expect(monitorRuleLoaded, "Monitor only remains active without lower-pane or output routing");
+	pdw::archive::CapcodeEntry specificAlias(alias);
+	specificAlias.displayName = "Zulu Traffic Rule";
+	specificAlias.filterType = POCSAG_FILTER;
+	specificAlias.matchText = "Traffic";
+	specificAlias.filterEnabled = false;
+	specificAlias.outputRoutes = PDW_OUTPUT_ROUTE_EMAIL;
+	Expect(MessageArchiveUpsertCapcode(specificAlias, error) &&
+		MessageArchiveReloadRuntimeFilters(error) && Profile.filters.size() == 3,
+		"a keyword-specific rule can coexist with a broad rule for the same capcode");
+	int broadRuleIndex = -1;
+	int specificRuleIndex = -1;
+	for (std::size_t index = 0; index < Profile.filters.size(); ++index)
+	{
+		if (std::string(Profile.filters[index].capcode) != "1234567") continue;
+		if (std::string(Profile.filters[index].text) == "Traffic")
+			specificRuleIndex = static_cast<int>(index);
+		else if (Profile.filters[index].text[0] == '\0')
+			broadRuleIndex = static_cast<int>(index);
+	}
+	Expect(specificRuleIndex >= 0 && broadRuleIndex >= 0 && specificRuleIndex < broadRuleIndex,
+		"keyword-specific output routing is evaluated before a broad capcode-only rule");
+	pdw::archive::CapcodeEntry emptyExactAlias(alias);
+	emptyExactAlias.address = "2345678";
+	emptyExactAlias.displayName = "A Empty Exact Rule";
+	emptyExactAlias.matchText.clear();
+	emptyExactAlias.matchExactMessage = true;
+	pdw::archive::CapcodeEntry emptyExactSpecific(emptyExactAlias);
+	emptyExactSpecific.displayName = "Zulu Empty Exact Keyword Rule";
+	emptyExactSpecific.matchText = "Traffic";
+	emptyExactSpecific.matchExactMessage = false;
+	Expect(MessageArchiveUpsertCapcode(emptyExactAlias, error) &&
+		MessageArchiveUpsertCapcode(emptyExactSpecific, error) &&
+		MessageArchiveReloadRuntimeFilters(error),
+		"a legacy empty exact-match flag remains loadable without gaining text specificity");
+	int emptyExactRuleIndex = -1;
+	specificRuleIndex = -1;
+	for (std::size_t index = 0; index < Profile.filters.size(); ++index)
+	{
+		if (std::string(Profile.filters[index].capcode) != "2345678") continue;
+		if (std::string(Profile.filters[index].text) == "Traffic")
+			specificRuleIndex = static_cast<int>(index);
+		else if (Profile.filters[index].match_exact_msg != 0)
+			emptyExactRuleIndex = static_cast<int>(index);
+	}
+	Expect(specificRuleIndex >= 0 && emptyExactRuleIndex >= 0 &&
+		specificRuleIndex < emptyExactRuleIndex,
+		"an empty exact-match flag cannot shadow a keyword-specific rule");
+	pdw::archive::CapcodeEntry fnuAlias(alias);
+	fnuAlias.protocol.clear();
+	fnuAlias.address = "1234567-1";
+	fnuAlias.displayName = "Any Protocol FNU Rule";
+	fnuAlias.outputRoutes = PDW_OUTPUT_ROUTE_EMAIL;
+	Expect(MessageArchiveUpsertCapcode(fnuAlias, error) &&
+		MessageArchiveReloadRuntimeFilters(error),
+		"an Any-protocol POCSAG function-number rule expands into runtime filters");
+	int fnuRuleIndex = -1;
+	broadRuleIndex = -1;
+	for (std::size_t index = 0; index < Profile.filters.size(); ++index)
+	{
+		if (Profile.filters[index].type != POCSAG_FILTER) continue;
+		const std::string address = Profile.filters[index].capcode;
+		if (address == "1234567-1") fnuRuleIndex = static_cast<int>(index);
+		else if (address == "1234567" && Profile.filters[index].text[0] == '\0')
+			broadRuleIndex = static_cast<int>(index);
+	}
+	Expect(fnuRuleIndex >= 0 && broadRuleIndex >= 0 && fnuRuleIndex < broadRuleIndex,
+		"a POCSAG function-number rule is evaluated before the broad capcode rule");
+	pdw::archive::CapcodeEntry dormantAlias;
+	dormantAlias.protocol = "POCSAG";
+	dormantAlias.address = "9990001";
+	dormantAlias.displayName = "Dormant Reset Rule";
+	dormantAlias.enabled = false;
+	dormantAlias.filterEnabled = false;
+	dormantAlias.reject = true;
+	dormantAlias.hitCounter = 8;
+	Expect(MessageArchiveUpsertCapcode(dormantAlias, error),
+		"dormant reset fixture is stored without entering the runtime matcher");
+	std::vector<pdw::archive::CapcodeEntry> dormantRows;
+	Expect(MessageArchiveListCapcodes("Dormant Reset Rule", dormantRows, error) &&
+		dormantRows.size() == 1 &&
+		MessageArchiveResetCapcodeHitCounter(dormantRows[0].id, error),
+		"hit counter reset uses the runtime-state-only path");
+	dormantRows.clear();
+	Expect(MessageArchiveListCapcodes("Dormant Reset Rule", dormantRows, error) &&
+		dormantRows.size() == 1 && !dormantRows[0].enabled && dormantRows[0].reject &&
+		dormantRows[0].hitCounter == 0,
+		"resetting a dormant row cannot reactivate or rewrite its preserved actions");
+	const std::string capcodesJson = MessageArchiveBuildCapcodesJson(std::string());
+	Expect(capcodesJson.find("\"filter_enabled\":false") != std::string::npos &&
+		capcodesJson.find("\"output_routing_configured\":true") != std::string::npos &&
+		capcodesJson.find("\"output_routes\":") != std::string::npos,
+		"capcode API exposes the new filter and output-routing state additively");
 
 	pdw::publishing::PublishEvent event;
 	event.id = "queued-event-1";
@@ -256,6 +375,8 @@ int main()
 	std::strcpy(generated.label, "Synthetic Legacy Unit");
 	std::strcpy(generated.text, "Synthetic Legacy Unit");
 	generated.label_enabled = 1;
+	generated.monitor_only = 1;
+	generated.smtp = 1;
 	FILTERLIST legacyFilters;
 	legacyFilters.push_back(generated);
 	pdw::archive::CapcodeEntry healthyDirectory;
@@ -271,7 +392,7 @@ int main()
 	Expect(MessageArchiveListCapcodes("1110001", mergedRows, error) && mergedRows.size() == 1 &&
 		mergedRows[0].displayName == "Healthy Directory Name" &&
 		mergedRows[0].agency == "Synthetic Agency" &&
-		mergedRows[0].matchText.empty() && mergedRows[0].filterLabel == "Synthetic Legacy Unit",
+		mergedRows[0].matchText.empty() && mergedRows[0].filterLabel == "Healthy Directory Name",
 		"merge removes duplicate rules while preserving directory metadata and legacy filter behavior");
 	Expect(MessageArchiveReplaceLegacyFilters(legacyFilters, error),
 		"legacy filters migrate transactionally into the directory");
@@ -279,7 +400,10 @@ int main()
 		Profile.filters[0].type == POCSAG_FILTER &&
 		std::string(Profile.filters[0].capcode) == "1110001" &&
 		std::string(Profile.filters[0].label) == "Synthetic Legacy Unit" &&
-		std::string(Profile.filters[0].text).empty(),
+		std::string(Profile.filters[0].text).empty() &&
+		Profile.filters[0].filter_to_pane == 0 &&
+		Profile.filters[0].output_routing_configured == 0 &&
+		Profile.filters[0].smtp == 1,
 		"generator label duplication is repaired without losing the capcode label");
 	Profile.filters[0].hitcounter = 9;
 	std::strcpy(Profile.filters[0].lasthit_date, "11-08-26");
@@ -292,8 +416,9 @@ int main()
 		"configuration backup can export the expanded directory CSV");
 	int rejected = -1;
 	Expect(MessageArchiveReplaceCapcodesCsv(directoryCsv, rejected, error) && rejected == 0 &&
-		Profile.filters.size() == 1 && Profile.filters[0].hitcounter == 9,
-		"configuration restore replaces and reloads directory rules immediately");
+		Profile.filters.size() == 1 && Profile.filters[0].hitcounter == 9 &&
+		Profile.filters[0].output_routing_configured == 0 && Profile.filters[0].smtp == 1,
+		"configuration restore preserves legacy routing while reloading directory rules immediately");
 
 	MessageArchiveManagerShutdown();
 	const std::string database = folder + "\\manager-test.sqlite3";

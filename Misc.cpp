@@ -729,7 +729,8 @@ void ShowMessage()
 			{
 				bMONITOR_ONLY=true;
 			}
-			else
+			else if (!Profile.filters[iMatch].output_routing_configured ||
+				Profile.filters[iMatch].filter_to_pane)
 			{
 				bFILTERED=true;
 				if (Profile.filterwindowonly) bMONITOR=false;	// Don't display filtered messages in monitor pane
@@ -1180,9 +1181,9 @@ void ShowMessage()
 			if (bFILTERED) display_line(&Pane2);		// Ensure last line is displayed.
 		}
 
-		if (bMATCH && Profile.filter_cmd_file_enabled) // Activate commandfile, if enabled
+		if (bMATCH && Profile.filter_cmd_file_enabled) // Activate command file for every matching rule when globally enabled.
 		{
-			if (Profile.filters[iMatch].cmd_enabled && Profile.filter_cmd[0])
+			if (Profile.filter_cmd[0])
 			{
 				ActivateCommandFile();
 			}
@@ -1331,6 +1332,14 @@ void ShowMessage()
 		memset(message_buffer, 0, sizeof(message_buffer));
 	}
 
+	char szRoutedLabel[FILTER_LABEL_LEN+50] = {};
+	if (bMATCH && Profile.filters[iMatch].label[0])
+	{
+		if (strchr(Profile.filters[iMatch].label, '%'))
+			MakeFilterLabel(Profile.filters[iMatch].label,
+				Current_MSG[MSG_CAPCODE], szRoutedLabel);
+		else strcpy(szRoutedLabel, Profile.filters[iMatch].label);
+	}
 	DecodedMessageNotificationContext notification;
 	notification.filterMatched = bMATCH;
 	notification.monitorOnly = bMONITOR_ONLY;
@@ -1341,6 +1350,9 @@ void ShowMessage()
 	notification.fragmented = eventFragmented;
 	notification.assembled = bAssembledFlexCopy;
 	notification.selectedForEmail = bMATCH ? Profile.filters[iMatch].smtp : 0;
+	notification.outputRoutingConfigured = bMATCH ?
+		Profile.filters[iMatch].output_routing_configured != 0 : false;
+	notification.outputRoutes = bMATCH ? Profile.filters[iMatch].output_routes : 0;
 	notification.filterIndex = bMATCH ? iMatch : -1;
 	notification.cycle = strstr(Current_MSG[MSG_MODE], "FLEX") ? iCurrentCycle : -1;
 	notification.frame = strstr(Current_MSG[MSG_MODE], "FLEX") ? iCurrentFrame : -1;
@@ -1351,7 +1363,7 @@ void ShowMessage()
 	notification.messageType = Current_MSG[MSG_TYPE];
 	notification.bitrate = Current_MSG[MSG_BITRATE];
 	notification.message = iMOBITEX ? Current_MSG[MSG_MOBITEX] : Current_MSG[MSG_MESSAGE];
-	notification.filterLabel = szCurrentLabel[0];
+	notification.filterLabel = szRoutedLabel;
 	MessageRouterPublishDecodedMessage(notification);
 
 	if (Current_MSG[MSG_MOBITEX][0]) Current_MSG[MSG_MOBITEX][0] = '\0';
@@ -1621,27 +1633,9 @@ int CompareMessage(int item, int mon_or_filt)
 
 char *MakeFilterLabel(char *szLabel, char *szCapcode, char *szNewLabel)
 {
-	unsigned max = strlen(szCapcode), pos=0;
-	bool bFound=false;
-
-	unsigned tmp;
-
-	while (*szLabel)
-	{
-		if (*szLabel == '%')
-		{
-			szLabel++;
-			while ((tmp = *szLabel - '1') < max)
-			{
-				*szNewLabel++ = szCapcode[tmp];
-				szLabel++;
-			}
-			*szNewLabel++ = *szLabel++;
-		}
-		else *szNewLabel++ = *szLabel++;
-	}
-	*szNewLabel = '\0';
-	return (szNewLabel);
+	pdw::filters::ExpandLegacyLabel(szLabel, szCapcode, szNewLabel,
+		FILTER_LABEL_LEN + 50);
+	return szNewLabel + strlen(szNewLabel);
 }
 
 
@@ -1922,27 +1916,34 @@ int Check_4_Filtermatch()
 					iTextLength = txt_len;
 				}
 			}
+			else if (Profile.filters[iFilter].text[0] == '^')
+			{
+				// Preserve the established prefix syntax even when the literal
+				// prefix contains '+'. Required-keyword matching only applies to
+				// expressions that do not begin with '^'.
+				if (txt_len <= msg_len &&
+					strnicmp(Current_MSG[MSG_MESSAGE], &Profile.filters[iFilter].text[1], txt_len-1) == 0)
+				{
+					iTextMatch = 0;
+					iTextLength = txt_len-1;
+				}
+			}
+			else if (strchr(Profile.filters[iFilter].text, '+') != 0)
+			{
+				// MatchRequiredTerms trims each term, so do not reject a valid
+				// expression merely because its untrimmed source is longer than the
+				// decoded message (for example, " PR:1 + Traffic ").
+				if (pdw::filters::MatchRequiredTerms(Current_MSG[MSG_MESSAGE],
+					Profile.filters[iFilter].text, iTextPositions, iTextLengths, 10) > 0)
+				{
+					iTextMatch = iFilter;
+					iTextLength = txt_len;
+				}
+			}
 			else if (txt_len <= msg_len)	// Text string has to be shorter than message
 			{
 				// now scan the temp_str for the temp_filter string...
-				if (Profile.filters[iFilter].text[0] == '^')
-				{
-					if (strnicmp(Current_MSG[MSG_MESSAGE], &Profile.filters[iFilter].text[1], txt_len-1) == 0)
-					{
-						iTextMatch = 0;
-						iTextLength = txt_len-1;
-					}
-				}
-				else if (strchr(Profile.filters[iFilter].text, '+') != 0)
-				{
-					if (pdw::filters::MatchRequiredTerms(Current_MSG[MSG_MESSAGE],
-						Profile.filters[iFilter].text, iTextPositions, iTextLengths, 10) > 0)
-					{
-						iTextMatch = iFilter;
-						iTextLength = txt_len;
-					}
-				}
-				else if (strstr(Profile.filters[iFilter].text, "&") != 0)
+				if (strstr(Profile.filters[iFilter].text, "&") != 0)
 				{
 					while (Profile.filters[iFilter].text[i] != 0 && l < 10)
 					{

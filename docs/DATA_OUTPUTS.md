@@ -67,6 +67,13 @@ Windows shows a synthetic notification. The queue is bounded at 500 events.
 An adapter error is recorded for status reporting and never blocks decoding or
 prevents another selected adapter from receiving the same event.
 
+Capcode Directory rules can select individual enabled adapters. A live message is delivered only
+when the directory rule selects the adapter and this page has both **Enable data outputs** and the
+adapter's own **Enable** checkbox selected. Rules imported from the previous directory schema retain
+their former globally enabled output behavior and preserve the older per-rule Email choice; new rules
+begin with output delivery off until destinations are chosen. Rules that are not directory-backed
+retain the established global filtered/all-messages behavior for compatibility.
+
 ## Delivery Health
 
 **Output > Delivery Health** shows per-destination enabled state, successes,

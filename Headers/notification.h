@@ -4,12 +4,15 @@
 #include <windows.h>
 #include <stddef.h>
 
+#include "output_routes.h"
+
 struct DecodedMessageNotificationContext
 {
 	DecodedMessageNotificationContext()
 		: filterMatched(false), monitorOnly(false), filtered(false), rejected(false),
 		  blockedDuplicate(false), groupCall(false), fragmented(false), assembled(false),
-		  groupFinal(false), selectedForEmail(0), filterIndex(-1), groupBit(-1),
+		  groupFinal(false), selectedForEmail(0), outputRoutingConfigured(false),
+		  outputRoutes(0), filterIndex(-1), groupBit(-1),
 		  cycle(-1), frame(-1), address(""),
 		  time(""), date(""), mode(""), messageType(""), bitrate(""), message(""),
 		  filterLabel("")
@@ -26,6 +29,8 @@ struct DecodedMessageNotificationContext
 	bool assembled;
 	bool groupFinal;
 	int selectedForEmail;
+	bool outputRoutingConfigured;
+	unsigned int outputRoutes;
 	int filterIndex;
 	int groupBit;
 	int cycle;

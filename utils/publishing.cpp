@@ -1187,7 +1187,12 @@ void PublishingPublishEvent(const pdw::publishing::PublishEvent& source)
 	// Intake freezes selected destinations even when a transport is temporarily
 	// unavailable. Worker availability only controls when a durable target runs.
 	runtime.enabledTargets = EnabledTargetMask(config);
-	if (!pdw::publishing::PublishShouldIntake(runtime, source.filtered)) return;
+	if (source.outputRoutingConfigured &&
+		(source.outputRoutes & PDW_OUTPUT_ROUTE_PUBLISHING) == 0) return;
+	const bool selectedFilteredMessage = source.outputRoutingConfigured &&
+		(source.outputRoutes & PDW_OUTPUT_ROUTE_PUBLISHING) != 0;
+	if (!pdw::publishing::PublishShouldIntake(runtime,
+		selectedFilteredMessage || source.filtered)) return;
 	pdw::publishing::TransformOptions options;
 	options.sourceAlias = pdw::events::PdwTextToUtf8(config.sourceAlias.c_str());
 	options.maskAddress = config.maskAddress;

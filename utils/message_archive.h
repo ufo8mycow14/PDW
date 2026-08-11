@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "../Headers/output_routes.h"
 #include "publishing_core.h"
 
 struct sqlite3;
@@ -39,6 +40,8 @@ struct CapcodeEntry
 	int waveNumber;
 	int labelColor;
 	unsigned int hitCounter;
+	unsigned int outputRoutes;
+	int agencyLabelPosition;
 	std::string lastHitDate;
 	std::string lastHitTime;
 	bool enabled;
@@ -49,11 +52,15 @@ struct CapcodeEntry
 	bool monitorOnly;
 	bool emailEnabled;
 	bool separateFileEnabled;
+	bool filterEnabled;
+	bool outputRoutingConfigured;
 
 	CapcodeEntry() : id(0), color(RGB(0, 102, 204)), filterType(0),
-		waveNumber(0), labelColor(0), hitCounter(0), enabled(true), reject(false),
+		waveNumber(0), labelColor(0), hitCounter(0), outputRoutes(0),
+		agencyLabelPosition(PDW_AGENCY_LABEL_HIDDEN), enabled(true), reject(false),
 		matchExactMessage(false), showFilterLabel(true), commandEnabled(false),
-		monitorOnly(false), emailEnabled(false), separateFileEnabled(false) {}
+		monitorOnly(false), emailEnabled(false), separateFileEnabled(false),
+		filterEnabled(true), outputRoutingConfigured(true) {}
 };
 
 struct HistoryQuery
