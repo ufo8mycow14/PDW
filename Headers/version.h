@@ -6,15 +6,15 @@
 // the display strings.
 #define PDW_VERSION_MAJOR 5
 #define PDW_VERSION_MINOR 5
-#define PDW_VERSION_PATCH 0
+#define PDW_VERSION_PATCH 1
 #define PDW_VERSION_BUILD 0
 
-#define PDW_VERSION_RESOURCE 5,5,0,0
-#define PDW_VERSION_RESOURCE_STRING "5.5.0.0"
-#define PDW_VERSION_STRING "5.5.0 2026 Release"
-#define PDW_DISPLAY_VERSION "PDW v5.5 2026 Release"
-#define PDW_EXECUTABLE_NAME "PDW v5.5 2026 Release.exe"
-#define PDW_PACKAGE_BASENAME "PDW-v5.5-2026-Release"
-#define PDW_APP_NAME "PDW v5.5 2026 Release - Windows POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder"
+#define PDW_VERSION_RESOURCE 5,5,1,0
+#define PDW_VERSION_RESOURCE_STRING "5.5.1.0"
+#define PDW_VERSION_STRING "5.5.1 2026 Release"
+#define PDW_DISPLAY_VERSION "PDW v5.5.1 2026 Release"
+#define PDW_EXECUTABLE_NAME "PDW v5.5.1 2026 Release.exe"
+#define PDW_PACKAGE_BASENAME "PDW-v5.5.1-2026-Release"
+#define PDW_APP_NAME "PDW v5.5.1 2026 Release - Windows POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder"
 
 #endif

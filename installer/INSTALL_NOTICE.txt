@@ -1,4 +1,4 @@
-PUBLIC BETA 1 - UNSIGNED / UNKNOWN PUBLISHER
+PUBLIC BETA 2 - UNSIGNED / UNKNOWN PUBLISHER
 
 This 11 August 2026 prerelease passed automated x64 and Win32 builds, tests,
 package checks, Defender scanning, and the install/upgrade/uninstall matrix. It
@@ -8,7 +8,7 @@ report only content-free results through the maintained GitHub Issues page.
 Do not include pager traffic, recordings, credentials, endpoint IDs, PDW.INI,
 logs, or operator settings in a public report.
 
-PDW v5.5 2026 Release keeps all established decoder, receiver, slicer, audio,
+PDW v5.5.1 2026 Release keeps all established decoder, receiver, slicer, audio,
 serial, filter and output paths. This Setup installs the same PDW application
 that remains available in portable form.
 
@@ -37,6 +37,12 @@ products; Setup does not download, install, license, tune, or configure either
 one. The profile changes only local audio and decoder settings. It does not
 create, replace, import, or modify Capcode Directory entries or filters.ini.
 Existing PDW.INI and operator data always take precedence during upgrade.
+
+Public Beta 2 separates lower-panel filtering from explicit per-Capcode output
+routing. A rule can select multiple destinations, but every destination must
+also be enabled and configured in Settings. Existing disabled rules remain
+dormant, and legacy global routing remains until a rule is deliberately saved
+with explicit destinations.
 
 Win32 compatibility should be selected when an existing receiver requires an
 x86-only DLL. x64 should be selected only with x64-compatible receiver DLLs;

@@ -1,7 +1,7 @@
 # Windows UI acceptance
 
 This checklist records the manual evidence required to maintain the stable
-PDW v5.5 2026 Release candidate. A successful resource compile, startup
+PDW v5.5.1 2026 Release candidate. A successful resource compile, startup
 smoke, or unit suite does not prove that every legacy dialog remains readable
 and operable at every Windows scale.
 
@@ -12,8 +12,9 @@ screenshots or issue reports.
 
 ## Predecessor automated and static evidence
 
-These results were obtained before the v5.5 profile and About changes. They are
-regression context only and must not be reported as v5.5 acceptance:
+These results were obtained before the v5.5.1 profile, About, and Capcode
+routing changes. They are regression context only and must not be reported as
+v5.5.1 acceptance:
 
 - The Win32 resource compiler accepts all dialog templates.
 - A static bounds pass found all non-combobox controls inside their declared
@@ -62,7 +63,7 @@ different scale factors.
 | Filters and filter options | [ ] | [ ] | [ ] | [ ] | List, search, edit, labels, output and duplicate controls remain recognizable. |
 | Capcode Directory and Message History | [ ] | [ ] | [ ] | [ ] | Search, paging, full-width rows, Export CSV, status, and close controls remain visible and reachable. |
 | Legacy input/custom audio and colour dialogs | [ ] | [ ] | [ ] | [ ] | Every legacy receiver, slicer and presentation option remains available. |
-| About dialog and Settings About me | [ ] | [ ] | [ ] | [ ] | v5.5 identity, actual architecture, supported protocols, external-profile boundary, lawful-use text, credits, licence and project links remain readable and keyboard reachable. |
+| About dialog and Settings About me | [ ] | [ ] | [ ] | [ ] | v5.5.1 identity, actual architecture, supported protocols, external-profile boundary, lawful-use text, credits, licence and project links remain readable and keyboard reachable. |
 
 ## Theme and contrast matrix
 
@@ -94,7 +95,7 @@ arrow keys, Space, Enter, Escape, menu accelerators and F1 only:
   native Save dialog and confirm focus returns to Export without creating a file.
 - [ ] Open F1 help and Settings > Volume; confirm current Windows routing.
 - [ ] Open About from Help and Settings About me; confirm both show the same
-  v5.5 identity and current architecture without clipping.
+  v5.5.1 identity and current architecture without clipping.
 - [ ] With only synthetic/configuration data, verify the named profile's status
   identifies the intended CABLE Output endpoint. Treat this as identity/display
   evidence only; do not record the opaque machine endpoint ID.
@@ -165,15 +166,15 @@ arrangement, PDW commit, result, and a content-free defect description. A
 failure remains open until the same matrix cell is repeated successfully on a
 fixed build. Never attach operator INI files or private runtime artifacts.
 
-## PDW v5.5 acceptance status
+## PDW v5.5.1 acceptance status
 
-No v5.5 matrix cell is accepted yet. Fresh Win32 and x64 Light/Dark, compact,
+No v5.5.1 matrix cell is accepted yet. Fresh Win32 and x64 Light/Dark, compact,
 keyboard, High Contrast, 125-200% DPI, About/Settings, installer profile,
 stable-identity/WASAPI-fallback and missing-endpoint checks remain pending on the exact release
 candidate. Use only synthetic or configuration-only evidence; the configured
 Adelaide profile is not proof of live hardware or authorised FLEX reception.
 
-The maintainer explicitly approved Public Beta 1 before this manual matrix is
+The maintainer explicitly approved Public Beta 2 before this manual matrix is
 complete. The release must therefore remain labelled beta, unsigned and
 hardware/UI-unverified. Community reports may complete individual cells only
 when they identify the exact beta, architecture and Windows environment and

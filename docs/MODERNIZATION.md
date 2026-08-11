@@ -7,7 +7,7 @@ boundary at a time.
 
 ## Non-negotiable compatibility boundaries
 
-- Ship one product as `PDW v5.5 2026 Release.exe`, with architecture-matched x64
+- Ship one product as `PDW v5.5.1 2026 Release.exe`, with architecture-matched x64
   and Win32 applications inside one guided installer, one settings experience,
   and one consolidated message stream. Retain portable packages; do not create
   separate legacy/enhanced editions or helper services.
@@ -78,7 +78,7 @@ Implemented in 4.1.0 Beta: event-driven WASAPI fallback and recovery, a shared
 normalized sample sink for modern inputs, actual-device smoke coverage, and a
 visually verified Radio and Signal Sources dialog. WinMM remains first choice.
 
-The v5.5 candidate adds one explicit clean-install SDR# + VB-Audio Cable
+The v5.5.1 candidate retains the explicit clean-install SDR# + VB-Audio Cable
 (Adelaide FLEX) profile. A friendly name is used only to establish the intended
 Windows endpoint; PDW persists its opaque ID before capture and opens that
 identity through endpoint-specific WASAPI from the start instead of selecting
@@ -162,11 +162,11 @@ legacy non-group alpha fragments are always shown first and a complete strict
 chain can add one marked assembled copy. FLEX Group Mode stays on its legacy
 path; fragment assembly is not required to publish a website or webhook.
 
-## Release gate for PDW v5.5 2026 Release
+## Release gate for PDW v5.5.1 2026 Release
 
-A stable PDW v5.5 2026 Release build requires all of the following; none is
+A stable PDW v5.5.1 2026 Release build requires all of the following; none is
 implied complete merely by preparing the source identity. The maintainer has
-approved Public Beta 1 as an unsigned, hardware-unverified GitHub prerelease so
+approved Public Beta 2 as an unsigned, hardware-unverified GitHub prerelease so
 community testers can provide the remaining physical evidence. That exception
 does not satisfy or remove any stable-release gate:
 

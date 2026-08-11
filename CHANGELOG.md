@@ -1,5 +1,41 @@
 # Changelog
 
+## PDW v5.5.1 2026 Release
+
+**Public Beta 2 - 11 August 2026**
+
+An additive Capcode filtering and output-routing release. Public Beta 2 retains
+the complete Public Beta 1 local-audio profile and compatibility boundary while
+giving each directory rule explicit, independently gated behavior.
+
+### Added
+
+- Independent **Filter** behavior for the lower Filtered pane and **Send to
+  enabled outputs** routing for Email, Apprise, Publishing, MQTT, SQLite,
+  MySQL/ODBC, Telnet, and Windows notifications.
+- Per-rule multi-output selection without bypassing the corresponding global
+  Settings enable and configuration gate.
+- Agency/service placement before, after, or outside the unified Display name,
+  with routed metadata retained even when the visual label is hidden.
+- Required-keyword expressions using `+`, validation and helper text, while
+  preserving legacy exact, prefix, `&`, POCSAG FNU, and wildcard behavior.
+
+### Compatibility and security
+
+- Dormant legacy rows remain dormant through database migration, CSV backup,
+  restore, and hit-counter reset; legacy global output behavior remains until
+  an operator deliberately saves explicit routes.
+- Specific and exact rules are evaluated before broad capcode-only rules so a
+  general directory row cannot shadow a routed keyword or POCSAG FNU match.
+- Output workers recheck current global enable/acknowledgement state before
+  delivery, including work that was already queued.
+- Native x64 and Win32 builds, 31 tests per architecture, CodeQL,
+  package/source-tamper checks, Defender-scanned Setup, and the complete
+  install/upgrade/uninstall matrix gate the exact Public Beta 2 commit.
+- The release remains intentionally unsigned and hardware-unverified. Trusted
+  Authenticode signing, physical radio/output acceptance, and the broader
+  Windows UI/device matrix remain required before stable promotion.
+
 ## PDW v5.5 2026 Release
 
 **Public Beta 1 - 11 August 2026**

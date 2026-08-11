@@ -1,11 +1,11 @@
-name: PDW v5.5 Public Beta feedback
+name: PDW v5.5.1 Public Beta feedback
 description: Report a content-free hardware, installation, or compatibility result.
-title: "[v5.5 Beta 1] "
+title: "[v5.5.1 Beta 2] "
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for testing PDW v5.5 Public Beta 1.
+        Thank you for testing PDW v5.5.1 Public Beta 2.
 
         Do not attach decoded pager traffic, capcodes, recordings, credentials, endpoint IDs, PDW.INI, logs, queue files, or other operator-specific data. Use synthetic or content-free descriptions only.
 

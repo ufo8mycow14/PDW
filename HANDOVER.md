@@ -1,4 +1,4 @@
-# PDW v5.5 2026 Release handover
+# PDW v5.5.1 2026 Release handover
 
 Updated: 11 August 2026
 
@@ -6,21 +6,21 @@ Updated: 11 August 2026
 
 - Repository: `C:\PDW Update\PDW-source`
 - Active branch: fork `master`
-- Prerelease tag: `v5.5.0-beta.1` (immutable once published)
-- Product/display name: **PDW v5.5 2026 Release**
-- Executable: `PDW v5.5 2026 Release.exe`
-- Product version: `5.5.0 2026 Release`
-- File/manifest version: `5.5.0.0`
-- Installer: `PDW-v5.5-2026-Release-Setup.exe`
-- Portable packages: `PDW-v5.5-2026-Release-Win32` and
-  `PDW-v5.5-2026-Release-x64`
+- Prerelease tag: `v5.5.1-beta.2` (immutable once published)
+- Product/display name: **PDW v5.5.1 2026 Release**
+- Executable: `PDW v5.5.1 2026 Release.exe`
+- Product version: `5.5.1 2026 Release`
+- File/manifest version: `5.5.1.0`
+- Installer: `PDW-v5.5.1-2026-Release-Setup.exe`
+- Portable packages: `PDW-v5.5.1-2026-Release-Win32` and
+  `PDW-v5.5.1-2026-Release-x64`
 
 PDW remains one native C++ product with mandatory Win32 and x64 targets. The
 guided installer and portable packages are two delivery forms of that same
 application; they do not define separate editions or decoder behavior.
 The maintained release toolchain is Visual Studio 2026/MSVC v145 on the
 `windows-2025-vs2026` hosted image. Visual Studio 2022/v143 remains an explicit
-local rollback option, not the v5.5 release target. Dependency locks record the
+local rollback option, not the v5.5.1 release target. Dependency locks record the
 exact compiler, generator, toolset, CMake version and resolver recipe.
 
 `Headers/version.h` is the authoritative current identity. CMake reads the
@@ -28,11 +28,12 @@ display name for the executable output, while resources, the manifest,
 workflow artifact names, packaging, Setup, the main title, About, and current
 documentation must agree with it before release.
 
-## v5.5 scope
+## v5.5.1 scope
 
-The release adds an explicit clean-install **SDR# + VB-Audio Cable (Adelaide
-FLEX)** profile beside the standard PDW settings. Its compatibility boundary
-is narrow:
+The release retains the explicit clean-install **SDR# + VB-Audio Cable
+(Adelaide FLEX)** profile and adds independent lower-panel filtering plus
+explicit per-Capcode routing to multiple globally enabled outputs. Its
+compatibility boundary is narrow:
 
 - SDR# and VB-CABLE are external, operator-installed products. PDW does not
   download, bundle, license, tune, or configure them.
@@ -53,13 +54,19 @@ is narrow:
   creates a verified byte-exact PDW.INI backup. It is never automatic.
 - No startup prompt, silent migration, or generic-profile conversion is run;
   existing users must choose the explicit default-No Apply action themselves.
+- Dormant legacy directory rows remain dormant through migration, backup,
+  restore, and hit-counter reset. Existing global routing remains until an
+  operator deliberately saves explicit destinations on the rule.
+- Selected outputs never enable themselves; every Email, Apprise, Publishing,
+  MQTT, SQLite, MySQL/ODBC, Telnet, or Windows destination remains gated by its
+  corresponding Settings enable/acknowledgement and configuration.
 
 The profile does not enable a network, notification, publishing, database, or
 other data-output destination.
 
 ## Installer and package boundary
 
-The maintained Setup definition is `installer/PDW.iss`. Public Beta 1:
+The maintained Setup definition is `installer/PDW.iss`. Public Beta 2:
 
 - offer x64 or Win32 on 64-bit Windows and use Win32 on 32-bit Windows;
 - keep the application and mutable operator data in one selected PDW folder;
@@ -67,7 +74,7 @@ The maintained Setup definition is `installer/PDW.iss`. Public Beta 1:
   recovery files, receivers, sounds, logs, queues, recordings, and databases;
 - offer the named profile only during a genuinely clean installation;
 - never install a new `filters.ini` or overwrite an existing `PDW.INI`;
-- remove only exact renamed predecessor executables, including v5.4; and
+- remove only exact renamed predecessor executables, including v5.5; and
 - support trusted signing of the application, Setup, and uninstaller.
 
 Win32 may retain reviewed x86-only receiver assets. x64 must exclude those
@@ -80,7 +87,7 @@ clean-install profiles and documentation without private runtime data.
 The 11 August 2026 review retains the pinned OpenSSL 3.5.7 LTS, curl 8.21.0,
 libssh2 1.11.1, Windows `winsqlite3`, and operator-managed MySQL ODBC boundary.
 Oracle's July 2026 CPU and the current Connector/ODBC 26.7.0 download were
-reviewed. Inno Setup 7.0.2 is available, but v5.5 deliberately retains pinned
+reviewed. Inno Setup 7.0.2 is available, but v5.5.1 deliberately retains pinned
 6.7.3 because changing installer-compiler major version during the profile and
 upgrade change would broaden release risk; migration to 7 remains a separate
 dual-architecture installer project.
@@ -92,14 +99,13 @@ vendor's licensing terms.
 
 ## Current verification state
 
-The v5.5 automated release gate is green. GitHub Build/Setup run `31472856650`
-and CodeQL run `31472856478` passed at beta-promotion commit `3015089`: clean
-Visual Studio 2026/MSVC v145 x64 and Win32 builds, 31 CTest tests per
-architecture, both optional device-smoke programs compiled, deterministic
-portable/source-tamper checks passed, Setup metadata/architecture and Defender
-passed, and the standard/profile/install/upgrade/uninstall preservation matrix
-passed. Subsequent promotion-only commits must pass the same exact-head
-workflows before the immutable beta tag is created.
+The v5.5.1 automated release gate requires clean Visual Studio 2026/MSVC v145
+x64 and Win32 builds, 31 CTest tests per architecture, both optional
+device-smoke programs, deterministic portable/source-tamper checks, Setup
+metadata/architecture and Defender validation, and the complete
+standard/profile/install/upgrade/uninstall preservation matrix. The immutable
+Beta 2 tag may be created only after both the Build/Setup and CodeQL workflows
+pass for the exact clean merged `master` commit used by every published asset.
 
 The following evidence remains open and must not be implied by those automated
 results:
@@ -110,7 +116,7 @@ results:
   device-loss acceptance; and
 - trusted Authenticode signing/timestamp plus post-signing validation.
 
-The repository owner explicitly approved Public Beta 1 without those physical,
+The repository owner explicitly approved Public Beta 2 without those physical,
 complete visual and signature gates so community testers can provide safe,
 content-free evidence. Publication is allowed only as an unsigned GitHub
 prerelease with the exact-head Setup and checksum, prominent unknown-publisher
@@ -146,9 +152,9 @@ ctest --test-dir out\v5.5-build-x64 -C Release --output-on-failure
   -X64ApplicationDirectory out\v5.5-installer-input\x64 `
   -OutputDirectory out\v5.5-installer
 .\scripts\audit-installer.ps1 `
-  -Setup 'out\v5.5-installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe'
+  -Setup 'out\v5.5-installer\PDW-v5.5.1-2026-Release-Setup-package\PDW-v5.5.1-2026-Release-Setup.exe'
 .\tests\installer_smoke.ps1 `
-  -Setup 'out\v5.5-installer\PDW-v5.5-2026-Release-Setup-package\PDW-v5.5-2026-Release-Setup.exe' `
+  -Setup 'out\v5.5-installer\PDW-v5.5.1-2026-Release-Setup-package\PDW-v5.5.1-2026-Release-Setup.exe' `
   -TestRoot out\v5.5-installer-smoke
 ```
 
@@ -173,13 +179,13 @@ requires Defender plus every other installer audit and smoke check.
 
 ## Publication workflow
 
-1. Resolve and review the complete v5.5 diff without disturbing unrelated work.
+1. Resolve and review the complete v5.5.1 diff without disturbing unrelated work.
 2. Pass the release audit, dual-architecture, package, installer, security and
    privacy gates required for the selected beta or stable channel.
 3. Commit and push the release state to fork `master`; wait for exact-head
    Build/Setup and CodeQL results.
 4. Download only the exact-head Setup artifact and verify its published
-   checksum before creating immutable tag `v5.5.0-beta.1`.
+   checksum before creating immutable tag `v5.5.1-beta.2`.
 5. Publish one Setup plus its checksum as a GitHub prerelease, with unsigned and
    hardware-unverified warnings and the Issue #14 feedback route. GitHub's
    automatic source-code ZIP/TAR archives are not additional PDW installers.
