@@ -143,3 +143,8 @@ if ($dirtyMarkerAfterFailure -cne "commit=$expectedCommit`nstate=dirty`n") {
     ExtraFileRejected = "Passed"
     StaleMarkerFailClosed = "Passed"
 }
+
+# The final provenance check intentionally runs CMake against a tampered tree.
+# All assertions above have passed, so do not leak that expected native failure
+# through PowerShell as the overall script result (notably in GitHub Actions).
+$global:LASTEXITCODE = 0
