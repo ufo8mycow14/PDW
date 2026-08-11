@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.20)
 # and build system.
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/Headers/version.h" PDW_VERSION_DEFINES
   REGEX "^#define PDW_VERSION_(MAJOR|MINOR|PATCH) [0-9]+$")
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/Headers/version.h" PDW_DISPLAY_DEFINE
+  REGEX "^#define PDW_DISPLAY_VERSION \"[^\"]+\"$")
 
 foreach(PART MAJOR MINOR PATCH)
   foreach(VERSION_DEFINE IN LISTS PDW_VERSION_DEFINES)
@@ -17,9 +19,11 @@ endforeach()
 
 if(NOT DEFINED PDW_VERSION_MAJOR OR
    NOT DEFINED PDW_VERSION_MINOR OR
-   NOT DEFINED PDW_VERSION_PATCH)
+   NOT DEFINED PDW_VERSION_PATCH OR
+   NOT PDW_DISPLAY_DEFINE MATCHES "^#define PDW_DISPLAY_VERSION \"([^\"]+)\"$")
   message(FATAL_ERROR "Unable to read the PDW version from Headers/version.h")
 endif()
+set(PDW_DISPLAY_VERSION "${CMAKE_MATCH_1}")
 
 project(PDW
   VERSION "${PDW_VERSION_MAJOR}.${PDW_VERSION_MINOR}.${PDW_VERSION_PATCH}"
@@ -33,10 +37,12 @@ if(NOT MSVC)
   message(FATAL_ERROR "PDW currently requires the Microsoft Visual C++ toolchain.")
 endif()
 
-# The legacy slicer/serial integration currently requires an x86 build.
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-  message(FATAL_ERROR "PDW must be built as 32-bit (Win32). Use -A Win32 with CMake.")
+  set(PDW_TARGET_ARCH "x64")
+else()
+  set(PDW_TARGET_ARCH "x86")
 endif()
+message(STATUS "Configuring PDW ${PROJECT_VERSION} for ${PDW_TARGET_ARCH}")
 
 set(PDW_GFXS)
 set(PDW_INCLUDES)
@@ -46,14 +52,14 @@ add_subdirectory(GFX)
 add_subdirectory(Headers)
 add_subdirectory(utils)
 
-set(PDW_DEPENDENCY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/out/dependencies/x86"
+set(PDW_DEPENDENCY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/out/dependencies/${PDW_TARGET_ARCH}"
   CACHE PATH "Path to the dependency set built by scripts/build-dependencies.ps1")
 
 if(NOT EXISTS "${PDW_DEPENDENCY_ROOT}/include/openssl/ssl.h" OR
    NOT EXISTS "${PDW_DEPENDENCY_ROOT}/include/curl/curl.h")
   message(FATAL_ERROR
     "PDW dependencies were not found under ${PDW_DEPENDENCY_ROOT}. "
-    "Run scripts/build-dependencies.ps1 before configuring PDW.")
+    "Run scripts/build-dependencies.ps1 -Architecture ${PDW_TARGET_ARCH} before configuring PDW.")
 endif()
 
 file(STRINGS "${PDW_DEPENDENCY_ROOT}/include/openssl/opensslv.h" PDW_OPENSSL_VERSION_LINE
@@ -87,8 +93,6 @@ find_library(PDW_OPENSSL_SSL_LIBRARY NAMES libssl ssl
   PATHS "${PDW_DEPENDENCY_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
 find_library(PDW_OPENSSL_CRYPTO_LIBRARY NAMES libcrypto crypto
   PATHS "${PDW_DEPENDENCY_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
-
-list(APPEND PDW_INCLUDES resrc1.h)
 
 list(APPEND PDW_SRCS
   Flex.cpp
@@ -130,13 +134,22 @@ set_source_files_properties(
   utils/data_outputs.cpp
   utils/decoded_event.cpp
   utils/flex_fragment_reassembly_core.cpp
+  utils/filter_match_core.cpp
+  utils/local_dashboard_server.cpp
+  utils/message_archive.cpp
+  utils/message_archive_manager.cpp
+  utils/message_centre.cpp
+  utils/multi_channel.cpp
+  utils/multi_channel_core.cpp
+  utils/multi_channel_manager.cpp
   utils/output_health.cpp
   utils/publishing_delivery_state.cpp
   utils/publishing_job_store.cpp
+	utils/rtl_signal_conditioner.cpp
   PROPERTIES COMPILE_OPTIONS "/W4;/WX"
 )
 
-set_target_properties(PDW PROPERTIES OUTPUT_NAME "PDW v4.5.0 Beta")
+set_target_properties(PDW PROPERTIES OUTPUT_NAME "${PDW_DISPLAY_VERSION}")
 
 target_include_directories(PDW PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -265,6 +278,20 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME decoder-candidate-core COMMAND PDWDecoderCandidateTests)
 
+	add_executable(PDWFilterMatchCoreTests
+		tests/filter_match_core_tests.cpp
+		utils/filter_match_core.cpp
+	)
+	target_include_directories(PDWFilterMatchCoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWFilterMatchCoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME filter-match-core COMMAND PDWFilterMatchCoreTests)
+
 	add_executable(PDWDecodedEventTests
 		tests/decoded_event_tests.cpp
 		utils/decoded_event.cpp
@@ -355,6 +382,7 @@ if(BUILD_TESTING)
 	add_executable(PDWRtlTcpTests
 		tests/rtl_tcp_source_tests.cpp
 		utils/audio_signal_core.cpp
+		utils/rtl_signal_conditioner.cpp
 		utils/rtl_tcp_source.cpp
 	)
 	target_include_directories(PDWRtlTcpTests PRIVATE
@@ -480,6 +508,77 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(PDWSQLiteOutputTests PRIVATE Winsqlite3.lib)
 	add_test(NAME sqlite-output COMMAND PDWSQLiteOutputTests)
+
+	add_executable(PDWMessageArchiveTests
+		tests/message_archive_tests.cpp
+		utils/message_archive.cpp
+		utils/publishing_core.cpp
+	)
+	target_include_directories(PDWMessageArchiveTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWMessageArchiveTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWMessageArchiveTests PRIVATE Winsqlite3.lib)
+	add_test(NAME message-archive COMMAND PDWMessageArchiveTests)
+
+	add_executable(PDWMessageArchiveManagerTests
+		tests/message_archive_manager_tests.cpp
+		utils/local_dashboard_server.cpp
+		utils/message_archive.cpp
+		utils/message_archive_manager.cpp
+		utils/publishing_core.cpp
+	)
+	target_include_directories(PDWMessageArchiveManagerTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Headers"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+target_compile_definitions(PDWMessageArchiveManagerTests PRIVATE
+	_CRT_SECURE_NO_WARNINGS
+	PDW_MESSAGE_ARCHIVE_MANAGER_TEST_HOOKS
+)
+	target_compile_options(PDWMessageArchiveManagerTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWMessageArchiveManagerTests PRIVATE Winsqlite3.lib Ws2_32.lib)
+	add_test(NAME message-archive-manager COMMAND PDWMessageArchiveManagerTests)
+
+	add_executable(PDWLocalDashboardCoreTests
+		tests/local_dashboard_core_tests.cpp
+		utils/local_dashboard_server.cpp
+	)
+	target_include_directories(PDWLocalDashboardCoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Headers"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWLocalDashboardCoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWLocalDashboardCoreTests PRIVATE Ws2_32.lib)
+	add_test(NAME local-dashboard-core COMMAND PDWLocalDashboardCoreTests)
+
+	add_executable(PDWMultiChannelCoreTests
+		tests/multi_channel_core_tests.cpp
+		utils/multi_channel_core.cpp
+	)
+	target_include_directories(PDWMultiChannelCoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWMultiChannelCoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME multi-channel-core COMMAND PDWMultiChannelCoreTests)
 
 	add_executable(PDWTelnetOutputServerTests
 		tests/telnet_output_server_tests.cpp

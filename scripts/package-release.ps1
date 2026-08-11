@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+    [ValidateSet("Win32", "x64")]
+    [string]$Architecture = "Win32",
     [string]$SourceRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$BuildDirectory = "",
     [string]$OutputRoot = "",
@@ -16,9 +18,34 @@ function Resolve-RequiredDirectory([string]$Path, [string]$Label) {
     return (Resolve-Path -LiteralPath $Path).Path
 }
 
+function Get-PeMachine([string]$Path) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        if ($stream.Length -lt 64) { throw "Executable is too small to be a Windows PE file: $Path" }
+        $reader = [System.IO.BinaryReader]::new($stream)
+        if ($reader.ReadUInt16() -ne 0x5A4D) { throw "Executable has no DOS header: $Path" }
+        $stream.Position = 0x3C
+        $peOffset = $reader.ReadInt32()
+        if ($peOffset -lt 0 -or $peOffset + 6 -gt $stream.Length) {
+            throw "Executable has an invalid PE offset: $Path"
+        }
+        $stream.Position = $peOffset
+        if ($reader.ReadUInt32() -ne 0x00004550) { throw "Executable has no PE signature: $Path" }
+        return $reader.ReadUInt16()
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 $SourceRoot = Resolve-RequiredDirectory $SourceRoot "Source"
+& (Join-Path $SourceRoot "scripts\audit-release.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "Repository release audit failed."
+}
 if ([string]::IsNullOrWhiteSpace($BuildDirectory)) {
-    $BuildDirectory = Join-Path $SourceRoot "out\build-win32\Release"
+    $buildName = if ($Architecture -eq "x64") { "build-x64" } else { "build-win32" }
+    $BuildDirectory = Join-Path $SourceRoot "out\$buildName\Release"
 }
 $BuildDirectory = Resolve-RequiredDirectory $BuildDirectory "Build"
 
@@ -41,16 +68,30 @@ if (-not $major -or -not $minor -or -not $patch) {
 }
 
 $version = "$major.$minor.$patch"
-$displayName = "PDW v$version Beta"
-$folderName = "PDW-$version-Beta"
+function Read-StringMacro([string]$Name) {
+    $match = [regex]::Match($versionHeader,
+        '(?m)^#define ' + [regex]::Escape($Name) + ' "([^"]+)"\r?$')
+    if (-not $match.Success) { throw "Unable to read $Name from Headers\version.h." }
+    return $match.Groups[1].Value
+}
+$displayName = Read-StringMacro "PDW_DISPLAY_VERSION"
+$productVersion = Read-StringMacro "PDW_VERSION_STRING"
+$packageBase = Read-StringMacro "PDW_PACKAGE_BASENAME"
+$folderName = "$packageBase-$Architecture"
 $executable = Join-Path $BuildDirectory "$displayName.exe"
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Release executable does not exist: $executable"
 }
+$expectedMachine = if ($Architecture -eq "x64") { 0x8664 } else { 0x014C }
+$actualMachine = Get-PeMachine $executable
+if ($actualMachine -ne $expectedMachine) {
+    throw ("Executable architecture does not match {0}: PE machine 0x{1:X4}." -f
+        $Architecture, $actualMachine)
+}
 
 $versionInfo = (Get-Item -LiteralPath $executable).VersionInfo
 if ($versionInfo.FileVersion -ne "$version.0" -or
-    $versionInfo.ProductVersion -ne "$version Beta") {
+    $versionInfo.ProductVersion -ne $productVersion) {
     throw "Executable metadata does not match $displayName."
 }
 
@@ -59,7 +100,7 @@ if ($LASTEXITCODE -ne 0) { throw "Unable to inspect Git status." }
 if ($gitStatus) { throw "The source tree must be clean before packaging.`n$gitStatus" }
 
 $finalDirectory = Join-Path $OutputRoot $folderName
-$finalZip = Join-Path $OutputRoot "$folderName-Win32.zip"
+$finalZip = Join-Path $OutputRoot "$folderName.zip"
 if ((Test-Path -LiteralPath $finalDirectory) -or (Test-Path -LiteralPath $finalZip)) {
     throw "Release output already exists; refusing to overwrite $folderName."
 }
@@ -78,7 +119,6 @@ try {
     $applicationFiles = @(
         @{ Source = $executable; Name = "$displayName.exe" },
         @{ Source = (Join-Path $SourceRoot "packaging\PDW.INI"); Name = "PDW.INI" },
-        @{ Source = (Join-Path $SourceRoot "packaging\filters.ini"); Name = "filters.ini" },
         @{ Source = (Join-Path $SourceRoot "pdw-manual.pdf"); Name = "PDW.pdf" },
         @{ Source = (Join-Path $SourceRoot "Readme"); Name = "Readme" },
         @{ Source = (Join-Path $SourceRoot "CHANGELOG.md"); Name = "CHANGELOG.md" },
@@ -94,16 +134,30 @@ try {
 
     Copy-Item -LiteralPath (Join-Path $SourceRoot "docs") -Destination $application -Recurse
     Copy-Item -LiteralPath (Join-Path $SourceRoot "Receivers") -Destination $application -Recurse
-
-    $wavSource = Join-Path $LegacyAssetsRoot "Wavfiles"
-    if (Test-Path -LiteralPath $wavSource -PathType Container) {
-        Copy-Item -LiteralPath $wavSource -Destination $application -Recurse
+    if ($Architecture -eq "x64") {
+        # The bundled RTL-SDR DLL is intentionally x86-only. The x64 build can
+        # use RTL-TCP immediately or import a trusted matching x64 receiver DLL.
+        $bundledX86Receiver = Join-Path $application "Receivers\RTL-SDR\rtlsdr.dll"
+        if (Test-Path -LiteralPath $bundledX86Receiver -PathType Leaf) {
+            Remove-Item -LiteralPath $bundledX86Receiver
+        }
     }
 
-    foreach ($legacyName in @("base-ids.txt", "language.df", "PDW.HLP", "COMPRT.VXD", "Comprt2.vxd", "xp_driver.zip")) {
-        $legacyPath = Join-Path $LegacyAssetsRoot $legacyName
-        if (Test-Path -LiteralPath $legacyPath -PathType Leaf) {
-            Copy-Item -LiteralPath $legacyPath -Destination (Join-Path $application $legacyName)
+    $wavSource = Join-Path $SourceRoot "packaging\Wavfiles"
+    $legacyDataSource = Join-Path $SourceRoot "packaging\Legacy"
+    Copy-Item -LiteralPath $wavSource -Destination $application -Recurse
+
+    $legacyNames = @("base-ids.txt", "language.df", "PDW.HLP")
+    foreach ($legacyName in $legacyNames) {
+        $legacyPath = Join-Path $legacyDataSource $legacyName
+        Copy-Item -LiteralPath $legacyPath -Destination (Join-Path $application $legacyName)
+    }
+    if ($Architecture -eq "Win32") {
+        foreach ($legacyDriver in @("COMPRT.VXD", "Comprt2.vxd", "xp_driver.zip")) {
+            $legacyPath = Join-Path $LegacyAssetsRoot $legacyDriver
+            if (Test-Path -LiteralPath $legacyPath -PathType Leaf) {
+                Copy-Item -LiteralPath $legacyPath -Destination (Join-Path $application $legacyDriver)
+            }
         }
     }
 
@@ -157,6 +211,7 @@ try {
     $packagedHash = (Get-FileHash -LiteralPath $packagedExecutable -Algorithm SHA256).Hash
     [pscustomobject]@{
         Version = $version
+        Architecture = $Architecture
         Folder = $finalDirectory
         Zip = $finalZip
         Files = (Get-ChildItem -LiteralPath $finalDirectory -Recurse -Force -File).Count

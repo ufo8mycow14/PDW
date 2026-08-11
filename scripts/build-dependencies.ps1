@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+    [ValidateSet("x86", "x64")]
+    [string]$Architecture = "x86",
     [string]$InstallRoot = "",
     [switch]$Force
 )
@@ -10,9 +12,11 @@ $ProgressPreference = "SilentlyContinue"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $outRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "out"))
 if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
-    $InstallRoot = Join-Path $outRoot "dependencies\x86"
+    $InstallRoot = Join-Path $outRoot "dependencies\$Architecture"
 }
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
+$cmakePlatform = if ($Architecture -eq "x64") { "x64" } else { "Win32" }
+$opensslTarget = if ($Architecture -eq "x64") { "VC-WIN64A" } else { "VC-WIN32" }
 
 function Assert-PathUnderOut {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -31,7 +35,7 @@ $versions = [ordered]@{
     openssl = "3.5.7"
     curl = "8.21.0"
     libssh2 = "1.11.1"
-    architecture = "x86"
+    architecture = $Architecture
     recipeSha256 = $recipeSha256
 }
 
@@ -117,7 +121,7 @@ function Invoke-VsDevCommand {
     )
 
     Write-Host $Description
-    $developerCommand = "call `"$vsDevCmd`" -no_logo -arch=x86 -host_arch=x64 && $Command"
+    $developerCommand = "call `"$vsDevCmd`" -no_logo -arch=$Architecture -host_arch=x64 && $Command"
     & $env:ComSpec /d /s /c $developerCommand
     if ($LASTEXITCODE -ne 0) {
         throw "$Description failed with exit code $LASTEXITCODE."
@@ -137,9 +141,45 @@ function Invoke-CMake {
     }
 }
 
+function Invoke-VerifiedDownload {
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string]$ExpectedSha256,
+        [Parameter(Mandatory = $true)][string]$DisplayName,
+        [ValidateRange(1, 6)][int]$MaximumAttempts = 4
+    )
+
+    $partial = "$Destination.partial"
+    for ($attempt = 1; $attempt -le $MaximumAttempts; $attempt++) {
+        if (Test-Path -LiteralPath $partial) {
+            Remove-Item -LiteralPath $partial -Force
+        }
+        try {
+            Write-Host "Downloading $DisplayName (attempt $attempt of $MaximumAttempts)..."
+            Invoke-WebRequest -Uri $Uri -OutFile $partial
+            $actualHash = (Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash
+            if ($actualHash -ne $ExpectedSha256) {
+                throw "Checksum mismatch. Expected $ExpectedSha256, received $actualHash."
+            }
+            Move-Item -LiteralPath $partial -Destination $Destination
+            return
+        }
+        catch {
+            if (Test-Path -LiteralPath $partial) {
+                Remove-Item -LiteralPath $partial -Force
+            }
+            if ($attempt -eq $MaximumAttempts) {
+                throw "Unable to download and verify '$DisplayName' after $MaximumAttempts attempts: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds ([Math]::Min(8, 2 * $attempt))
+        }
+    }
+}
+
 $cacheRoot = Join-Path $outRoot "dependency-cache"
-$sourceRoot = Join-Path $outRoot "dependency-sources"
-$buildRoot = Join-Path $outRoot "dependency-build"
+$sourceRoot = Join-Path $outRoot "dependency-sources\$Architecture"
+$buildRoot = Join-Path $outRoot "dependency-build\$Architecture"
 foreach ($path in @($cacheRoot, $sourceRoot, $buildRoot, $InstallRoot)) {
     Assert-PathUnderOut -Path $path
 }
@@ -162,8 +202,8 @@ foreach ($archive in $archives) {
         if (Test-Path -LiteralPath $archivePath) {
             Remove-Item -LiteralPath $archivePath -Force
         }
-        Write-Host "Downloading $($archive.Name)..."
-        Invoke-WebRequest -Uri $archive.Uri -OutFile $archivePath
+        Invoke-VerifiedDownload -Uri $archive.Uri -Destination $archivePath `
+            -ExpectedSha256 $archive.Sha256 -DisplayName $archive.Name
     }
 
     $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
@@ -182,15 +222,15 @@ $opensslSource = Join-Path $sourceRoot "openssl-$($versions.openssl)"
 $libssh2Source = Join-Path $sourceRoot "libssh2-$($versions.libssh2)"
 $curlSource = Join-Path $sourceRoot "curl-$($versions.curl)"
 
-$opensslCommand = "cd /d `"$opensslSource`" && perl Configure VC-WIN32 no-shared no-module no-tests no-apps no-docs no-asm --prefix=`"$InstallRoot`" --openssldir=`"$InstallRoot\ssl`" --libdir=lib && nmake /NOLOGO && nmake /NOLOGO install_sw"
-Invoke-VsDevCommand -Command $opensslCommand -Description "Building OpenSSL $($versions.openssl) for Win32"
+$opensslCommand = "cd /d `"$opensslSource`" && perl Configure $opensslTarget no-shared no-module no-tests no-apps no-docs no-asm --prefix=`"$InstallRoot`" --openssldir=`"$InstallRoot\ssl`" --libdir=lib && nmake /NOLOGO && nmake /NOLOGO install_sw"
+Invoke-VsDevCommand -Command $opensslCommand -Description "Building OpenSSL $($versions.openssl) for $cmakePlatform"
 
 $libssh2Build = Join-Path $buildRoot "libssh2"
-Invoke-CMake -Description "Configuring libssh2 $($versions.libssh2) for Win32" -Arguments @(
+Invoke-CMake -Description "Configuring libssh2 $($versions.libssh2) for $cmakePlatform" -Arguments @(
     "-S", $libssh2Source,
     "-B", $libssh2Build,
     "-G", $cmakeGenerator,
-    "-A", "Win32",
+    "-A", $cmakePlatform,
     "-DCMAKE_INSTALL_PREFIX=$InstallRoot",
     "-DBUILD_SHARED_LIBS=OFF",
     "-DBUILD_STATIC_LIBS=ON",
@@ -207,11 +247,11 @@ Invoke-CMake -Description "Building and installing libssh2 $($versions.libssh2)"
 )
 
 $curlBuild = Join-Path $buildRoot "curl"
-Invoke-CMake -Description "Configuring curl $($versions.curl) for Win32" -Arguments @(
+Invoke-CMake -Description "Configuring curl $($versions.curl) for $cmakePlatform" -Arguments @(
     "-S", $curlSource,
     "-B", $curlBuild,
     "-G", $cmakeGenerator,
-    "-A", "Win32",
+    "-A", $cmakePlatform,
     "-DCMAKE_INSTALL_PREFIX=$InstallRoot",
     "-DCMAKE_PREFIX_PATH=$InstallRoot",
     "-DBUILD_SHARED_LIBS=OFF",
@@ -270,4 +310,4 @@ if ($opensslVersionHeader -notmatch '#\s*define\s+OPENSSL_VERSION_STR\s+"3\.5\.7
 }
 
 Set-Content -LiteralPath $markerPath -Value $expectedMarker -Encoding ascii
-Write-Host "PDW Win32 dependencies were installed successfully to '$InstallRoot'."
+Write-Host "PDW $cmakePlatform dependencies were installed successfully to '$InstallRoot'."

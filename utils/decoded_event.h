@@ -17,6 +17,7 @@ std::string CurrentUtcIso8601();
 std::string CreateEventId();
 pdw::publishing::PublishEvent BuildDecodedEvent(const DecodedMessageNotificationContext& context);
 pdw::publishing::PublishEvent BuildTestEvent(const std::string& targetName);
+void SetDecodedEventSource(const std::string& source);
 
 } // namespace events
 } // namespace pdw

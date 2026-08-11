@@ -60,7 +60,9 @@ public:
 	void RecordDecodeResult(int errors, int flexPhase, int cycle, int frame,
 		float decoderQuality);
 	SignalMetrics Snapshot(std::vector<float>* waveform = NULL,
-		std::vector<float>* qualityHistory = NULL) const;
+		std::vector<float>* qualityHistory = NULL,
+		std::vector<float>* spectrum = NULL,
+		std::vector<float>* waterfall = NULL) const;
 
 private:
 	SignalDiagnostics(const SignalDiagnostics&);
@@ -72,6 +74,9 @@ private:
 	std::size_t waveformPosition_;
 	bool waveformWrapped_;
 	std::vector<float> qualityHistory_;
+	std::vector<float> spectrum_;
+	std::vector<float> waterfall_;
+	std::uint64_t spectrumSamplesPending_;
 };
 
 // Evaluates all 1,000 legacy custom threshold/centering/resync combinations

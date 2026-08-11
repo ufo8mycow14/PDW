@@ -7,8 +7,10 @@ boundary at a time.
 
 ## Non-negotiable compatibility boundaries
 
-- Ship one `PDW v4.5.0 Beta.exe`, one settings experience, and one consolidated message
-  stream. Do not create separate legacy/enhanced editions or helper services.
+- Ship one product as `PDW v5.3 2026 Release.exe`, with architecture-matched x64
+  and Win32 applications inside one guided installer, one settings experience,
+  and one consolidated message stream. Retain portable packages; do not create
+  separate legacy/enhanced editions or helper services.
 - Do not alter protocol algorithms without representative signal recordings
   and before/after decoder-output comparisons.
 - Keep the Win32 build available while the serial slicer and its x86
@@ -17,8 +19,9 @@ boundary at a time.
   playback, INI settings, filters, logs, WAV alerts, and all existing protocol
   parsers. Enhanced capture and decoding run alongside them, never instead of
   them.
-- Preserve existing `pdw.ini`, `filters.ini`, log, recording, and WAV-file
-  behaviour unless a migration is documented and tested.
+- Preserve existing `pdw.ini`, filter-rule, log, recording, and WAV-file
+  behaviour unless a migration is documented and tested. The documented Capcode Directory
+  migration replaces only `filters.ini` persistence; the proven legacy matcher remains in use.
 - When legacy and enhanced decoder candidates agree, show one message. When
   only one succeeds, retain it. When valid candidates conflict, retain the
   ambiguity for operator review rather than silently discarding either result.
@@ -81,7 +84,8 @@ visually verified Radio and Signal Sources dialog. WinMM remains first choice.
 - Separate capture, decoding, message formatting, and presentation boundaries.
 - Add structured diagnostic logging that excludes decoded message content by
   default.
-- Evaluate x64 only after legacy serial/hardware dependencies are isolated.
+- Maintain tested x64 and Win32 builds. Keep Win32 available for legacy
+  serial/hardware dependencies and reject mismatched in-process receiver DLLs.
 
 ## Phase 5: enhanced decoding beside legacy
 
@@ -147,11 +151,11 @@ legacy non-group alpha fragments are always shown first and a complete strict
 chain can add one marked assembled copy. FLEX Group Mode stays on its legacy
 path; fragment assembly is not required to publish a website or webhook.
 
-## Release gate for 4.5 Beta
+## Release gate for PDW v5.3 2026 Release
 
-A public 4.5 Beta build requires:
+A public PDW v5.3 2026 Release build requires:
 
-1. A successful clean Visual Studio 2022 Win32 Release build.
+1. Successful clean Visual Studio 2022 x64 and Win32 Release builds.
 2. Startup and shutdown tests on current Windows.
 3. Audio-device capture smoke testing.
 4. Representative POCSAG and FLEX regression recordings at minimum.
@@ -159,3 +163,7 @@ A public 4.5 Beta build requires:
 6. Review of every release artifact for bundled private logs or traffic data.
 7. FTP, FTPS, and SFTP upload smoke tests against disposable test accounts,
    including deliberate certificate and SSH host-key mismatch failures.
+8. Dual-architecture install, co-located-settings, upgrade-preservation,
+   uninstall, and portable-operation smoke testing.
+9. Trusted Authenticode signatures on the public installer and installed
+   executables, followed by Microsoft Defender scanning.

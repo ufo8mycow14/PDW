@@ -34,7 +34,7 @@ PDW's fallback path.
 | Windows `/startup` delay | Pass | Main window was responsive from 5,141 ms to 6,906 ms after the intended five-second settle delay. |
 | Legacy WinMM capture | Pass | One capture device; 44,100 bytes at 44.1 kHz, 8-bit mono. |
 | WASAPI fallback capture | Pass | 48,000 samples at 48 kHz on the final rerun; one initial discontinuity notification. |
-| Automated Win32 suite | Pass | All 23 non-hardware CTest tests passed. |
+| Automated Win32 suite | Pass | All 29 non-hardware CTest tests passed. |
 
 These results establish that both Windows audio APIs can open and capture on
 this machine. They do not establish hot-plug recovery, device-loss recovery,

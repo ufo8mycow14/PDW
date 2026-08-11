@@ -3,6 +3,21 @@
 build/
 out/
 CMakePresets.json.user
+
+# Visual Studio-generated user state and resource-editor caches. The
+# repository uses CMake as its only maintained project definition.
+*.aps
+*.clw
+*.ncb
+*.opt
+*.plg
+*.sdf
+*.suo
+*.user
+*.VC.db
+*.VC.VC.opendb
+ipch/
+
 /FileTransfer.log
 /Apprise.log
 /Published/
@@ -10,6 +25,9 @@ CMakePresets.json.user
 /pdw-messages.sqlite3
 /pdw-messages.sqlite3-wal
 /pdw-messages.sqlite3-shm
+/pdw-history.sqlite3
+/pdw-history.sqlite3-wal
+/pdw-history.sqlite3-shm
 /PDW-signal.wav
 /PDW-signal.sigmf-meta
 /PDW-signal.sigmf-data

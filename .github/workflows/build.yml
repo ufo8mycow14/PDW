@@ -1,4 +1,4 @@
-name: Build PDW (Win32)
+name: Build PDW (x64 and Win32)
 
 on:
   push:
@@ -12,47 +12,135 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x64
+            platform: x64
+            label: x64
+          - architecture: x86
+            platform: Win32
+            label: Win32
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Cache Win32 dependencies
+      - name: Audit release identity and compatibility rules
+        shell: pwsh
+        run: .\scripts\audit-release.ps1
+
+      - name: Cache ${{ matrix.label }} dependencies
         uses: actions/cache@v5
         with:
-          path: out/dependencies/x86
-          key: pdw-win32-dependencies-${{ hashFiles('scripts/build-dependencies.ps1') }}
+          path: out/dependencies/${{ matrix.architecture }}
+          key: pdw-${{ matrix.architecture }}-dependencies-${{ hashFiles('scripts/build-dependencies.ps1') }}
 
-      - name: Build pinned Win32 dependencies
+      - name: Build pinned ${{ matrix.label }} dependencies
         shell: pwsh
-        run: .\scripts\build-dependencies.ps1
+        run: .\scripts\build-dependencies.ps1 -Architecture "${{ matrix.architecture }}"
 
-      - name: Configure CMake (Win32 / Release)
+      - name: Configure CMake (${{ matrix.label }} / Release)
         shell: pwsh
         run: |
           $generator = .\scripts\resolve-cmake-generator.ps1
-          cmake -S . -B build `
+          cmake -S . -B "build-${{ matrix.architecture }}" `
             -G "$generator" `
-            -A Win32 `
+            -A "${{ matrix.platform }}" `
             -DCMAKE_BUILD_TYPE=Release `
-            -DPDW_DEPENDENCY_ROOT="${{ github.workspace }}\out\dependencies\x86"
+            -DPDW_DEPENDENCY_ROOT="${{ github.workspace }}\out\dependencies\${{ matrix.architecture }}"
 
       - name: Build
         shell: pwsh
-        run: cmake --build build --config Release --parallel
+        run: cmake --build "build-${{ matrix.architecture }}" --config Release --parallel
 
       - name: Test
         shell: pwsh
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --test-dir "build-${{ matrix.architecture }}" -C Release --output-on-failure
+
+      - name: Stage architecture-correct installer input
+        shell: pwsh
+        run: |
+          .\scripts\stage-installer-input.ps1 `
+            -Architecture "${{ matrix.platform }}" `
+            -BuildDirectory "build-${{ matrix.architecture }}\Release" `
+            -Destination "out\installer-input"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v4.5.0-Beta-Win32
+          name: PDW-v5.3-2026-Release-${{ matrix.label }}
           path: |
-            build\Release\PDW v4.5.0 Beta.exe
+            build-${{ matrix.architecture }}\Release\PDW v5.3 2026 Release.exe
             License
             THIRD_PARTY_NOTICES.md
-            out\dependencies\x86\pdw-dependencies.lock
-            out\dependencies\x86\licenses\*
+            out\dependencies\${{ matrix.architecture }}\pdw-dependencies.lock
+            out\dependencies\${{ matrix.architecture }}\licenses\*
+          if-no-files-found: error
+
+      - name: Upload installer input
+        uses: actions/upload-artifact@v7
+        with:
+          name: PDW-v5.3-2026-Release-InstallerInput-${{ matrix.label }}
+          path: out\installer-input\*
+          if-no-files-found: error
+
+  installer:
+    name: Build and test guided Setup
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download Win32 installer input
+        uses: actions/download-artifact@v8
+        with:
+          name: PDW-v5.3-2026-Release-InstallerInput-Win32
+          path: installer-input\Win32
+
+      - name: Download x64 installer input
+        uses: actions/download-artifact@v8
+        with:
+          name: PDW-v5.3-2026-Release-InstallerInput-x64
+          path: installer-input\x64
+
+      - name: Install pinned Inno Setup compiler
+        shell: pwsh
+        run: |
+          winget install --id JRSoftware.InnoSetup --exact --version 6.7.3 `
+            --silent --accept-package-agreements --accept-source-agreements `
+            --disable-interactivity
+
+      - name: Build and Defender-scan Setup
+        shell: pwsh
+        run: |
+          .\scripts\build-installer.ps1 `
+            -Win32ApplicationDirectory "installer-input\Win32" `
+            -X64ApplicationDirectory "installer-input\x64" `
+            -OutputDirectory "out\installer" `
+            -ScanWithDefender
+
+      - name: Audit Setup metadata and architecture
+        shell: pwsh
+        run: |
+          .\scripts\audit-installer.ps1 `
+            -Setup "out\installer\PDW-v5.3-2026-Release-Setup.exe"
+
+      - name: Test Win32 and x64 install, settings co-location, upgrade and uninstall
+        shell: pwsh
+        run: |
+          .\tests\installer_smoke.ps1 `
+            -Setup "out\installer\PDW-v5.3-2026-Release-Setup.exe" `
+            -TestRoot "out\installer-smoke-${{ github.run_id }}"
+
+      - name: Upload unsigned CI Setup candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: PDW-v5.3-2026-Release-Setup-Unsigned-CI
+          path: |
+            out\installer\PDW-v5.3-2026-Release-Setup.exe
+            out\installer\PDW-v5.3-2026-Release-Setup.exe.sha256
           if-no-files-found: error

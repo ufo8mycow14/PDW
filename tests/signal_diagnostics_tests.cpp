@@ -28,8 +28,8 @@ int main()
 	diagnostics.Observe(&clean[0], clean.size());
 	diagnostics.RecordDecodeResult(1, 0, 4, 20, 98.0f);
 	diagnostics.RecordDecodeResult(3, 3, 4, 21, 94.0f);
-	std::vector<float> waveform, history;
-	const SignalMetrics metrics = diagnostics.Snapshot(&waveform, &history);
+	std::vector<float> waveform, history, spectrum, waterfall;
+	const SignalMetrics metrics = diagnostics.Snapshot(&waveform, &history, &spectrum, &waterfall);
 	Expect(metrics.rmsLevel > 0.5f, "RMS level measured");
 	Expect(metrics.clippingPercent == 0.0f, "clean signal is not clipped");
 	Expect(metrics.correctedErrors == 1, "corrected errors tracked");
@@ -38,6 +38,9 @@ int main()
 		"FLEX phase errors tracked");
 	Expect(!waveform.empty() && waveform.size() <= 512, "waveform history bounded");
 	Expect(history.size() == 2, "quality history recorded");
+	Expect(spectrum.size() == 64, "spectrum has bounded frequency bins");
+	Expect(!waterfall.empty() && waterfall.size() % 64 == 0 && waterfall.size() <= 64 * 32,
+		"waterfall has bounded rows");
 
 	const CalibrationResult result = CalibrateLegacySlicer(clean);
 	Expect(result.thresholdIndex >= 0 && result.thresholdIndex <= 9,

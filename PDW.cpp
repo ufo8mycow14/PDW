@@ -309,6 +309,9 @@
 #include "headers\menu.h"
 #include "headers\acars.h"
 #include "headers\language.h"
+#include "headers\message_archive_manager.h"
+#include "headers\message_centre.h"
+#include "headers\multi_channel.h"
 #include "headers\mobitex.h"
 #include "headers\ermes.h"
 #include "headers\ftp.h"
@@ -316,6 +319,7 @@
 #include "headers\notification.h"
 #include "headers\output_health.h"
 #include "headers\publishing.h"
+#include "utils\multi_channel_manager.h"
 #include "headers\settings_center.h"
 #include "headers\status_bar.h"
 #include "headers\ui_theme.h"
@@ -363,7 +367,7 @@ int  nDriverLoaded	= DRIVER_NOT_LOADED;// VxD/comport loaded?
 bool bEditFilter	= false;		// Set before/after calling edit dialog
 bool bPauseFlag		= false;		// Decides if message output is paused.
 HWND hStatusBar		= NULL;
-bool bUpdateFilters	= false;		// PH: Needs FILTERS.INI to be updated?
+bool bUpdateFilters	= false;		// Directory-backed runtime hit state changed.
 
 double dRX_Quality;
 
@@ -501,6 +505,96 @@ DWORD GetColorRGB(BYTE color);
 
 void AutoRecording();	// PH: temp/test
 
+bool WorkerCommandRestricted(UINT command)
+{
+	switch (command)
+	{
+		case IDT_TOOLBAR_BTN0:
+		case IDT_TOOLBAR_BTN6:
+		case IDT_TOOLBAR_BTN7:
+		case IDM_LOGFILE:
+		case IDM_INTERFACE:
+		case IDM_OPTIONS:
+		case IDM_GENERAL:
+		case IDM_MAIL:
+		case IDM_FTP:
+		case IDM_APPRISE:
+		case IDM_SETTINGS:
+		case IDM_SIGNAL_SOURCES:
+		case IDM_PUBLISHING:
+		case IDM_DATA_OUTPUTS:
+		case IDM_OUTPUT_HEALTH:
+		case IDM_CONFIG_BACKUP:
+		case IDM_FILTERS:
+		case IDM_FILTEROPTIONS:
+		case IDM_RELOAD:
+		case IDM_RESET_HITCOUNTERS:
+		case IDM_FILTERFILE_EN:
+		case IDM_FILTERCOMMANDFILE:
+		case IDM_SETTINGS_SIGNAL_PAGE:
+		case IDM_PLAYBACK:
+		case IDM_RECORD:
+		case IDM_AUTORECORD:
+		case IDM_CAPCODE_DIRECTORY:
+		case IDM_MESSAGE_HISTORY:
+		case IDM_LIVE_DASHBOARD:
+		case IDM_MULTI_CHANNEL:
+			return true;
+		default:
+			return false;
+	}
+}
+
+bool MigrateLegacyFiltersToDirectory()
+{
+	if (GetPrivateProfileIntA("CapcodeDirectory", "LegacyFiltersMigrated", 0,
+		szIniPathName) != 0) return true;
+	if (GetFileAttributesA(szFilterPathName) == INVALID_FILE_ATTRIBUTES) return true;
+	std::vector<pdw::archive::CapcodeEntry> existing;
+	std::string error;
+	if (!MessageArchiveListCapcodes(std::string(), existing, error))
+	{
+		MessageBoxA(ghWnd, error.c_str(), "PDW Capcode Directory", MB_OK | MB_ICONERROR);
+		return false;
+	}
+	PROFILE legacy = Profile;
+	legacy.filters.clear();
+	char migrationCopy[MAX_PATH] = {};
+	if (!GetTempFileNameA(szPath, "PDF", 0, migrationCopy) ||
+		!CopyFileA(szFilterPathName, migrationCopy, FALSE) ||
+		!ReadFilters(migrationCopy, &legacy, true))
+	{
+		if (migrationCopy[0]) DeleteFileA(migrationCopy);
+		MessageBoxA(ghWnd,
+			"PDW found filters.ini, but it could not be read safely. The file was left unchanged and the Capcode Directory was not replaced.",
+			"Legacy Filter Migration", MB_OK | MB_ICONERROR);
+		return false;
+	}
+	if (!MessageArchiveMergeLegacyFilters(legacy.filters, error))
+	{
+		const std::string message = "PDW could not migrate the legacy filters into the Capcode Directory. filters.ini was left unchanged.\r\n\r\n" + error;
+		MessageBoxA(ghWnd, message.c_str(), "Legacy Filter Migration", MB_OK | MB_ICONERROR);
+		return false;
+	}
+
+	char archivedPath[MAX_PATH] = {};
+	_snprintf_s(archivedPath, sizeof(archivedPath), _TRUNCATE, "%s.migrated", szFilterPathName);
+	for (unsigned int suffix = 1; GetFileAttributesA(archivedPath) != INVALID_FILE_ATTRIBUTES; ++suffix)
+		_snprintf_s(archivedPath, sizeof(archivedPath), _TRUNCATE,
+			"%s.migrated.%03u", szFilterPathName, suffix);
+	const bool archived = MoveFileExA(szFilterPathName, archivedPath, MOVEFILE_WRITE_THROUGH) != FALSE;
+	WritePrivateProfileStringA("CapcodeDirectory", "LegacyFiltersMigrated", "1", szIniPathName);
+	bUpdateFilters = false;
+	char message[640] = {};
+	_snprintf_s(message, sizeof(message), _TRUNCATE,
+		"PDW migrated %u legacy filter(s) into the Capcode Directory.\r\n\r\n%s",
+		static_cast<unsigned int>(legacy.filters.size()),
+		archived ? "The old filters.ini was retained as a .migrated backup." :
+			"The old filters.ini could not be renamed, so it was left unchanged. PDW will now use the Capcode Directory.");
+	MessageBoxA(ghWnd, message, "Legacy Filter Migration", MB_OK | MB_ICONINFORMATION);
+	return true;
+}
+
 
 int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLine, int nCmdShow)
 {
@@ -585,6 +679,12 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.telnetPort = 8024;
 	Profile.windowsToastEnabled = 0;
 	Profile.windowsToastIncludeMessage = 0;
+	Profile.messageHistoryEnabled = 0;
+	Profile.messageHistoryIncludeMessage = 0;
+	Profile.messageHistoryRetentionDays = 30;
+	strcpy(Profile.messageArchivePath, "pdw-history.sqlite3");
+	Profile.liveDashboardEnabled = 0;
+	Profile.liveDashboardPort = 8090;
 	Profile.outputHealthAlertsEnabled = 1;
 	Profile.outputHealthFailureThreshold = 3;
 
@@ -724,6 +824,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.rtlFrequencyCorrectionPpm = 0;
 	Profile.rtlBandwidthHz		= 12000;
 	Profile.rtlAutomaticGain	= 1;
+	Profile.rtlSignalConditionerEnabled = 0;
 	Profile.rtlDeviceIndex		= 0;
 	strcpy(Profile.rtlReceiverId, "rtl-sdr-standard");
 	memset(Profile.audioThreshold, 0, sizeof(Profile.audioThreshold));
@@ -749,10 +850,25 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 		return (FALSE);
 	}
 
-	CreateMutex(NULL, FALSE, szPath);	// Check if PDW is already running
+	const bool channelWorker = pdw::multichannel::ConfigureWorkerFromCommandLine(lpszCmdLine);
+	if (pdw::multichannel::WorkerCommandRequested() && !channelWorker)
+	{
+		MessageBoxA(NULL, "This isolated channel slot is disabled or invalid. Open multi-channel receivers from the main PDW window.",
+			"PDW Channel Worker", MB_ICONERROR);
+		return FALSE;
+	}
+	const std::string mutexName = pdw::multichannel::WorkerMutexName(szPath);
+	HANDLE instanceMutex = CreateMutexA(NULL, FALSE, mutexName.c_str());
+	if (!instanceMutex)
+	{
+		MessageBoxA(NULL, "Windows could not create PDW's single-instance guard.",
+			"PDW startup", MB_ICONERROR);
+		return FALSE;
+	}
 
 	if (GetLastError() == ERROR_ALREADY_EXISTS)	// Shut down, as an instance of PDW is
 	{											// already running in this folder
+		CloseHandle(instanceMutex);
 		MessageBox(ghWnd, "PDW is already running", "Warning", MB_ICONINFORMATION);
 		return (FALSE);
 	}
@@ -773,6 +889,8 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	NotificationManagerInitialize();
 	PublishingManagerInitialize();
 	DataOutputManagerInitialize();
+	MessageArchiveManagerInitialize();
+	MigrateLegacyFiltersToDirectory();
 
 	if (hToolbar) TB_AutoSize(hToolbar);	// keep toolbar correct size!
 
@@ -826,6 +944,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 			DispatchMessage(&msg);
 		}
 	}
+	CloseHandle(instanceMutex);
 	return ((int) msg.wParam);
 } // end of WinMain()
 
@@ -910,8 +1029,8 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				{
 					if (bUpdateFilters)
 					{
-						WriteFilters(&Profile, 0);	// PH: Save FILTERS.INI
-						bUpdateFilters = false;		// PH: Reset for new messages
+						std::string filterError;
+						if (MessageArchivePersistRuntimeFilterState(filterError)) bUpdateFilters = false;
 					}
 				}
 				lTime = time(NULL);
@@ -1118,7 +1237,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		InitializePane(&Pane2);
 
 		Pane1.hWnd = CreateWindow(gszPane1Class, NULL, WS_CHILD | WS_VISIBLE, 0,0,0,0, hWnd,
-								  NULL, (HINSTANCE) GetWindowLong(hWnd, GWL_HINSTANCE), 0);
+								  NULL, reinterpret_cast<HINSTANCE>(GetWindowLongPtr(hWnd, GWLP_HINSTANCE)), 0);
 		if (Pane1.hWnd == NULL)
 		{
 			Free_Common_Objects();  // Free any objects we got!
@@ -1126,7 +1245,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		}
 
 		Pane2.hWnd = CreateWindow(gszPane2Class, NULL, WS_CHILD | WS_VISIBLE, 0,0,0,0, hWnd,
-								  NULL, (HINSTANCE) GetWindowLong(hWnd, GWL_HINSTANCE), 0);
+								  NULL, reinterpret_cast<HINSTANCE>(GetWindowLongPtr(hWnd, GWLP_HINSTANCE)), 0);
 
 		if (Pane2.hWnd == NULL)
 		{
@@ -1183,6 +1302,13 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		case WM_COMMAND:
 		{
+			if (pdw::multichannel::WorkerActive() && WorkerCommandRestricted(LOWORD(wParam)))
+			{
+				MessageBoxA(hWnd,
+					"Receiver, filter, storage and output settings are locked in an isolated channel worker. Use the main PDW window.",
+					"PDW Channel Worker", MB_ICONINFORMATION);
+				break;
+			}
 			switch (LOWORD(wParam))
 			{
 				case IDM_ENGLISH:     // select English character mapping
@@ -1563,18 +1689,10 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 				case IDT_TOOLBAR_BTN7:
 				case IDM_FILTERS:
-
-				if (!hFilterDlg)
-				{
-					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(FILTERDLGBOX),
-										  hWnd, (DLGPROC) FilterDlgProc, 0L);
-				}
-				break;
-
 				case IDM_FILTEROPTIONS:
-
-				GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(FILTEROPTIONSDLGBOX),
-									  hWnd, (DLGPROC) FilterOptionsDlgProc, 0L);
+				case IDM_CAPCODE_DIRECTORY:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(CAPCODE_DIRECTORY_DLGBOX),
+						hWnd, (DLGPROC) CapcodeDirectoryDlgProc, 0L);
 				break;
 
 				case IDT_TOOLBAR_BTN9:  // Pause program.
@@ -1657,33 +1775,39 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 									 hWnd, (DLGPROC) OutputHealthDlgProc, 0L);
 				break;
 
+				case IDM_MESSAGE_HISTORY:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(MESSAGE_HISTORY_DLGBOX),
+						hWnd, (DLGPROC) MessageHistoryDlgProc, 0L);
+				break;
+
+				case IDM_LIVE_DASHBOARD:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(LIVE_DASHBOARD_DLGBOX),
+						hWnd, (DLGPROC) LiveDashboardDlgProc, 0L);
+				break;
+
+				case IDM_MULTI_CHANNEL:
+					if (pdw::multichannel::WorkerActive())
+					{
+						MessageBoxA(hWnd, "Additional channels can only be managed from the main PDW window.",
+							"PDW Multi-Channel Receivers", MB_ICONINFORMATION);
+						break;
+					}
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(MULTI_CHANNEL_DLGBOX),
+						hWnd, (DLGPROC) MultiChannelDlgProc, 0L);
+				break;
+
 				case IDM_RELOAD:
-
-				if (FileExists(szFilterPathName))
 				{
-					sprintf(filters_temp, "Old  number  of filters :  %u\n",Profile.filters.size());
-					strcpy (filters_reload, filters_temp);
-						
-					Profile.filters.clear();
-							
-					if (ReadFilters(szFilterPathName, &Profile, false))
+					const size_t oldCount = Profile.filters.size();
+					std::string filterError;
+					if (MessageArchiveReloadRuntimeFilters(filterError))
 					{
-						sprintf(filters_temp, "New number of filters :  %u",Profile.filters.size());
-						strcat (filters_reload, filters_temp);
-
-						MessageBox(ghWnd, filters_reload, "PDW Reloaded filters", MB_ICONINFORMATION);
+						_snprintf_s(filters_reload, sizeof(filters_reload), _TRUNCATE,
+							"Reloaded the Capcode Directory.\n\nOld runtime filters: %zu\nNew runtime filters: %zu",
+							oldCount, Profile.filters.size());
+						MessageBoxA(ghWnd, filters_reload, "PDW Capcode Directory", MB_ICONINFORMATION);
 					}
-					else
-					{
-						if (MessageBox(ghWnd, "An error occured while loading filters.ini.\nTry to load a backup instead?", "PDW Filters", MB_ICONQUESTION | MB_OKCANCEL) == IDOK)
-						{
-							if (ReadFilters(szFilterBackup, &Profile, false) == false)
-							{
-								MessageBox(ghWnd, "Also failed...", "PDW Filters", MB_ICONINFORMATION);
-							}
-						}
-					}
-
+					else MessageBoxA(ghWnd, filterError.c_str(), "PDW Capcode Directory", MB_ICONERROR);
 				}
 				break;
 
@@ -1709,7 +1833,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				case IDM_KEYBOARD_SHORTCUTS:
 					MessageBoxA(hWnd,
 						"Ctrl+,    Open or focus Settings\n"
-						"Ctrl+F    Manage filters\n"
+						"Ctrl+F    Open Capcode Directory and filters\n"
 						"Ctrl+C    Copy selected decoded text\n"
 						"Ctrl+D    Clear monitor\n"
 						"Alt+Shift+R    Record signal\n"
@@ -2046,6 +2170,17 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			if (bRecording) Stop_Recording();
 
 			// Stop background destinations while their configuration and shared state still exist.
+			if (!pdw::multichannel::WorkerActive())
+			{
+				std::string channelStopStatus;
+				pdw::multichannel::StopAllChannels(channelStopStatus);
+			}
+			if (!ConfigurationRestoreCompleted() && !pdw::multichannel::WorkerActive() && bUpdateFilters)
+			{
+				std::string filterError;
+				MessageArchivePersistRuntimeFilterState(filterError);
+			}
+			MessageArchiveManagerShutdown();
 			DataOutputManagerShutdown();
 			PublishingManagerShutdown();
 			NotificationManagerShutdown();
@@ -2068,12 +2203,9 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					Profile.ySize = 442;
 				}
 			}
-			if (!ConfigurationRestoreCompleted()) WriteSettings();
+			if (!ConfigurationRestoreCompleted() && !pdw::multichannel::WorkerActive()) WriteSettings();
 
 			if (Profile.SystemTray) SystemTrayIcon(true);	// Remove PDW-icon from systemtray
-			if (!ConfigurationRestoreCompleted() && bUpdateFilters)
-				WriteFilters(&Profile, 0);	// Save FILTERS.INI
-
 			// A misbehaving third-party serial driver may ignore cancellation. In that rare
 			// case leave process-owned decoder/UI memory intact for the OS to reclaim rather
 			// than freeing it under a still-returning worker.
@@ -4195,13 +4327,13 @@ BOOL FAR PASCAL ColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 		GetSystemMetrics(SM_CYDLGFRAME);
 
 		hColorWnd = CreateWindow(gszColorClass, NULL, WS_CHILD | WS_VISIBLE, xPos, yPos,
-			xSize, ySize,	hDlg, NULL,	(HINSTANCE) GetWindowLong(hDlg, GWL_HINSTANCE),	0);
+			xSize, ySize,	hDlg, NULL,	reinterpret_cast<HINSTANCE>(GetWindowLongPtr(hDlg, GWLP_HINSTANCE)),	0);
 
 		DeleteObject(hboxbr);
 
 		hboxbr = CreateSolidBrush(tmp_background);
 
-		SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+		SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 
 		InvalidateRect(hColorWnd, NULL, TRUE);
 
@@ -4234,7 +4366,7 @@ BOOL FAR PASCAL ColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 				DeleteObject(hboxbr);
 				hboxbr = CreateSolidBrush(tmp_background);
 
-				SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+				SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 				InvalidateRect(hColorWnd, NULL, TRUE);
 			}
 			break;
@@ -4375,7 +4507,7 @@ BOOL FAR PASCAL ColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 				DeleteObject(hboxbr);
 				hboxbr = CreateSolidBrush(tmp_background);
 
-				SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+				SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 				InvalidateRect(hColorWnd, NULL, TRUE);
 			}
 			break;
@@ -4398,8 +4530,8 @@ BOOL FAR PASCAL ColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 				DeleteObject(hbr);
 				hbr = CreateSolidBrush(Profile.color_background);
 
-				SetClassLong(Pane1.hWnd, GCL_HBRBACKGROUND, (LONG) hbr);
-				SetClassLong(Pane2.hWnd, GCL_HBRBACKGROUND, (LONG) hbr);
+				SetClassLongPtr(Pane1.hWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hbr));
+				SetClassLongPtr(Pane2.hWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hbr));
 			}
 
 			InvalidateRect(Pane1.hWnd, NULL, TRUE);
@@ -4576,12 +4708,12 @@ BOOL FAR PASCAL ACARSColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 			   GetSystemMetrics(SM_CYDLGFRAME);
 
 		hColorWnd = CreateWindow(gszACARSColorClass, NULL,	WS_CHILD | WS_VISIBLE, xPos, yPos,
-			xSize, ySize, hDlg, NULL, (HINSTANCE) GetWindowLong(hDlg, GWL_HINSTANCE), 0);
+			xSize, ySize, hDlg, NULL, reinterpret_cast<HINSTANCE>(GetWindowLongPtr(hDlg, GWLP_HINSTANCE)), 0);
 
 		DeleteObject(hboxbr);
 
 		hboxbr = CreateSolidBrush(tmp_background);
-		SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+		SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 		InvalidateRect(hColorWnd, NULL, TRUE);
 
 		memset(&cc, 0, sizeof(CHOOSECOLOR));
@@ -4614,7 +4746,7 @@ BOOL FAR PASCAL ACARSColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 
 				hboxbr = CreateSolidBrush(tmp_background);
 
-				SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+				SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 
 				InvalidateRect(hColorWnd, NULL, TRUE);
 			}
@@ -4773,7 +4905,7 @@ BOOL FAR PASCAL ACARSColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 										rgbColor[LTBLUE][2]);
 				DeleteObject(hboxbr);
 				hboxbr = CreateSolidBrush(tmp_background);
-				SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+				SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 				InvalidateRect(hColorWnd, NULL, TRUE);
 			}
 			break;
@@ -4799,8 +4931,8 @@ BOOL FAR PASCAL ACARSColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 
 				hbr = CreateSolidBrush(Profile.color_background);
 
-				SetClassLong(Pane1.hWnd, GCL_HBRBACKGROUND, (LONG) hbr);
-				SetClassLong(Pane2.hWnd, GCL_HBRBACKGROUND, (LONG) hbr);
+				SetClassLongPtr(Pane1.hWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hbr));
+				SetClassLongPtr(Pane2.hWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hbr));
 			}
 
 			InvalidateRect(Pane1.hWnd, NULL, TRUE);
@@ -4978,13 +5110,13 @@ BOOL FAR PASCAL MOBITEXColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 				 GetSystemMetrics(SM_CYDLGFRAME);
 
 		hColorWnd = CreateWindow(gszMOBITEXColorClass, NULL, WS_CHILD | WS_VISIBLE, xPos, yPos,
-			xSize, ySize, hDlg, NULL, (HINSTANCE) GetWindowLong(hDlg, GWL_HINSTANCE), 0);
+			xSize, ySize, hDlg, NULL, reinterpret_cast<HINSTANCE>(GetWindowLongPtr(hDlg, GWLP_HINSTANCE)), 0);
 
 		DeleteObject(hboxbr);
 
 		hboxbr = CreateSolidBrush(tmp_background);
 
-		SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+		SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 
 		InvalidateRect(hColorWnd, NULL, TRUE);
 
@@ -5018,7 +5150,7 @@ BOOL FAR PASCAL MOBITEXColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 
 				hboxbr = CreateSolidBrush(tmp_background);
 
-				SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+				SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 
 				InvalidateRect(hColorWnd, NULL, TRUE);
 			}
@@ -5180,7 +5312,7 @@ BOOL FAR PASCAL MOBITEXColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 
 				hboxbr = CreateSolidBrush(tmp_background);
 
-				SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+				SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 
 				InvalidateRect(hColorWnd, NULL, TRUE);
 			}
@@ -5206,8 +5338,8 @@ BOOL FAR PASCAL MOBITEXColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 
 				hbr = CreateSolidBrush(Profile.color_background);
 
-				SetClassLong(Pane1.hWnd, GCL_HBRBACKGROUND, (LONG) hbr);
-				SetClassLong(Pane2.hWnd, GCL_HBRBACKGROUND, (LONG) hbr);
+				SetClassLongPtr(Pane1.hWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hbr));
+				SetClassLongPtr(Pane2.hWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hbr));
 			}
 			InvalidateRect(Pane1.hWnd, NULL, TRUE);
 			InvalidateRect(Pane2.hWnd, NULL, TRUE);
@@ -5392,12 +5524,12 @@ BOOL FAR PASCAL ERMESColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 				 GetSystemMetrics(SM_CYDLGFRAME);
 
 		hColorWnd = CreateWindow(gszERMESColorClass, NULL, WS_CHILD | WS_VISIBLE, xPos, yPos,
-			xSize, ySize, hDlg, NULL, (HINSTANCE) GetWindowLong(hDlg, GWL_HINSTANCE), 0);
+			xSize, ySize, hDlg, NULL, reinterpret_cast<HINSTANCE>(GetWindowLongPtr(hDlg, GWLP_HINSTANCE)), 0);
 
 		DeleteObject(hboxbr);
 
 		hboxbr = CreateSolidBrush(tmp_background);
-		SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+		SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 
 		InvalidateRect(hColorWnd, NULL, TRUE);
 
@@ -5431,7 +5563,7 @@ BOOL FAR PASCAL ERMESColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 
 				hboxbr = CreateSolidBrush(tmp_background);
 
-				SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+				SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 
 				InvalidateRect(hColorWnd, NULL, TRUE);
 			}
@@ -5593,7 +5725,7 @@ BOOL FAR PASCAL ERMESColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 
 				hboxbr = CreateSolidBrush(tmp_background);
 
-				SetClassLong(hColorWnd, GCL_HBRBACKGROUND, (LONG) hboxbr);
+				SetClassLongPtr(hColorWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hboxbr));
 
 				InvalidateRect(hColorWnd, NULL, TRUE);
 			}
@@ -5619,8 +5751,8 @@ BOOL FAR PASCAL ERMESColorsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 
 				hbr = CreateSolidBrush(Profile.color_background);
 
-				SetClassLong(Pane1.hWnd, GCL_HBRBACKGROUND, (LONG) hbr);
-				SetClassLong(Pane2.hWnd, GCL_HBRBACKGROUND, (LONG) hbr);
+				SetClassLongPtr(Pane1.hWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hbr));
+				SetClassLongPtr(Pane2.hWnd, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(hbr));
 			}
 
 			InvalidateRect(Pane1.hWnd, NULL, TRUE);
@@ -6620,6 +6752,7 @@ BOOL FAR PASCAL ScrollDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 void Copy_Filter_Fields(FILTER *out_filter, FILTER in_filter)
 {
+	out_filter->directory_id = in_filter.directory_id;
 	out_filter->type = in_filter.type;
 
 	if (in_filter.capcode[0]) strcpy(out_filter->capcode, in_filter.capcode);
@@ -6802,7 +6935,7 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		if (!CenterWindow(hDlg)) return (FALSE);
 
-		sprintf(szTEMP, "PDW Filters (%u)", Profile.filters.size());
+		sprintf(szTEMP, "PDW Filters (%zu)", Profile.filters.size());
 		SetWindowText(hDlg, (LPSTR) szTEMP);
 
 		hFilterDlg = hDlg;
@@ -6922,12 +7055,12 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 			{
 				if (bEditFilter) break;
 
-				sprintf(szTEMP, "PDW Filters (%u) - %i filters selected", Profile.filters.size(), ListView_GetSelectedCount(hListView));
+				sprintf(szTEMP, "PDW Filters (%zu) - %i filters selected", Profile.filters.size(), ListView_GetSelectedCount(hListView));
 				SetWindowText(hDlg, (LPSTR) szTEMP);
 			}
 			else if ((index = ListView_GetNextItem(hListView, -1, LVNI_SELECTED)) != CB_ERR)
 			{
-				sprintf(szTEMP, "PDW Filters (%u) - ", Profile.filters.size());
+				sprintf(szTEMP, "PDW Filters (%zu) - ", Profile.filters.size());
 
 				if (filter.type == TEXT_FILTER)
 				{
@@ -7082,7 +7215,8 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 				break;
 
 			case NM_CUSTOMDRAW :
-				SetWindowLong(hFilterDlg, DWL_MSGRESULT, OnCustomDraw((LPNMLVCUSTOMDRAW) lParam)) ;
+				SetWindowLongPtr(hFilterDlg, DWLP_MSGRESULT,
+					static_cast<LONG_PTR>(OnCustomDraw((LPNMLVCUSTOMDRAW) lParam))) ;
 				return(TRUE) ;
 //			default :
 //				OUTPUTDEBUGMSG((("NM_%04X lParam = %08lX\n"), ((LPNMHDR)lParam)->code, lParam));
@@ -7116,7 +7250,7 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 			case IDT_MENU_PASTE :
 				PasteFilter() ;
-				sprintf(szTEMP,"PDW Filters (%u)", Profile.filters.size());
+				sprintf(szTEMP,"PDW Filters (%zu)", Profile.filters.size());
 				SetWindowText(hDlg, (LPSTR) szTEMP);
 			break;
 
@@ -7172,7 +7306,7 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 				GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(FILTEREDITDLGBOX),
 									 hDlg, (DLGPROC) FilterEditDlgProc, 0L);
 
-				sprintf(szTEMP, "PDW Filters (%u)",Profile.filters.size());
+				sprintf(szTEMP, "PDW Filters (%zu)",Profile.filters.size());
 				SetWindowText(hDlg, (LPSTR) szTEMP);
 
 			break;
@@ -7246,7 +7380,7 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 			bDeletingFilters = false;
 
-			sprintf(szTEMP, "PDW Filters (%u)",Profile.filters.size());
+			sprintf(szTEMP, "PDW Filters (%zu)",Profile.filters.size());
 			SetWindowText(hDlg, (LPSTR) szTEMP);
             
 			break;
@@ -7295,7 +7429,7 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 				PostMessage(hFilterDlg, WM_COMMAND, IDC_FILTEREDIT, 0L);
 				break;
 			}
-			bUpdateFilters = true;	// PH: Update filters.ini in UpdateFilters() when IDLE
+			bUpdateFilters = true;	// Persist directory-backed hit state when idle.
 			bFilterFindCASE = false;
 
 			hFilterDlg = NULL;
@@ -8027,7 +8161,7 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 		}
 		else	 // Edit Filter
 		{
-			SetWindowText(hDlg, (LPSTR) multiple_edit ? "PDW (multiple) Edit Filter" : "PDW Edit Filter");
+			SetWindowText(hDlg, multiple_edit ? "PDW (multiple) Edit Filter" : "PDW Edit Filter");
 
 			if (multiple_edit)	// If more than one filter is selected
 			{
@@ -8586,7 +8720,7 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 					{
 						if (SendDlgItemMessage(hDlg, IDC_FILTERFNU, CB_GETCURSEL, 0, 0L))
 						{
-							sprintf(temp, "-%i", SendDlgItemMessage(hDlg, IDC_FILTERFNU, CB_GETCURSEL, 0, 0L));
+							sprintf(temp, "-%i", static_cast<int>(SendDlgItemMessage(hDlg, IDC_FILTERFNU, CB_GETCURSEL, 0, 0L)));
 							strcat(filter.capcode, temp);
 						}
 					}
@@ -9692,7 +9826,7 @@ BOOL FAR PASCAL MonStatDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 } // end of MonStatDlgProc
 
 
-UINT CALLBACK CenterOpenDlgBox(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+UINT_PTR CALLBACK CenterOpenDlgBox(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg)
 	{
@@ -9963,6 +10097,7 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->rtlFrequencyCorrectionPpm = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlFrequencyCorrectionPpm"), pProfile->rtlFrequencyCorrectionPpm, lpszIniPathName);
 	pProfile->rtlBandwidthHz			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlBandwidthHz"), pProfile->rtlBandwidthHz, lpszIniPathName);
 	pProfile->rtlAutomaticGain			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlAutomaticGain"), pProfile->rtlAutomaticGain, lpszIniPathName);
+	pProfile->rtlSignalConditionerEnabled = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlSignalConditioner"), pProfile->rtlSignalConditionerEnabled, lpszIniPathName);
 	pProfile->rtlDeviceIndex			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlDeviceIndex"), pProfile->rtlDeviceIndex, lpszIniPathName);
 	GetPrivateProfileString(lpszAppTitle, TEXT("RtlReceiverId"), "rtl-sdr-standard", pProfile->rtlReceiverId, sizeof(pProfile->rtlReceiverId), lpszIniPathName);
 	pProfile->audioThreshold[INDEX512]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Threshold512"), pProfile->audioThreshold[INDEX512], lpszIniPathName);
@@ -9988,6 +10123,7 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 		pProfile->rtlAudioSampleRate > pProfile->rtlSampleRate) pProfile->rtlAudioSampleRate = 48000;
 	if (pProfile->rtlDeviceIndex < 0) pProfile->rtlDeviceIndex = 0;
 	if (pProfile->rtlBandwidthHz < 5000 || pProfile->rtlBandwidthHz > 25000) pProfile->rtlBandwidthHz = 12000;
+	pProfile->rtlSignalConditionerEnabled = pProfile->rtlSignalConditionerEnabled ? 1 : 0;
 	if (!pProfile->rtlReceiverId[0]) strcpy(pProfile->rtlReceiverId, "rtl-sdr-standard");
 	for (int audioIndex = 0; audioIndex < AUDIO_CUSTOM_RATE_COUNT; audioIndex++)
 	{
@@ -10145,6 +10281,16 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 
 	pProfile->windowsToastEnabled = (INT) GetPrivateProfileInt("WindowsToast", TEXT("Enable"), 0, lpszIniPathName);
 	pProfile->windowsToastIncludeMessage = (INT) GetPrivateProfileInt("WindowsToast", TEXT("IncludeMessage"), 0, lpszIniPathName);
+	pProfile->messageHistoryEnabled = (INT) GetPrivateProfileInt("MessageArchive", TEXT("EnableHistory"), 0, lpszIniPathName);
+	pProfile->messageHistoryIncludeMessage = (INT) GetPrivateProfileInt("MessageArchive", TEXT("IncludeMessage"), 0, lpszIniPathName);
+	pProfile->messageHistoryRetentionDays = (unsigned int) GetPrivateProfileInt("MessageArchive", TEXT("RetentionDays"), 30, lpszIniPathName);
+	GetPrivateProfileString("MessageArchive", TEXT("Path"), "pdw-history.sqlite3", pProfile->messageArchivePath, sizeof(pProfile->messageArchivePath), lpszIniPathName);
+	if (pProfile->messageHistoryRetentionDays < 1 || pProfile->messageHistoryRetentionDays > 3650)
+		pProfile->messageHistoryRetentionDays = 30;
+	pProfile->liveDashboardEnabled = (INT) GetPrivateProfileInt("LiveDashboard", TEXT("Enable"), 0, lpszIniPathName);
+	pProfile->liveDashboardPort = (INT) GetPrivateProfileInt("LiveDashboard", TEXT("Port"), 8090, lpszIniPathName);
+	if (pProfile->liveDashboardPort < 1 || pProfile->liveDashboardPort > 65535)
+		pProfile->liveDashboardPort = 8090;
 	pProfile->outputHealthAlertsEnabled = (INT) GetPrivateProfileInt("OutputHealth", TEXT("AlertsEnabled"), 1, lpszIniPathName);
 	pProfile->outputHealthFailureThreshold = (unsigned int) GetPrivateProfileInt("OutputHealth", TEXT("FailureThreshold"), 3, lpszIniPathName);
 	if (pProfile->outputHealthFailureThreshold < 1 || pProfile->outputHealthFailureThreshold > 20)
@@ -10161,19 +10307,9 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	GetPrivateProfileString("Filter", TEXT("FilterCmdFile"), "", pProfile->filter_cmd, MAX_FILE_LEN, lpszIniPathName);
 	GetPrivateProfileString("Filter", TEXT("FilterCmdArgs"), "", pProfile->filter_cmd_args, MAX_FILE_LEN, lpszIniPathName);
 	pProfile->filter_default_type = (INT) GetPrivateProfileInt("Filter", TEXT("FilterDefaultType"), pProfile->filter_default_type, lpszIniPathName);
-	if (pProfile->filter_default_type < 0 || pProfile->filter_default_type > 5)
+	if (pProfile->filter_default_type < 0 || pProfile->filter_default_type > 6)
 		pProfile->filter_default_type = 0;
 
-	if (ReadFilters(szFilterPathName, &Profile, false) == false)
-	{
-		if (MessageBox(ghWnd, "An error occured while loading filters.ini.\nTry to load a backup instead?", "PDW Filters", MB_ICONQUESTION | MB_OKCANCEL) == IDOK)
-		{
-			if (ReadFilters(szFilterBackup, &Profile, false) == false)
-			{
-				MessageBox(ghWnd, "Also failed, starting without filters...", "PDW Filters", MB_ICONINFORMATION);
-			}
-		}
-	}
 	return (TRUE);
 } // end of GetPrivateProfileSettings
 
@@ -10187,7 +10323,7 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 	bool bError=false;
 	int  i=0, pos, nLines=0, iFilterCount=0, iFilter=0;
 
-	FILTER filter;
+	FILTER filter = {};
 	auto copyQuotedField = [&szLine](int& position, char* destination,
 		size_t destinationSize) -> bool
 	{
@@ -10220,7 +10356,7 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 	if (pFile)
 	{
-		if (bNew) Profile.filters.clear();
+		if (bNew) pProfile->filters.clear();
 
 		while (fgets(szLine, sizeof(szLine), pFile) != NULL)
 		{
@@ -10442,7 +10578,7 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 					}
 					if (!bError)
 					{
-						Profile.filters.insert(Profile.filters.begin() + iFilter, filter);
+						pProfile->filters.insert(pProfile->filters.begin() + iFilter, filter);
 						iFilter++;
 					}
 				}
@@ -10473,13 +10609,16 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 	else if (iFilterCount)
 	{
 		CopyFile(szFilters, szFilterBackup, false);
-		bUpdateFilters = true;	// PH: Update filters.ini in UpdateFilters() when IDLE
+		bUpdateFilters = true;	// Legacy importer changed runtime filter state.
 	}
 	return(true);
 }
 
 void WriteSettings()
 {
+	// Isolated receiver workers inherit the main configuration but must never
+	// overwrite it from their minimized compatibility windows.
+	if (pdw::multichannel::WorkerActive()) return;
 	char settingsSnapshotPath[MAX_PATH] = {};
 	FILE* pFile = NULL;
 	if (GetTempFileNameA(szPath, "PDS", 0, settingsSnapshotPath))
@@ -10610,6 +10749,7 @@ void WriteSettings()
 		fprintf(pFile, "RtlFrequencyCorrectionPpm=%i\n", Profile.rtlFrequencyCorrectionPpm);
 		fprintf(pFile, "RtlBandwidthHz=%i\n",			Profile.rtlBandwidthHz);
 		fprintf(pFile, "RtlAutomaticGain=%i\n",		Profile.rtlAutomaticGain);
+		fprintf(pFile, "RtlSignalConditioner=%i\n",	Profile.rtlSignalConditionerEnabled);
 		fprintf(pFile, "RtlDeviceIndex=%i\n",			Profile.rtlDeviceIndex);
 		fprintf(pFile, "RtlReceiverId=%s\n",			Profile.rtlReceiverId);
 		fprintf(pFile, "Threshold512=%i\n",				Profile.audioThreshold[INDEX512]);
@@ -10738,6 +10878,16 @@ void WriteSettings()
 		fprintf(pFile, "Enable=%i\n", Profile.windowsToastEnabled);
 		fprintf(pFile, "IncludeMessage=%i\n", Profile.windowsToastIncludeMessage);
 
+		fprintf(pFile, "\n[MessageArchive]\n");
+		fprintf(pFile, "EnableHistory=%i\n", Profile.messageHistoryEnabled);
+		fprintf(pFile, "IncludeMessage=%i\n", Profile.messageHistoryIncludeMessage);
+		fprintf(pFile, "RetentionDays=%u\n", Profile.messageHistoryRetentionDays);
+		fprintf(pFile, "Path=%s\n", Profile.messageArchivePath);
+
+		fprintf(pFile, "\n[LiveDashboard]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.liveDashboardEnabled);
+		fprintf(pFile, "Port=%i\n", Profile.liveDashboardPort);
+
 		fprintf(pFile, "\n[OutputHealth]\n");
 		fprintf(pFile, "AlertsEnabled=%i\n", Profile.outputHealthAlertsEnabled);
 		fprintf(pFile, "FailureThreshold=%u\n", Profile.outputHealthFailureThreshold);
@@ -10781,6 +10931,10 @@ void WriteSettings()
 
 void WriteFilters(PPROFILE pProfile, int backup)
 {
+	// Isolated receiver workers share the main installation directory. Never
+	// Retained only as a compatibility serializer for legacy tooling. Live PDW
+	// persistence uses the Capcode Directory and never calls this function.
+	if (pdw::multichannel::WorkerActive()) return;
 	char szLine[256];
 	char szFilename[MAX_PATH];
 	char szPathname[MAX_PATH];
@@ -10800,7 +10954,7 @@ void WriteFilters(PPROFILE pProfile, int backup)
 	}
 	if ((pFiltersFile = fopen(szFilterPathName, "w+")) != NULL)
 	{
-		fprintf(pFiltersFile, "[Filter]\n\nFilterCount=%i\n\n", pProfile->filters.size());
+		fprintf(pFiltersFile, "[Filter]\n\nFilterCount=%zu\n\n", pProfile->filters.size());
 		
 		for (int index=0; index<pProfile->filters.size(); index++)
 		{
@@ -11528,7 +11682,7 @@ void SortFilter(HWND hDlg, bool bAddress)
 		} 
 		ListView_SetItemState(hListView, i, LVIS_FOCUSED, LVIS_FOCUSED);
 
-		if (sprintf(szTEMP, "PDW Filters (%u)", Profile.filters.size()) != EOF)
+		if (sprintf(szTEMP, "PDW Filters (%zu)", Profile.filters.size()) != EOF)
 		SetWindowText(hDlg, (LPSTR) szTEMP);
 	}
 	bSortingFilters = false;
@@ -11627,10 +11781,7 @@ void PasteFilter(void)
 
 void ResetHitcounters(bool bAll)
 {
-	int index=-1, i=0;
-
-	char filename[MAX_PATH];
-	char ext[10] = "";
+	int index=-1;
 				
 	if (MessageBox(ghWnd, "Are you sure?", "Reset Hitcounters", MB_ICONQUESTION | MB_OKCANCEL) == IDCANCEL) return;
 
@@ -11642,16 +11793,11 @@ void ResetHitcounters(bool bAll)
 			Profile.filters[index].lasthit_date[0] = '\0' ;
 			Profile.filters[index].lasthit_time[0] = '\0' ;
 		}
-		strcpy(filename, szFilterPathName);
-		while (FileExists(filename))
-		{
-			i++;
-			sprintf(ext, ".%03i", i);
-			ChangeFileExtension(filename, ext);
-		}
-		WriteFilters(&Profile, i);
-		sprintf(filename, "The old filters.ini has been backed up as 'filters%s'", ext);
-		MessageBox(ghWnd, filename, "PDW Filters", MB_ICONINFORMATION);
+		std::string error;
+		if (!MessageArchivePersistRuntimeFilterState(error))
+			MessageBoxA(ghWnd, error.c_str(), "PDW Capcode Directory", MB_ICONERROR);
+		else MessageBoxA(ghWnd, "All Capcode Directory hit counters were reset.",
+			"PDW Capcode Directory", MB_ICONINFORMATION);
 	}
 	else
 	{
@@ -11661,7 +11807,7 @@ void ResetHitcounters(bool bAll)
 			Profile.filters[index].lasthit_date[0] = '\0' ;
 			Profile.filters[index].lasthit_time[0] = '\0' ;
 		}
-		bUpdateFilters = true;	// PH: Update filters.ini in UpdateFilters() when IDLE
+		bUpdateFilters = true;	// Persist Capcode Directory counters when idle.
 	}
 }
 

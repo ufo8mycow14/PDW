@@ -57,18 +57,21 @@ bool SendCommand(SOCKET socketValue, unsigned char command, std::uint32_t value)
 RtlTcpConfig::RtlTcpConfig()
 	: host("127.0.0.1"), port(1234), frequencyHz(148000000),
 	  sampleRate(1024000), audioSampleRate(48000), gainTenthsDb(0),
-	  frequencyCorrectionPpm(0), nfmBandwidthHz(12000), automaticGain(true)
+	  frequencyCorrectionPpm(0), nfmBandwidthHz(12000), automaticGain(true),
+	  signalConditionerEnabled(false)
 {
 }
 
 RtlFmDemodulator::RtlFmDemodulator(std::uint32_t iqSampleRate,
-	std::uint32_t audioSampleRate, std::uint32_t nfmBandwidthHz)
+	std::uint32_t audioSampleRate, std::uint32_t nfmBandwidthHz,
+	bool signalConditionerEnabled)
 {
-	Configure(iqSampleRate, audioSampleRate, nfmBandwidthHz);
+	Configure(iqSampleRate, audioSampleRate, nfmBandwidthHz,
+		signalConditionerEnabled);
 }
 
 void RtlFmDemodulator::Configure(std::uint32_t iqSampleRate, std::uint32_t audioSampleRate,
-	std::uint32_t nfmBandwidthHz)
+	std::uint32_t nfmBandwidthHz, bool signalConditionerEnabled)
 {
 	iqSampleRate_ = iqSampleRate ? iqSampleRate : 1024000;
 	audioSampleRate_ = audioSampleRate && audioSampleRate <= iqSampleRate_
@@ -79,6 +82,9 @@ void RtlFmDemodulator::Configure(std::uint32_t iqSampleRate, std::uint32_t audio
 		static_cast<float>(iqSampleRate_) * 0.45f);
 	lowPassAlpha_ = 1.0f - std::exp(-2.0f * 3.14159265358979323846f * cutoff /
 		static_cast<float>(iqSampleRate_));
+	signalConditionerEnabled_ = signalConditionerEnabled;
+	if (signalConditionerEnabled_)
+		signalConditioner_.Configure(iqSampleRate_, audioSampleRate_, nfmBandwidthHz_);
 	Reset();
 }
 
@@ -91,12 +97,19 @@ void RtlFmDemodulator::Reset()
 	accumulatorCount_ = 0;
 	havePrevious_ = false;
 	lowPassState_ = 0.0f;
+	signalConditioner_.Reset();
 }
 
 void RtlFmDemodulator::ProcessUnsignedIq(const unsigned char* iqBytes,
 	std::size_t byteCount,
 	std::vector<float>& audio)
 {
+	if (signalConditionerEnabled_)
+	{
+		signalConditioner_.ProcessUnsignedIq(iqBytes, byteCount, audio);
+		return;
+	}
+
 	audio.clear();
 	if (!iqBytes || byteCount < 2) return;
 	audio.reserve((byteCount / 2) * audioSampleRate_ / iqSampleRate_ + 2);
@@ -312,7 +325,7 @@ bool RtlTcpSource::ConnectAndReceive()
 	SetState(RTL_TCP_RUNNING, NULL);
 	SetEvent(readyEvent_);
 	RtlFmDemodulator demodulator(config_.sampleRate, config_.audioSampleRate,
-		config_.nfmBandwidthHz);
+		config_.nfmBandwidthHz, config_.signalConditionerEnabled);
 	std::vector<unsigned char> iqBytes(32768);
 	std::vector<float> audio;
 	bool discontinuity = true;
@@ -395,7 +408,8 @@ bool RtlSdrSource::Start(const RtlTcpConfig& config, unsigned int deviceIndex, A
 	deviceIndex_ = deviceIndex;
 	sink_ = sink;
 	InterlockedExchange(&lastIqCallbackTick_, 0);
-	demodulator_.Configure(config.sampleRate, config.audioSampleRate, config.nfmBandwidthHz);
+	demodulator_.Configure(config.sampleRate, config.audioSampleRate,
+		config.nfmBandwidthHz, config.signalConditionerEnabled);
 	stopEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	readyEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (!stopEvent_ || !readyEvent_)

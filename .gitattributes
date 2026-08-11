@@ -1,0 +1,4 @@
+# Preserve the original bytes in the legacy PDW data files. Their historical
+# format includes insignificant trailing spaces that must not be normalized.
+packaging/Legacy/base-ids.txt whitespace=-trailing-space
+packaging/Legacy/language.df whitespace=-trailing-space

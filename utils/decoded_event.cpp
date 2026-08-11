@@ -14,6 +14,10 @@ namespace events
 {
 namespace
 {
+	std::string g_eventSource("PDW");
+}
+namespace
+{
 	volatile LONG g_eventCounter = 0;
 }
 
@@ -72,7 +76,7 @@ pdw::publishing::PublishEvent BuildDecodedEvent(const DecodedMessageNotification
 	pdw::publishing::PublishEvent event;
 	event.id = CreateEventId();
 	event.timestamp = CurrentUtcIso8601();
-	event.source = "PDW";
+	event.source = g_eventSource;
 	event.address = PdwTextToUtf8(context.address);
 	event.time = PdwTextToUtf8(context.time);
 	event.date = PdwTextToUtf8(context.date);
@@ -102,11 +106,16 @@ pdw::publishing::PublishEvent BuildTestEvent(const std::string& targetName)
 	pdw::publishing::PublishEvent event;
 	event.id = CreateEventId();
 	event.timestamp = CurrentUtcIso8601();
-	event.source = "PDW";
+	event.source = g_eventSource;
 	event.mode = "TEST";
 	event.messageType = targetName;
 	event.message = "PDW output configuration test";
 	return event;
+}
+
+void SetDecodedEventSource(const std::string& source)
+{
+	g_eventSource = source.empty() ? "PDW" : source;
 }
 
 } // namespace events

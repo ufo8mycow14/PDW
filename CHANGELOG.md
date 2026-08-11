@@ -1,5 +1,196 @@
 # Changelog
 
+## PDW v5.3 2026 Release
+
+An additive Capcode Directory filtering release. Existing decoders, protocols,
+signal sources, archive retention, and output behaviour remain unchanged.
+
+### Added
+
+- Capcode Directory now owns live filtering as well as address descriptions. It exposes legacy
+  reject, exact-text, label, monitor-only, command, separate-file and hit-counter behavior in one
+  screen, together with the existing global filter options.
+- Message text can require multiple case-insensitive words using `+`, for example
+  `PR1+Traffic`; every term must occur, in any order. Existing `&` rules remain supported.
+- Expanded Capcode Directory CSV import/export carries all filter-rule fields and hit state.
+
+### Compatibility and security
+
+- Fresh packages retire `filters.ini`. Existing files are merged once without duplicating equivalent
+  directory mappings, the known duplicated label/message-text generator error is repaired, and the
+  source is retained as a `.migrated` backup. Old encrypted configuration backups remain restorable.
+- Directory saves, deletes, imports and reloads rebuild the proven legacy runtime matcher
+  immediately, so scheduled file regeneration and manual filter reloads are no longer needed.
+
+## PDW v5.2 2026 Release
+
+An additive Message History export release. Existing decoders, protocols,
+filters, signal sources, archive retention, and output behaviour remain
+unchanged.
+
+### Added
+
+- **Export CSV...** in Message History writes every row matching the current
+  Search, Protocol, and Filtered controls, rather than only the visible page.
+- UTF-8 spreadsheet-compatible output with the Received, Protocol, Capcode,
+  Name, Agency, Type, Message, and Filter headings, including current capcode
+  aliases and complete multiline values.
+
+### Compatibility and security
+
+- Export uses an independently hardened read-only SQLite snapshot so active
+  history capture can continue while all matching rows are streamed.
+- Spreadsheet formulas and leading control characters are emitted as protected
+  text; embedded NUL data is rejected instead of producing an ambiguous file.
+- Files are written through a same-folder temporary file and atomically
+  replaced only after success. The archive database and its SQLite sidecars
+  cannot be selected as export destinations.
+- Exported CSV files are unencrypted copies outside PDW retention and purge
+  controls and must be handled according to operator privacy requirements.
+
+## PDW v5.1 2026 Release
+
+An additive local-operations release for capcode identification, searchable
+history, browser-based monitoring, signal diagnostics, and isolated receiver
+workers. Existing decoders, protocols, filters, sources, and output behavior
+remain available and unchanged by default.
+
+### Added
+
+- A searchable local Capcode Directory that preserves the raw decoded address
+  while attaching protocol-specific display names, agencies, colours, notes,
+  enabled state, and CSV import/export metadata.
+- Optional bounded SQLite message history and a GET-only live dashboard/API
+  restricted to `127.0.0.1`; both are disabled by default and message text is
+  excluded from history by default.
+- Live audio-spectrum and rolling-waterfall diagnostics derived from the same
+  captured samples as the existing waveform without changing decoder input.
+- An optional RTL polyphase signal conditioner with an exact legacy bypass;
+  it is disabled by default and covered by bypass and processing tests.
+- Guarded multi-channel receivers using up to four isolated PDW worker
+  processes and distinct rtl_tcp endpoints or direct RTL-SDR devices.
+
+### Compatibility and security
+
+- Multi-channel workers preserve decoder isolation, cannot reuse a receiver,
+  cannot overwrite the main settings, and disable network/publishing outputs.
+  Endpoint matching canonicalizes local and case-equivalent hosts without DNS;
+  workers start suspended inside kill-on-close jobs and use a bounded forced
+  shutdown fallback. This release does not split one wideband IQ stream into
+  several channels.
+- Publishing/data-output address masking also removes capcode aliases and
+  agency metadata so local names cannot defeat the privacy control.
+- Operator-selected archive files must pass checked SQLite connection defenses
+  and a first-on-open bounded integrity check before any schema or message SQL.
+- The guided upgrade removes only the exact renamed v5 predecessor executable;
+  settings, filters, receiver additions, sounds, logs, and databases remain
+  preserved.
+- The directory, archive, dashboard, multi-channel manager, and signal
+  conditioner are opt-in local features. Offline decoder-comparison tooling is
+  intentionally not included.
+
+## PDW v5 2026 Release
+
+The first non-beta release of the modernized PDW line. It retains the complete
+legacy decoder, receiver, slicer, filter, audio, serial, display and output
+surface while introducing a guided Windows installation and upgrade path.
+
+### Added
+
+- One Windows Setup program containing architecture-matched Win32 and x64 PDW
+  application choices, with Win32 retained for legacy receiver libraries.
+- Guided installation, existing portable-folder detection, configuration and
+  filter migration, Start Menu and optional Desktop shortcuts, and safe
+  upgrade/uninstall behavior.
+- Release automation for dual-architecture installer inputs, installer audit,
+  Microsoft Defender scanning, Authenticode verification, and signing gates.
+
+### Compatibility and security
+
+- Portable use remains supported and uses the same executable and beside-the-
+  application configuration behavior as previous PDW versions.
+- Setup is per-user and does not require administrator rights. It does not move
+  credentials out of Windows Credential Manager or enable any network output.
+- Public release remains blocked until the application and Setup signatures
+  validate against a trusted publisher and the extracted installation passes
+  the current Microsoft Defender scan.
+
+## 4.6.1 Beta
+
+Maintenance release establishing enforceable repository and release rules for
+the dual-architecture PDW product. Decoder, protocol, slicer, serial, audio,
+receiver, driver, filter, and established output behavior are unchanged.
+
+### Added
+
+- Binding engineering and security policies requiring every release to retain
+  Win32/x86 beside x64 and preserve legacy scanner, slicer, driver, receiver,
+  and protocol paths.
+- A repository release audit that aligns canonical version, executable,
+  manifest, workflow artifacts, Readme, changelog, dependency notices, both CI
+  targets, prepared-statement SQL safeguards, and the audited file boundary.
+- A point-in-time dependency and advisory review for pinned OpenSSL 3.5.7,
+  curl 8.21.0, libssh2 1.11.1, Windows SQLite, and operator-managed MySQL ODBC.
+
+### Changed
+
+- Removed obsolete VC6/VS2017 project state, generated resource caches, a
+  duplicate v3.1 runtime archive, unused source variants, and unreferenced
+  bitmaps. CMake is now the only maintained project definition for x64 and
+  Win32.
+- Advanced all current product, About, resource, manifest, workflow, package,
+  branch, fork, and documentation identity to PDW v4.6.1 Beta.
+- Packaging and CI now run the release audit before producing an artifact.
+- Stabilized the main command bar's icon-and-label layout using the supported
+  Windows mixed-button toolbar styles so labels no longer clip into the message
+  column header during startup, resize, restore, or maximize.
+- Added a dedicated visible signal-quality percentage beside the Live Input
+  waveform, including compact-width presentation, instead of leaving the
+  quality value hidden behind the meter.
+
+### Compatibility and security
+
+- No Visual Basic source is present. Any future Visual Basic or runtime
+  introduction requires explicit supported-version, licensing, security, and
+  dual-architecture review.
+- SQLite and MySQL decoded-event fields remain bound parameters; table names
+  remain restricted identifiers. Optional outputs remain disabled by default.
+- No legacy decoder, protocol, slicer, driver, receiver, WinMM, serial, filter,
+  configuration, or delivery path was removed.
+
+## 4.6.0 Beta
+
+Dual-architecture follow-up to the merged 4.5 Beta release. The same decoder,
+settings, and output behavior is now built and tested for both x64 and Win32,
+while Win32 remains available for older receiver drivers and serial hardware.
+
+### Added
+
+- Native x64 Release builds, tests, CI artifacts, and portable packages beside
+  the existing Win32 equivalents.
+- Architecture checks for optional receiver DLLs, with clear diagnostics when
+  a 32-bit DLL is selected in x64 PDW or a 64-bit DLL is selected in Win32 PDW.
+- A maintained Windows architecture guide covering package choice, receiver
+  compatibility, and the architecture-neutral `rtl_tcp` path.
+
+### Changed
+
+- Removed pointer-width assumptions in shared UI, message, and signal-source
+  paths so the same source compiles cleanly for x64 and Win32.
+- Made CI and release packaging architecture-aware without removing any legacy
+  decoder, WinMM, serial, slicer, filter, or output path.
+- Centralized current executable naming and aligned product, resource,
+  manifest, workflow artifact, branch, and package identity to PDW v4.6.0 Beta.
+### Compatibility
+
+- Win32 remains the recommended build for legacy x86-only receiver DLLs and
+  hardware drivers. The x64 package intentionally excludes x86-only receiver
+  binaries and DOS-era VxD support assets.
+- `rtl_tcp` remains architecture-neutral because PDW communicates with it over
+  TCP rather than loading its receiver driver into the PDW process.
+- No decoder algorithm, protocol default, filter boundary, or optional-output
+  default changed for this release.
+
 ## 4.5.0 Beta
 
 Compatibility-first integration release. The v4.1 layout and legacy decoder,

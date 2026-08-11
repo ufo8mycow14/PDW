@@ -27,6 +27,7 @@
 #define MYSQL_ODBC_DSN_LEN 255
 #define MYSQL_ODBC_USERNAME_LEN 127
 #define TELNET_BIND_ADDRESS_LEN 63
+#define MESSAGE_ARCHIVE_PATH_LEN 511
 
 #define AUDIO_SOURCE_LOCAL   0
 #define AUDIO_SOURCE_RTL_TCP 1
@@ -44,6 +45,7 @@ enum FILTER_TYPE {	UNUSED_FILTER  = 0,
 
 typedef struct
 {
+	long long	 directory_id;			// Capcode Directory row backing this runtime filter
 	FILTER_TYPE  type;
 	char		 capcode[FILTER_CAPCODE_LEN+1];
 	char		 label[FILTER_LABEL_LEN+1];
@@ -287,6 +289,15 @@ typedef struct
 	int windowsToastEnabled;
 	int windowsToastIncludeMessage;
 
+	// Local-only capcode directory, searchable history, and read-only browser
+	// dashboard. Message persistence and the HTTP listener remain opt-in.
+	int messageHistoryEnabled;
+	int messageHistoryIncludeMessage;
+	unsigned int messageHistoryRetentionDays;
+	char messageArchivePath[MESSAGE_ARCHIVE_PATH_LEN+1];
+	int liveDashboardEnabled;
+	int liveDashboardPort;
+
 	int outputHealthAlertsEnabled;
 	unsigned int outputHealthFailureThreshold;
 
@@ -332,6 +343,7 @@ typedef struct
 	int rtlFrequencyCorrectionPpm;
 	int rtlBandwidthHz;
 	int rtlAutomaticGain;
+	int rtlSignalConditionerEnabled;
 	int rtlDeviceIndex;
 	char rtlReceiverId[RTL_RECEIVER_ID_LEN+1];
 	int audioThreshold[AUDIO_CUSTOM_RATE_COUNT];
@@ -456,7 +468,7 @@ extern int g_sps;
 extern int g_sps2;
 extern int level;
 
-extern bool bUpdateFilters;			// PH: Does FILTERS.INI need to be updated?
+extern bool bUpdateFilters;			// Does directory-backed runtime hit state need persisting?
 
 // ************* Function Prototypes **************
 
@@ -483,7 +495,7 @@ int  filter_addr(char addr_str[], char filter_str[]);
 
 // macros for easier readability...
 
-#define GETHINST( x )  ((HINSTANCE) GetWindowLong( x, GWL_HINSTANCE ))
+#define GETHINST( x )  (reinterpret_cast<HINSTANCE>(GetWindowLongPtr((x), GWLP_HINSTANCE)))
 
 // Windows function prototypes...
 
@@ -503,7 +515,7 @@ void BuildFilterString(char *temp_str, FILTER filter);
 void ChangeDataMode(HWND hWnd, int mode);
 
 VOID NEAR GoModalDialogBoxParam(HINSTANCE hInstance, LPCSTR lpszTemplate, HWND hWnd, DLGPROC lpDlgProc, LPARAM lParam);
-UINT CALLBACK CenterOpenDlgBox(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+UINT_PTR CALLBACK CenterOpenDlgBox(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 BOOL CenterWindow(HWND hWnd);
 
 BOOL FAR PASCAL AboutDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);

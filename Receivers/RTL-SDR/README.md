@@ -2,8 +2,8 @@
 
 This package contains the 32-bit `rtlsdr.dll` from RTL-SDR Blog Windows Release
 V1.4.0. It supports common RTL2832U receivers and the RTL-SDR Blog V3, V4 and
-V4L models. PDW is a 32-bit application because its legacy serial/slicer path is
-retained, so the x86 DLL is required even on 64-bit Windows.
+V4L models when used with the Win32 PDW build. The x64 PDW package omits this
+DLL and requires a trusted matching x64 librtlsdr-compatible library or RTL-TCP.
 
 The receiver must use a libusb-compatible Windows driver. If Windows has not
 already configured it, use the optional Zadig utility in `../Driver Tools` and

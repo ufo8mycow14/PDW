@@ -1,6 +1,6 @@
 // Microsoft Visual C++ generated resource script.
 //
-#include "resrc1.h"
+#include "headers\resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
 /////////////////////////////////////////////////////////////////////////////
@@ -10,7 +10,6 @@
 #define APSTUDIO_HIDDEN_SYMBOLS
 #include "windows.h"
 #undef APSTUDIO_HIDDEN_SYMBOLS
-#include "headers\resource.h"
 #include "headers\version.h"
 
 /////////////////////////////////////////////////////////////////////////////
@@ -91,16 +90,9 @@ BEGIN
     END
     POPUP "&Filters"
     BEGIN
-        MENUITEM "&Manage filters...\tCtrl+F",     IDM_FILTERS
-        MENUITEM "Filter &options...",             IDM_FILTEROPTIONS
-        MENUITEM "&Reload filters\tCtrl+R",        IDM_RELOAD
+		MENUITEM "&Capcode Directory...\tCtrl+F",   IDM_FILTERS
+        MENUITEM "&Reload Capcode Directory\tCtrl+R", IDM_RELOAD
         MENUITEM "Reset &all hit counters...",     IDM_RESET_HITCOUNTERS
-        MENUITEM SEPARATOR
-        POPUP "&Advanced"
-        BEGIN
-            MENUITEM "Write &filter file",          IDM_FILTERFILE_EN
-            MENUITEM "Run filter &command file",    IDM_FILTERCOMMANDFILE
-        END
     END
     POPUP "&Outputs"
     BEGIN
@@ -111,9 +103,13 @@ BEGIN
         MENUITEM "&Push and Windows notifications...", IDM_APPRISE
         MENUITEM "&Email...\tCtrl+M",               IDM_MAIL
         MENUITEM "&Data outputs...",                 IDM_DATA_OUTPUTS
+		MENUITEM "Local live &dashboard...",         IDM_LIVE_DASHBOARD
+		MENUITEM "Guarded multi-&channel receivers...", IDM_MULTI_CHANNEL
     END
     POPUP "&View"
     BEGIN
+		MENUITEM "Message &history...",              IDM_MESSAGE_HISTORY
+		MENUITEM SEPARATOR
         MENUITEM "&Switch focused pane",             IDM_PANE_SWITCH
         MENUITEM "View and &columns...",             IDM_SCREENOPTIONS
         MENUITEM "&Scrollback...",                   IDM_SCROLLBACK
@@ -192,7 +188,7 @@ BEGIN
     LTEXT           "Copyright (c) 2001 - 2004 Jason Petty",IDC_STATIC,79,33,126,8
     LTEXT           "2004 - 2010 Peter Hunt",IDC_STATIC,122,45,100,8
     LTEXT           "Win2k/XP RS232 support by: Herman Withaar",IDC_STATIC,113,106,152,8
-    LTEXT           "Contributors: Kieran O'Rourke (v4.1.0 beta)",IDC_STATIC,79,122,190,8
+    LTEXT           "Contributor: Kieran O'Rourke",IDC_STATIC,79,122,190,8
     PUSHBUTTON      "Visit PDW website",IDC_WEBSITE,121,68,68,15
     LTEXT           "2013 GNU GENERAL PUBLIC LICENSE",IDC_STATIC,124,57,124,8
 END
@@ -861,7 +857,7 @@ END
 
 1 TEXTINCLUDE 
 BEGIN
-    "resrc1.h\0"
+    "headers\\resource.h\0"
 END
 
 2 TEXTINCLUDE 
@@ -869,7 +865,6 @@ BEGIN
     "#define APSTUDIO_HIDDEN_SYMBOLS\r\n"
     "#include ""windows.h""\r\n"
     "#undef APSTUDIO_HIDDEN_SYMBOLS\r\n"
-    "#include ""headers\\resource.h""\r\n"
     "\0"
 END
 
@@ -909,7 +904,7 @@ BEGIN
             VALUE "FileDescription", "POCSAG, FLEX, ACARS, MOBITEX & ERMES Decoder"
             VALUE "FileVersion", PDW_VERSION_RESOURCE_STRING
             VALUE "InternalName", "PDW"
-            VALUE "OriginalFilename", "PDW v4.5.0 Beta.exe"
+            VALUE "OriginalFilename", PDW_EXECUTABLE_NAME
             VALUE "ProductName", "PDW"
             VALUE "ProductVersion", PDW_VERSION_STRING
         END
@@ -1093,63 +1088,68 @@ BEGIN
     DEFPUSHBUTTON   "Close",IDOK,390,293,64,20
 END
 
-SIGNAL_SOURCE_DLGBOX DIALOGEX 0, 0, 500, 442
+SIGNAL_SOURCE_DLGBOX DIALOGEX 0, 0, 450, 378
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Radio and Signal Sources"
 FONT 9, "Segoe UI", 0, 0, 0x0
 BEGIN
     LTEXT           "Signal source",IDC_STATIC,14,15,62,10
-    COMBOBOX        IDC_SIGNAL_SOURCE,82,11,250,70,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    LTEXT           "Local inputs retain WinMM, serial and slicer behaviour; WASAPI remains an automatic fallback.",IDC_STATIC,14,34,470,18
+    COMBOBOX        IDC_SIGNAL_SOURCE,82,11,220,70,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Local inputs retain WinMM, serial and slicer behaviour; WASAPI remains an automatic fallback.",IDC_STATIC,14,34,422,12
 
-    GROUPBOX        "Receiver",IDC_STATIC,8,57,484,174
-    LTEXT           "Support package",IDC_STATIC,18,77,78,10
-    COMBOBOX        IDC_RTL_RECEIVER_PACKAGE,99,73,220,120,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    PUSHBUTTON      "Add receiver...",IDC_RTL_RECEIVER_ADD,326,72,78,18
-    PUSHBUTTON      "Open folder",IDC_RTL_RECEIVER_FOLDER,410,72,70,18
-    LTEXT           "RTL-TCP host",IDC_STATIC,18,103,62,10
-    EDITTEXT        IDC_RTL_HOST,84,100,150,14,ES_AUTOHSCROLL
-    LTEXT           "Port",IDC_STATIC,245,103,24,10
-    EDITTEXT        IDC_RTL_PORT,272,100,54,14,ES_NUMBER | ES_AUTOHSCROLL
-    LTEXT           "Connected device",IDC_STATIC,337,103,70,10
-    COMBOBOX        IDC_RTL_DEVICE,410,99,70,95,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
-    LTEXT           "Frequency (Hz)",IDC_STATIC,18,127,66,10
-    EDITTEXT        IDC_RTL_FREQUENCY,84,124,104,14,ES_NUMBER | ES_AUTOHSCROLL
-    LTEXT           "IQ sample rate",IDC_STATIC,202,127,66,10
-    EDITTEXT        IDC_RTL_SAMPLE_RATE,272,124,74,14,ES_NUMBER | ES_AUTOHSCROLL
-    LTEXT           "Audio rate",IDC_STATIC,364,127,42,10
-    EDITTEXT        IDC_RTL_AUDIO_RATE,410,124,70,14,ES_NUMBER | ES_AUTOHSCROLL
-    CONTROL         "Automatic gain",IDC_RTL_AUTOMATIC_GAIN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,151,80,12
-    LTEXT           "Manual gain (0.1 dB)",IDC_STATIC,118,152,88,10
-    EDITTEXT        IDC_RTL_GAIN,210,149,50,14,ES_AUTOHSCROLL
-    LTEXT           "Correction (ppm)",IDC_STATIC,270,152,72,10
-    EDITTEXT        IDC_RTL_PPM,344,149,42,14,ES_AUTOHSCROLL
-    LTEXT           "NFM BW (Hz)",IDC_STATIC,392,152,54,10
-    EDITTEXT        IDC_RTL_BANDWIDTH,446,149,34,14,ES_NUMBER | ES_AUTOHSCROLL
-    PUSHBUTTON      "Test selected source",IDC_RTL_TEST,18,176,112,20
-    LTEXT           "Not tested.",IDC_RTL_STATUS,140,178,340,42
+    GROUPBOX        "Receiver",IDC_STATIC,8,51,434,146
+    LTEXT           "Support package",IDC_STATIC,18,68,72,10
+    COMBOBOX        IDC_RTL_RECEIVER_PACKAGE,94,64,190,110,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Add receiver...",IDC_RTL_RECEIVER_ADD,290,63,72,18
+    PUSHBUTTON      "Open folder",IDC_RTL_RECEIVER_FOLDER,368,63,62,18
+    LTEXT           "RTL-TCP host",IDC_STATIC,18,91,62,10
+    EDITTEXT        IDC_RTL_HOST,84,88,126,14,ES_AUTOHSCROLL
+    LTEXT           "Port",IDC_STATIC,218,91,24,10
+    EDITTEXT        IDC_RTL_PORT,244,88,48,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "Device",IDC_STATIC,302,91,38,10
+    COMBOBOX        IDC_RTL_DEVICE,344,87,86,82,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Frequency",IDC_STATIC,18,114,52,10
+    EDITTEXT        IDC_RTL_FREQUENCY,74,111,84,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "IQ rate",IDC_STATIC,168,114,34,10
+    EDITTEXT        IDC_RTL_SAMPLE_RATE,206,111,64,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "Audio rate",IDC_STATIC,280,114,44,10
+    EDITTEXT        IDC_RTL_AUDIO_RATE,328,111,58,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "BW",IDC_STATIC,394,114,18,10
+    EDITTEXT        IDC_RTL_BANDWIDTH,414,111,28,14,ES_NUMBER | ES_AUTOHSCROLL
+    CONTROL         "Automatic gain",IDC_RTL_AUTOMATIC_GAIN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,135,76,12
+    LTEXT           "Manual gain",IDC_STATIC,104,136,56,10
+    EDITTEXT        IDC_RTL_GAIN,164,133,42,14,ES_AUTOHSCROLL
+    LTEXT           "Correction ppm",IDC_STATIC,216,136,62,10
+    EDITTEXT        IDC_RTL_PPM,282,133,38,14,ES_AUTOHSCROLL
+    CONTROL         "Enhanced IQ filtering and resampling",IDC_RTL_SIGNAL_CONDITIONER,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,155,180,12
+    PUSHBUTTON      "Test source",IDC_RTL_TEST,206,151,74,18
+    LTEXT           "Not tested.",IDC_RTL_STATUS,288,153,142,30
 
-    GROUPBOX        "Recording and replay",IDC_STATIC,8,237,484,95
-    LTEXT           "Record",IDC_STATIC,18,255,32,10
-    EDITTEXT        IDC_SIGNAL_RECORD_PATH,52,252,286,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "Browse...",IDC_SIGNAL_RECORD_BROWSE,344,251,54,16
-    PUSHBUTTON      "Start",IDC_SIGNAL_RECORD_START,404,251,32,16
-    PUSHBUTTON      "Stop",IDC_SIGNAL_RECORD_STOP,442,251,32,16
-    LTEXT           "Replay",IDC_STATIC,18,278,32,10
-    EDITTEXT        IDC_SIGNAL_REPLAY_PATH,52,275,286,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "Browse...",IDC_SIGNAL_REPLAY_BROWSE,344,274,54,16
-    PUSHBUTTON      "Start",IDC_SIGNAL_REPLAY_START,404,274,32,16
-    PUSHBUTTON      "Stop",IDC_SIGNAL_REPLAY_STOP,442,274,32,16
-    LTEXT           "WAV stores normalized decoder audio; SigMF stores normalized rf32_le samples.",IDC_SIGNAL_DIAGNOSTIC_STATUS,18,302,460,18
+    GROUPBOX        "Recording and replay",IDC_STATIC,8,203,434,62
+    LTEXT           "Record",IDC_STATIC,18,219,32,10
+    EDITTEXT        IDC_SIGNAL_RECORD_PATH,52,216,260,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_SIGNAL_RECORD_BROWSE,316,215,48,16
+    PUSHBUTTON      "Start",IDC_SIGNAL_RECORD_START,368,215,30,16
+    PUSHBUTTON      "Stop",IDC_SIGNAL_RECORD_STOP,402,215,28,16
+    LTEXT           "Replay",IDC_STATIC,18,241,32,10
+    EDITTEXT        IDC_SIGNAL_REPLAY_PATH,52,238,260,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_SIGNAL_REPLAY_BROWSE,316,237,48,16
+    PUSHBUTTON      "Start",IDC_SIGNAL_REPLAY_START,368,237,30,16
+    PUSHBUTTON      "Stop",IDC_SIGNAL_REPLAY_STOP,402,237,28,16
+    LTEXT           "WAV decoder audio; SigMF normalized rf32_le samples.",IDC_SIGNAL_DIAGNOSTIC_STATUS,18,254,412,10
 
-    GROUPBOX        "Live signal and recording calibration",IDC_STATIC,8,334,484,64
-    CONTROL         "",IDC_SIGNAL_WAVEFORM,"Static",SS_OWNERDRAW | WS_BORDER,18,350,220,30
-    CONTROL         "",IDC_SIGNAL_QUALITY_HISTORY,"Static",SS_OWNERDRAW | WS_BORDER,246,350,128,30
-    PUSHBUTTON      "Calibrate replay...",IDC_SIGNAL_CALIBRATE,382,349,96,20
-    LTEXT           "Level --  Noise --  Clipping --  Eye --  Decode history --",IDC_SIGNAL_METRICS,18,383,458,10
+    GROUPBOX        "Live signal and calibration",IDC_STATIC,8,271,434,72
+    CONTROL         "",IDC_SIGNAL_WAVEFORM,"Static",SS_OWNERDRAW | WS_BORDER,18,286,170,20
+    CONTROL         "",IDC_SIGNAL_QUALITY_HISTORY,"Static",SS_OWNERDRAW | WS_BORDER,194,286,100,20
+    PUSHBUTTON      "Calibrate replay...",IDC_SIGNAL_CALIBRATE,302,285,128,20
+    LTEXT           "Level --  Noise --  Clipping --  Eye --  Decode history --",IDC_SIGNAL_METRICS,18,309,412,10
+    LTEXT           "Spectrum",IDC_STATIC,18,322,48,10
+    CONTROL         "",IDC_SIGNAL_SPECTRUM,"Static",SS_OWNERDRAW | WS_BORDER,68,321,120,16
+    LTEXT           "Waterfall",IDC_STATIC,194,322,46,10
+    CONTROL         "",IDC_SIGNAL_WATERFALL,"Static",SS_OWNERDRAW | WS_BORDER,244,321,186,16
 
-    DEFPUSHBUTTON   "OK",IDOK,356,410,58,20
-    PUSHBUTTON      "Cancel",IDCANCEL,420,410,58,20
+    DEFPUSHBUTTON   "OK",IDOK,310,350,58,20
+    PUSHBUTTON      "Cancel",IDCANCEL,374,350,58,20
 END
 
 PUBLISHING_DLGBOX DIALOGEX 0, 0, 470, 372
@@ -1369,7 +1369,7 @@ CAPTION "PDW Backup / Restore"
 FONT 9, "Segoe UI", 0, 0, 0x0
 BEGIN
     GROUPBOX        "Complete configuration",IDC_STATIC,8,8,414,104
-    LTEXT           "Create one portable backup containing PDW.INI, filters.ini, receiver frequencies, usernames, passwords and all supported Credential Manager secrets.",IDC_STATIC,18,24,392,28
+    LTEXT           "Create one portable backup containing PDW.INI, the Capcode Directory, receiver frequencies, usernames, passwords and all supported Credential Manager secrets.",IDC_STATIC,18,24,392,28
     LTEXT           "Backups are password-encrypted and can be saved anywhere. PDW never writes exported passwords as readable text.",IDC_STATIC,18,57,392,22
     PUSHBUTTON      "Export all settings...",IDC_BACKUP_EXPORT,18,87,126,18
     PUSHBUTTON      "Restore from backup...",IDC_BACKUP_RESTORE,154,87,130,18
@@ -1392,6 +1392,179 @@ BEGIN
     LTEXT           "The password is used only to encrypt or decrypt this file.",IDC_STATIC,12,101,328,18
     DEFPUSHBUTTON   "OK",IDOK,230,124,52,18
     PUSHBUTTON      "Cancel",IDCANCEL,288,124,52,18
+END
+
+CAPCODE_DIRECTORY_DLGBOX DIALOGEX 0, 0, 720, 610
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Capcode Directory and Filters"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    LTEXT           "Search",IDC_STATIC,12,13,34,10
+    EDITTEXT        IDC_CAPCODE_SEARCH,50,10,300,16,ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "New",IDC_CAPCODE_NEW,360,9,50,18
+    PUSHBUTTON      "Import CSV...",IDC_CAPCODE_IMPORT,418,9,82,18
+    PUSHBUTTON      "Export CSV...",IDC_CAPCODE_EXPORT,508,9,82,18
+    PUSHBUTTON      "Reload",IDC_FILTERRELOAD,598,9,62,18
+    LTEXT           "The directory is now PDW's live filter source. Changes apply immediately; no filters.ini file is used.",IDC_STATIC,12,32,690,12
+    CONTROL         "",IDC_CAPCODE_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP,10,48,700,108
+
+    GROUPBOX        "Selected directory filter",IDC_STATIC,10,164,700,198
+
+    LTEXT           "Protocol",IDC_STATIC,24,186,42,10
+    COMBOBOX        IDC_CAPCODE_PROTOCOL,70,182,90,110,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Filter type",IDC_STATIC,172,186,50,10
+    COMBOBOX        IDC_CAPCODE_FILTER_TYPE,226,182,112,120,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Capcode",IDC_STATIC,350,186,42,10
+    EDITTEXT        IDC_CAPCODE_ADDRESS,396,182,106,16,ES_AUTOHSCROLL | WS_TABSTOP
+    CONTROL         "Enable",IDC_CAPCODE_ENABLED,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,516,185,52,12
+    CONTROL         "Reject",IDC_CAPCODE_REJECT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,580,185,52,12
+
+    LTEXT           "Display name",IDC_STATIC,24,210,66,10
+    EDITTEXT        IDC_CAPCODE_NAME,94,206,244,16,ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Agency / service",IDC_STATIC,350,210,78,10
+    EDITTEXT        IDC_CAPCODE_AGENCY,432,206,250,16,ES_AUTOHSCROLL | WS_TABSTOP
+
+    LTEXT           "Message text",IDC_STATIC,24,234,66,10
+    EDITTEXT        IDC_CAPCODE_FILTER_TEXT,94,230,244,16,ES_AUTOHSCROLL | WS_TABSTOP
+    CONTROL         "Match EXACT message",IDC_CAPCODE_MATCH_EXACT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,350,233,116,12
+    LTEXT           "Use PR1+Traffic to require both words in any order (leave Exact off).",IDC_CAPCODE_MULTIWORD_HELP,472,230,210,20
+
+    LTEXT           "Filter label",IDC_STATIC,24,258,66,10
+    EDITTEXT        IDC_CAPCODE_FILTER_LABEL,94,254,244,16,ES_AUTOHSCROLL | WS_TABSTOP
+    CONTROL         "Show filter label",IDC_CAPCODE_SHOW_LABEL,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,350,257,96,12
+    PUSHBUTTON      "Directory colour...",IDC_CAPCODE_COLOR,454,252,94,18
+    LTEXT           "Label",IDC_STATIC,554,258,28,10
+    COMBOBOX        IDC_CAPCODE_LABEL_COLOR,584,253,98,170,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+
+    LTEXT           "Notes",IDC_STATIC,24,282,30,10
+    EDITTEXT        IDC_CAPCODE_NOTES,58,278,280,30,ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Enable command file",IDC_CAPCODE_COMMAND,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,350,281,110,12
+    CONTROL         "Monitor only",IDC_CAPCODE_MONITOR_ONLY,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,472,281,78,12
+    CONTROL         "Send email (disabled)",IDC_CAPCODE_EMAIL,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,560,281,122,12
+    LTEXT           "Number of hits: 0",IDC_CAPCODE_HIT_COUNTER,350,299,150,12
+    PUSHBUTTON      "Reset",IDC_CAPCODE_HIT_RESET,506,295,54,18
+
+    CONTROL         "Enable separate filter CSV",IDC_CAPCODE_SEP_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,24,320,130,12
+    EDITTEXT        IDC_CAPCODE_SEP_FILE1,160,316,152,16,ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Browse...",IDC_CAPCODE_SEP_BROWSE,318,315,62,18
+    EDITTEXT        IDC_CAPCODE_SEP_FILE2,386,316,142,16,ES_AUTOHSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_CAPCODE_SEP_FILE3,534,316,148,16,ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Save or update",IDC_CAPCODE_SAVE,24,338,94,18
+    PUSHBUTTON      "Delete",IDC_CAPCODE_DELETE,124,338,58,18
+
+    GROUPBOX        "Filtered CSV output",IDC_STATIC,10,368,700,42
+    CONTROL         "Enable filter CSV",IDC_FILTERFILEEN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,24,384,92,12
+    EDITTEXT        IDC_FILTERFILE,122,380,348,16,ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Browse...",IDC_FILTERBROWSE,476,379,64,18
+    CONTROL         "Use date as filename",IDC_FILTERFILEDATE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,552,383,120,12
+    GROUPBOX        "Columns written to filter / separate CSV files",IDC_STATIC,10,416,700,36
+    CONTROL         "Capcode",931,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,24,430,50,12
+    CONTROL         "Time",932,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,92,430,40,12
+    CONTROL         "Date",933,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,150,430,40,12
+    CONTROL         "Mode",934,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,208,430,42,12
+    CONTROL         "Type",935,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,268,430,40,12
+    CONTROL         "Bitrate",936,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,326,430,48,12
+    CONTROL         "Message",937,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,392,430,58,12
+    GROUPBOX        "Descriptions and command file",IDC_STATIC,10,458,700,62
+    CONTROL         "In monitor window && monitor logfile",IDC_LABELLOG,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,24,474,180,12
+    CONTROL         "On a new line",IDC_LABELNEWLINE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,212,474,90,12
+    CONTROL         "Enable command file",IDC_FILTERCMDEN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,24,496,112,12
+    EDITTEXT        IDC_FILTERCMDFILE,142,492,268,16,ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Browse...",IDC_FILTERCMDBROWSE,416,491,62,18
+    LTEXT           "Arguments",IDC_STATIC,490,496,52,10
+    EDITTEXT        IDC_FILTERCMDARGS,546,492,126,16,ES_AUTOHSCROLL | WS_TABSTOP
+    GROUPBOX        "General",IDC_STATIC,10,526,700,48
+    CONTROL         "Show tone only",IDC_FILTERTONE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,24,542,90,12
+    CONTROL         "Show numeric",IDC_FILTERNUMERIC,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,120,542,88,12
+    CONTROL         "Show FLEX binary / hex",IDC_FILTERBINARYHEX,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,214,542,120,12
+    CONTROL         "Show label colours in directory",IDC_FILTERSCOLORS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,340,542,148,12
+    CONTROL         "Filtered messages only",IDC_FILTERWINDOWONLY,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,494,542,122,12
+    CONTROL         "Filter beep / WAV files (disabled)",IDC_FILTERBEEP,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,24,558,172,12
+    LTEXT           "Default filter type",IDC_STATIC,214,560,88,10
+    COMBOBOX        IDC_FILTERDEFTYPE,306,555,112,110,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Show CMD / DESC / SEP columns",IDC_FILTERSEXTRA,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,436,558,176,12
+
+    LTEXT           "Ready.",IDC_CAPCODE_STATUS,12,582,492,18
+    PUSHBUTTON      "Save options",IDC_FILTER_APPLY,514,578,90,20
+    DEFPUSHBUTTON   "Close",IDOK,636,578,64,20
+END
+
+MESSAGE_HISTORY_DLGBOX DIALOGEX 0, 0, 450, 350
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Message History"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    GROUPBOX        "Local retention (disabled by default)",IDC_STATIC,10,8,430,74
+    CONTROL         "Enable local history",IDC_HISTORY_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,22,24,108,12
+    CONTROL         "Store message text",IDC_HISTORY_MESSAGE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,138,24,104,12
+    LTEXT           "Retain days",IDC_STATIC,254,25,54,10
+    EDITTEXT        IDC_HISTORY_RETENTION,312,21,42,16,ES_NUMBER | ES_AUTOHSCROLL
+    PUSHBUTTON      "Save settings",IDC_HISTORY_SAVE_SETTINGS,360,20,68,18
+    LTEXT           "Database",IDC_STATIC,22,53,46,10
+    EDITTEXT        IDC_HISTORY_PATH,72,49,274,16,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_HISTORY_BROWSE,354,47,74,18
+
+    LTEXT           "Search",IDC_STATIC,12,94,34,10
+    EDITTEXT        IDC_HISTORY_SEARCH,50,90,154,16,ES_AUTOHSCROLL
+    LTEXT           "Protocol",IDC_STATIC,214,94,42,10
+    COMBOBOX        IDC_HISTORY_PROTOCOL,260,90,82,90,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Filtered",IDC_HISTORY_FILTERED,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,350,93,58,12
+    PUSHBUTTON      "Refresh",IDC_HISTORY_REFRESH,12,112,58,18
+    PUSHBUTTON      "Purge expired",IDC_HISTORY_PURGE,76,112,72,18
+    PUSHBUTTON      "E&xport CSV...",IDC_HISTORY_EXPORT,154,112,78,18
+    CONTROL         "",IDC_HISTORY_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP,10,136,430,156
+    PUSHBUTTON      "Previous",IDC_HISTORY_PREVIOUS,12,300,60,18
+    PUSHBUTTON      "Next",IDC_HISTORY_NEXT,78,300,48,18
+    LTEXT           "Page 1",IDC_HISTORY_PAGE,138,304,220,12
+    LTEXT           "Ready.",IDC_HISTORY_STATUS,12,326,350,16
+    DEFPUSHBUTTON   "Close",IDOK,374,320,64,22
+END
+
+LIVE_DASHBOARD_DLGBOX DIALOGEX 0, 0, 430, 236
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Local Live Dashboard"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    GROUPBOX        "Read-only browser feed",IDC_STATIC,8,8,414,92
+    CONTROL         "Enable local dashboard",IDC_DASHBOARD_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,26,126,12
+    LTEXT           "Port",IDC_STATIC,164,27,24,10
+    EDITTEXT        IDC_DASHBOARD_PORT,192,23,58,16,ES_NUMBER | ES_AUTOHSCROLL
+    PUSHBUTTON      "Save",IDC_DASHBOARD_SAVE,266,21,56,20
+    PUSHBUTTON      "Open dashboard",IDC_DASHBOARD_OPEN,328,21,84,20
+    LTEXT           "The listener is permanently restricted to 127.0.0.1. It accepts GET requests only and cannot control PDW. Enable Message History first.",IDC_STATIC,18,54,390,36
+    GROUPBOX        "Status",IDC_STATIC,8,108,414,72
+    LTEXT           "Local dashboard is disabled.",IDC_DASHBOARD_STATUS,18,126,390,40
+    LTEXT           "Endpoints: /api/v1/messages, /api/v1/capcodes and /health",IDC_STATIC,18,162,390,10
+    DEFPUSHBUTTON   "Close",IDOK,350,200,62,22
+END
+
+MULTI_CHANNEL_DLGBOX DIALOGEX 0, 0, 450, 330
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Guarded Multi-Channel Receivers"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    LTEXT           "Each enabled channel uses an isolated PDW process and a distinct receiver. Local message history must be enabled.",IDC_STATIC,10,9,430,22
+    CONTROL         "",IDC_MULTI_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | WS_BORDER | WS_TABSTOP,10,36,430,100
+    GROUPBOX        "Selected channel",IDC_STATIC,10,142,430,118
+    CONTROL         "Enabled",IDC_MULTI_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,22,160,60,12
+    LTEXT           "Label",IDC_STATIC,92,161,30,10
+    EDITTEXT        IDC_MULTI_LABEL,126,158,100,14,ES_AUTOHSCROLL
+    LTEXT           "Source",IDC_STATIC,236,161,34,10
+    COMBOBOX        IDC_MULTI_SOURCE,274,158,154,90,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Frequency Hz",IDC_STATIC,22,186,62,10
+    EDITTEXT        IDC_MULTI_FREQUENCY,88,183,96,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "rtl_tcp host",IDC_STATIC,194,186,58,10
+    EDITTEXT        IDC_MULTI_HOST,256,183,108,14,ES_AUTOHSCROLL
+    LTEXT           "Port",IDC_STATIC,372,186,24,10
+    EDITTEXT        IDC_MULTI_PORT,400,183,28,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "Direct device index",IDC_STATIC,22,211,82,10
+    EDITTEXT        IDC_MULTI_DEVICE,108,208,44,14,ES_NUMBER | ES_AUTOHSCROLL
+    PUSHBUTTON      "Save configuration",IDC_MULTI_SAVE,22,232,94,20
+    PUSHBUTTON      "Start enabled",IDC_MULTI_START,122,232,82,20
+    PUSHBUTTON      "Stop all",IDC_MULTI_STOP,210,232,64,20
+    LTEXT           "Workers lock receiver, filter, storage, network and log settings; events go only to queued local history.",IDC_STATIC,284,208,144,42
+    LTEXT           "",IDC_MULTI_STATUS,10,270,430,28,SS_LEFTNOWORDWRAP
+    DEFPUSHBUTTON   "Close",IDOK,372,302,68,20
 END
 
 STRINGTABLE

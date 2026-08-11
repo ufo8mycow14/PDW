@@ -66,7 +66,25 @@ namespace
 			(attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
 	}
 
-	bool Is32BitWindowsLibrary(const std::string& path)
+	WORD ExpectedReceiverMachine()
+	{
+#if defined(_WIN64)
+		return IMAGE_FILE_MACHINE_AMD64;
+#else
+		return IMAGE_FILE_MACHINE_I386;
+#endif
+	}
+
+	const char* ReceiverArchitectureLabel()
+	{
+#if defined(_WIN64)
+		return "64-bit";
+#else
+		return "32-bit";
+#endif
+	}
+
+	bool IsMatchingWindowsLibrary(const std::string& path)
 	{
 		HANDLE file = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
 			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -84,7 +102,7 @@ namespace
 				ReadFile(file, &signature, sizeof(signature), &read, NULL) != FALSE &&
 				read == sizeof(signature) && signature == IMAGE_NT_SIGNATURE &&
 				ReadFile(file, &fileHeader, sizeof(fileHeader), &read, NULL) != FALSE &&
-				read == sizeof(fileHeader) && fileHeader.Machine == IMAGE_FILE_MACHINE_I386 &&
+				read == sizeof(fileHeader) && fileHeader.Machine == ExpectedReceiverMachine() &&
 				(fileHeader.Characteristics & IMAGE_FILE_DLL) != 0;
 		}
 		CloseHandle(file);
@@ -271,9 +289,10 @@ bool ValidateRtlReceiverLibrary(const std::string& libraryPath, std::string& err
 		error = "Receiver DLL was not found.";
 		return false;
 	}
-	if (!Is32BitWindowsLibrary(libraryPath))
+	if (!IsMatchingWindowsLibrary(libraryPath))
 	{
-		error = "Receiver DLL must be a 32-bit Windows library for this legacy-compatible PDW build.";
+		error = std::string("Receiver DLL must be a ") + ReceiverArchitectureLabel() +
+			" Windows library matching this PDW build.";
 		return false;
 	}
 	DWORD loadError = ERROR_SUCCESS;
@@ -315,7 +334,7 @@ std::vector<ReceiverPackage> EnumerateRtlReceiverPackages(const std::string& rec
 		ReceiverPackage legacy;
 		legacy.id = "legacy-side-by-side";
 		legacy.displayName = "Legacy side-by-side RTL-SDR DLL";
-		legacy.description = "Existing receiver DLL beside PDW v4.5.0 Beta.exe";
+		legacy.description = "Existing receiver DLL beside the PDW executable";
 		legacy.libraryPath = legacyPath;
 		legacy.compatible = ValidateRtlReceiverLibrary(legacy.libraryPath, legacy.status);
 		packages.push_back(legacy);
@@ -495,7 +514,8 @@ bool ImportRtlReceiverPackage(const std::string& primaryLibraryPath,
 	importedPackage.id = "custom-" + slug;
 	if (importedPackage.id.size() > 63) importedPackage.id.resize(63);
 	importedPackage.displayName = displayName + " (custom)";
-	importedPackage.description = "User-imported 32-bit librtlsdr-compatible receiver package";
+	importedPackage.description = std::string("User-imported ") + ReceiverArchitectureLabel() +
+		" librtlsdr-compatible receiver package";
 	importedPackage.libraryPath = JoinPath(destinationDirectory, primaryName);
 	importedPackage.bundled = false;
 	if (!WriteReceiverIni(destinationDirectory, importedPackage, primaryName))

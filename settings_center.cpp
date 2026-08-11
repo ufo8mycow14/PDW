@@ -21,6 +21,7 @@
 #include "headers\settings_center.h"
 #include "headers\startup.h"
 #include "headers\ui_theme.h"
+#include "headers\version.h"
 
 namespace
 {
@@ -758,7 +759,7 @@ namespace
 		SetTextColor(memory, PdwThemeMutedTextColor());
 		SelectObject(memory, g_smallFont);
 		RECT version = { Scale(20), Scale(38), navWidth - Scale(14), Scale(58) };
-		DrawTextA(memory, "PDW v4.5.0 Beta", -1, &version,
+		DrawTextA(memory, PDW_DISPLAY_VERSION, -1, &version,
 			DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
 
 		const int contentLeft = navWidth + Scale(26);

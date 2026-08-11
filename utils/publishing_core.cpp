@@ -68,19 +68,28 @@ PublishEvent ApplyTransform(const PublishEvent& source, const TransformOptions& 
 		const std::size_t visible = result.address.size() > 3 ? 3 : 0;
 		result.address.assign(result.address.size() - visible, '*');
 		if (visible) result.address += source.address.substr(source.address.size() - visible);
+		// A name or agency can identify the same pager as effectively as the raw
+		// address. Address masking therefore removes directory metadata too.
+		result.addressName.clear();
+		result.agency.clear();
+		result.aliasColor = 0;
 	}
 	if (!options.includeMessage) result.message.clear();
 	return result;
 }
 
-std::string BuildJsonObject(const PublishEvent& event)
+std::string BuildJsonObject(const PublishEvent& event, bool includeLocalAliases)
 {
 	std::ostringstream output;
 	output << "{\"id\":\"" << JsonEscape(event.id)
 		<< "\",\"timestamp\":\"" << JsonEscape(event.timestamp)
 		<< "\",\"source\":\"" << JsonEscape(event.source)
-		<< "\",\"address\":\"" << JsonEscape(event.address)
-		<< "\",\"time\":\"" << JsonEscape(event.time)
+		<< "\",\"address\":\"" << JsonEscape(event.address) << '"';
+	if (includeLocalAliases)
+		output << ",\"address_name\":\"" << JsonEscape(event.addressName)
+			<< "\",\"agency\":\"" << JsonEscape(event.agency)
+			<< "\",\"alias_color\":" << event.aliasColor;
+	output << ",\"time\":\"" << JsonEscape(event.time)
 		<< "\",\"date\":\"" << JsonEscape(event.date)
 		<< "\",\"mode\":\"" << JsonEscape(event.mode)
 		<< "\",\"message_type\":\"" << JsonEscape(event.messageType)
