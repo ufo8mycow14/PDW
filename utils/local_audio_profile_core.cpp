@@ -1766,27 +1766,84 @@ namespace
 		return std::string();
 	}
 
-	bool CreateVerifiedBackup(const std::string& sourcePath, const std::string& original,
+	bool CreateVerifiedBackup(const std::string& sourcePath, HANDLE sourceGuard,
+		DWORD sourceAttributes, const std::string& original,
 		std::string& backupPath, std::string& error)
 	{
-		backupPath = ChooseBackupPath(sourcePath);
-		if (backupPath.empty())
+		const std::string selectedBackupPath = ChooseBackupPath(sourcePath);
+		if (selectedBackupPath.empty())
 		{
 			error = "PDW could not choose a unique settings-backup path.";
 			return false;
 		}
-		if (!CopyFileA(sourcePath.c_str(), backupPath.c_str(), TRUE))
+
+		std::string temporaryPath;
+		HANDLE temporaryHandle = INVALID_HANDLE_VALUE;
+		if (!CreateSecureTemporaryPath(sourcePath, "PAB", sourcePath, temporaryPath,
+			sourceGuard, temporaryHandle, error))
+			return false;
+		if (!CopyBackupStreamsDurably(sourceGuard, temporaryHandle, error) ||
+			!ApplyPortableAttributes(temporaryHandle, sourceAttributes, true, error))
 		{
-			error = WindowsError("Creating the settings backup", GetLastError());
-			backupPath.clear();
+			std::string cleanupError;
+			if (!MarkSensitiveTemporaryFileForDeletion(temporaryHandle, temporaryPath,
+				cleanupError) && !cleanupError.empty()) AppendDetail(error, cleanupError);
+			CloseHandle(temporaryHandle);
 			return false;
 		}
-		std::string backup;
-		DWORD ignoredAttributes = 0;
-		if (!ReadFileBytes(backupPath, backup, ignoredAttributes, error) || backup != original)
+		CloseHandle(temporaryHandle);
+		if (!MoveFileExA(temporaryPath.c_str(), selectedBackupPath.c_str(),
+			MOVEFILE_WRITE_THROUGH))
 		{
-			if (error.empty()) error = "The settings backup was not byte-for-byte identical.";
+			error = WindowsError("Publishing the verified settings backup", GetLastError()) +
+				" The metadata-aware backup staging file remains at \"" +
+				temporaryPath + "\".";
+			backupPath = temporaryPath;
+			return false;
+		}
+		backupPath = selectedBackupPath;
+		const DWORD portableAttributeMask = FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN |
+			FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+		const DWORD publishedAttributes = sourceAttributes & portableAttributeMask;
+		if (!SetFileAttributesA(backupPath.c_str(), publishedAttributes ?
+			publishedAttributes : FILE_ATTRIBUTE_NORMAL))
+		{
+			error = WindowsError("Finalizing the settings-backup attributes", GetLastError()) +
+				" The unverified backup was not deleted and remains at \"" +
+				backupPath + "\".";
+			return false;
+		}
+
+		std::string backup;
+		DWORD backupAttributes = 0;
+		std::vector<unsigned char> sourceSecurity;
+		std::vector<unsigned char> backupSecurity;
+		WORD sourceControl = 0;
+		WORD backupControl = 0;
+		if (!ReadFileBytes(backupPath, backup, backupAttributes, error) ||
+			!ReadDaclDescriptorFromHandle(sourceGuard, sourceSecurity, sourceControl, error) ||
+			!ReadDaclDescriptor(backupPath, backupSecurity, backupControl, error))
+		{
 			error += " The unverified backup was not deleted and remains at \"" +
+				backupPath + "\".";
+			return false;
+		}
+		const bool bytesPreserved = backup == original;
+		const bool daclPreserved = EquivalentDacl(sourceSecurity, backupSecurity);
+		const bool daclProtectionPreserved =
+			((sourceControl ^ backupControl) & SE_DACL_PROTECTED) == 0;
+		const bool attributesPreserved =
+			((sourceAttributes ^ backupAttributes) & portableAttributeMask) == 0;
+		if (!bytesPreserved || !daclPreserved || !daclProtectionPreserved ||
+			!attributesPreserved)
+		{
+			std::ostringstream detail;
+			detail << "The settings backup did not preserve its verified metadata (bytes="
+				<< (bytesPreserved ? "preserved" : "changed") << ", DACL="
+				<< (daclPreserved ? "preserved" : "changed") << ", DACL protection="
+				<< (daclProtectionPreserved ? "preserved" : "changed") << ", attributes="
+				<< (attributesPreserved ? "preserved" : "changed") << ").";
+			error = detail.str() + " The unverified backup was not deleted and remains at \"" +
 				backupPath + "\".";
 			return false;
 		}
@@ -2150,7 +2207,8 @@ SettingsTransactionOutcome ApplyAdelaideFlexPresetToIni(const std::string& iniPa
 		error = "The settings file is read-only; no changes were made.";
 		return SETTINGS_TRANSACTION_NOT_COMMITTED;
 	}
-	const bool backupCreated = CreateVerifiedBackup(fullPath, original, backupPath, error);
+	const bool backupCreated = CreateVerifiedBackup(fullPath, originalGuard, attributes,
+		original, backupPath, error);
 	CloseHandle(originalGuard);
 	if (!backupCreated) return SETTINGS_TRANSACTION_NOT_COMMITTED;
 
