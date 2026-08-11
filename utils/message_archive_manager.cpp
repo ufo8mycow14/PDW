@@ -276,22 +276,37 @@ namespace
 		destination[Size - 1] = '\0';
 	}
 
+	std::string DirectoryDisplayLabel(const pdw::archive::CapcodeEntry& entry)
+	{
+		if (entry.agency.empty() || entry.agencyLabelPosition == PDW_AGENCY_LABEL_HIDDEN)
+			return entry.displayName;
+		if (entry.displayName.empty()) return entry.agency;
+		return entry.agencyLabelPosition == PDW_AGENCY_LABEL_BEFORE ?
+			entry.agency + " - " + entry.displayName :
+			entry.displayName + " - " + entry.agency;
+	}
+
 	FILTER MakeRuntimeFilter(const pdw::archive::CapcodeEntry& entry, FILTER_TYPE type)
 	{
 		FILTER filter = {};
 		filter.directory_id = entry.id;
+		filter.filter_to_pane = entry.filterEnabled ? 1 : 0;
+		filter.output_routing_configured = entry.outputRoutingConfigured ? 1 : 0;
+		filter.output_routes = entry.outputRoutes;
 		filter.type = type;
 		CopyRuntimeText(filter.capcode, entry.address);
 		CopyRuntimeText(filter.text, entry.matchText);
-		CopyRuntimeText(filter.label, entry.filterLabel.empty() ? entry.displayName : entry.filterLabel);
+		CopyRuntimeText(filter.label, DirectoryDisplayLabel(entry));
 		filter.match_exact_msg = entry.matchExactMessage ? 1 : 0;
-		filter.cmd_enabled = entry.commandEnabled ? 1 : 0;
+		filter.cmd_enabled = 1;
 		filter.reject = entry.reject ? 1 : 0;
 		filter.monitor_only = entry.monitorOnly ? 1 : 0;
 		filter.wave_number = entry.waveNumber;
 		filter.label_enabled = entry.showFilterLabel ? 1 : 0;
 		filter.label_color = entry.labelColor;
-		filter.smtp = entry.emailEnabled ? 1 : 0;
+		filter.smtp = entry.outputRoutingConfigured ?
+			((entry.outputRoutes & PDW_OUTPUT_ROUTE_EMAIL) ? 1 : 0) :
+			(entry.emailEnabled ? 1 : 0);
 		filter.sep_filterfile_en = entry.separateFileEnabled ? 1 : 0;
 		const std::string files[3] = { entry.separateFile1, entry.separateFile2, entry.separateFile3 };
 		for (int index = 0; index < 3; ++index)
@@ -303,6 +318,37 @@ namespace
 		CopyRuntimeText(filter.lasthit_date, entry.lastHitDate);
 		CopyRuntimeText(filter.lasthit_time, entry.lastHitTime);
 		return filter;
+	}
+
+	unsigned long RuntimeRuleSpecificity(const pdw::archive::CapcodeEntry& entry)
+	{
+		unsigned long score = 0;
+		if (entry.matchExactMessage && !entry.matchText.empty()) score += 1000000UL;
+		if (!entry.matchText.empty())
+		{
+			unsigned long terms = 1;
+			for (std::string::const_iterator character = entry.matchText.begin();
+				character != entry.matchText.end(); ++character)
+				if (*character == '+') ++terms;
+			score += 100000UL + terms * 1000UL +
+				static_cast<unsigned long>(std::min<std::size_t>(entry.matchText.size(), 999));
+		}
+		if (!entry.protocol.empty()) score += 10000UL;
+		bool wildcard = false;
+		for (std::string::const_iterator character = entry.address.begin();
+			character != entry.address.end(); ++character)
+		{
+			if (*character == '?') wildcard = true;
+			else score += 10UL;
+		}
+		if (!entry.address.empty() && !wildcard) score += 5000UL;
+		// A POCSAG address may carry a function-number suffix (1234567-1).
+		// It is narrower than the base capcode even when the rule applies to Any
+		// protocol and is expanded later, so it must be evaluated first.
+		if (entry.address.size() == 9 && entry.address[7] == '-' &&
+			entry.address[8] >= '0' && entry.address[8] <= '9')
+			score += 20000UL;
+		return score;
 	}
 
 	std::string ProtocolForLegacyType(FILTER_TYPE type)
@@ -334,12 +380,18 @@ namespace
 			_stricmp(entry.matchText.c_str(), entry.filterLabel.c_str()) == 0)
 			entry.matchText.clear();
 		entry.enabled = true;
+		entry.filterEnabled = filter.monitor_only == 0;
+		// Legacy filters had global output selection. Keep that behavior until
+		// the operator deliberately saves explicit destinations on the rule.
+		entry.outputRoutingConfigured = false;
+		entry.outputRoutes = 0;
 		entry.reject = filter.reject != 0;
 		entry.matchExactMessage = filter.match_exact_msg != 0;
 		entry.showFilterLabel = filter.label_enabled != 0;
 		entry.commandEnabled = filter.cmd_enabled != 0;
 		entry.monitorOnly = filter.monitor_only != 0;
 		entry.emailEnabled = filter.smtp != 0;
+		if (entry.emailEnabled) entry.outputRoutes |= PDW_OUTPUT_ROUTE_EMAIL;
 		entry.separateFileEnabled = filter.sep_filterfile_en != 0;
 		entry.separateFile1 = filter.sep_filterfile[0];
 		entry.separateFile2 = filter.sep_filterfile[1];
@@ -356,24 +408,38 @@ namespace
 		FILTERLIST& filters)
 	{
 		filters.clear();
+		std::vector<const pdw::archive::CapcodeEntry*> ordered;
 		for (std::vector<pdw::archive::CapcodeEntry>::const_iterator entry = entries.begin();
 			entry != entries.end(); ++entry)
+			if (entry->enabled) ordered.push_back(&*entry);
+		std::stable_sort(ordered.begin(), ordered.end(),
+			[](const pdw::archive::CapcodeEntry* left,
+				const pdw::archive::CapcodeEntry* right)
+			{
+				return RuntimeRuleSpecificity(*left) > RuntimeRuleSpecificity(*right);
+			});
+		for (std::vector<const pdw::archive::CapcodeEntry*>::const_iterator item = ordered.begin();
+			item != ordered.end(); ++item)
 		{
-			if (!entry->enabled) continue;
-			const FILTER_TYPE inferred = InferRuntimeFilterType(*entry);
+			const pdw::archive::CapcodeEntry& entry = **item;
+			// The legacy enabled field is retained only as a migration sentinel so
+			// previously disabled rows stay dormant. Every active directory row must
+			// reach the matcher: Filter/output choices are independent, and monitor,
+			// label, hit-counter, wave and shared command actions happen after match.
+			const FILTER_TYPE inferred = InferRuntimeFilterType(entry);
 			if (inferred != UNUSED_FILTER)
 			{
-				filters.push_back(MakeRuntimeFilter(*entry, inferred));
+				filters.push_back(MakeRuntimeFilter(entry, inferred));
 				continue;
 			}
 			// "Any protocol" address entries remain one directory row, but become
 			// protocol-specific runtime filters so the proven legacy matcher stays intact.
-			if (entry->address.empty()) continue;
-			filters.push_back(MakeRuntimeFilter(*entry, FLEX_FILTER));
-			filters.push_back(MakeRuntimeFilter(*entry, POCSAG_FILTER));
-			filters.push_back(MakeRuntimeFilter(*entry, ERMES_FILTER));
-			filters.push_back(MakeRuntimeFilter(*entry, ACARS_FILTER));
-			filters.push_back(MakeRuntimeFilter(*entry, MOBITEX_FILTER));
+			if (entry.address.empty()) continue;
+			filters.push_back(MakeRuntimeFilter(entry, FLEX_FILTER));
+			filters.push_back(MakeRuntimeFilter(entry, POCSAG_FILTER));
+			filters.push_back(MakeRuntimeFilter(entry, ERMES_FILTER));
+			filters.push_back(MakeRuntimeFilter(entry, ACARS_FILTER));
+			filters.push_back(MakeRuntimeFilter(entry, MOBITEX_FILTER));
 		}
 	}
 
@@ -722,6 +788,16 @@ bool MessageArchiveDeleteCapcode(const std::string& protocol,
 	return true;
 }
 
+bool MessageArchiveResetCapcodeHitCounter(long long id, std::string& error)
+{
+	if (id <= 0) { error = "Choose a Capcode Directory entry first."; return false; }
+	const ArchiveConfig config = CurrentConfig();
+	const std::string resolvedPath = ResolveArchivePath(config.path);
+	ArchiveOperationGuard operation(resolvedPath);
+	return EnsureOpen(resolvedPath, error) &&
+		g_archive.UpdateCapcodeRuntimeState(id, 0, std::string(), std::string(), error);
+}
+
 bool MessageArchiveReloadRuntimeFilters(std::string& error)
 {
 	const ArchiveConfig config = CurrentConfig();
@@ -968,7 +1044,14 @@ std::string MessageArchiveBuildCapcodesJson(const std::string& search)
 			<< "\",\"agency\":\"" << JsonEscape(entries[index].agency)
 			<< "\",\"color\":" << entries[index].color
 			<< ",\"notes\":\"" << JsonEscape(entries[index].notes)
-			<< "\",\"enabled\":" << (entries[index].enabled ? "true" : "false") << '}';
+			<< "\",\"enabled\":" << (entries[index].enabled ? "true" : "false")
+			<< ",\"filter_enabled\":" << (entries[index].filterEnabled ? "true" : "false")
+			<< ",\"output_routing_configured\":"
+			<< (entries[index].outputRoutingConfigured ? "true" : "false")
+			<< ",\"send_to_outputs\":"
+			<< (entries[index].outputRoutingConfigured && entries[index].outputRoutes ? "true" : "false")
+			<< ",\"output_routes\":" << entries[index].outputRoutes
+			<< ",\"agency_label_position\":" << entries[index].agencyLabelPosition << '}';
 	}
 	output << "]}\n";
 	return output.str();

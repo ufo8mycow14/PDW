@@ -185,6 +185,17 @@ namespace
 		return targets;
 	}
 
+	int SelectedTargets(const pdw::publishing::PublishEvent& event)
+	{
+		int targets = 0;
+		if (event.outputRoutes & PDW_OUTPUT_ROUTE_MQTT) targets |= TARGET_MQTT;
+		if (event.outputRoutes & PDW_OUTPUT_ROUTE_SQLITE) targets |= TARGET_SQLITE;
+		if (event.outputRoutes & PDW_OUTPUT_ROUTE_MYSQL_ODBC) targets |= TARGET_MYSQL;
+		if (event.outputRoutes & PDW_OUTPUT_ROUTE_TELNET) targets |= TARGET_TELNET;
+		if (event.outputRoutes & PDW_OUTPUT_ROUTE_WINDOWS) targets |= TARGET_TOAST;
+		return targets;
+	}
+
 	void SetManagerStatus(const std::string& status)
 	{
 		if (!g_initialized) return;
@@ -362,7 +373,10 @@ namespace
 	void ProcessTask(OutputTask& task, const Config& currentConfig)
 	{
 		const Config config = task.test ? task.testConfig : currentConfig;
-		const int targets = task.test ? task.targets : EnabledTargets(config);
+		if (!task.test && (!config.enabled || !config.acknowledged)) return;
+		const int targets = task.test ? task.targets :
+			(task.targets & EnabledTargets(config));
+		if (!targets) return;
 		const pdw::publishing::PublishEvent event = TransformEvent(config, task.event, config.includeMessage);
 		std::string error;
 
@@ -947,10 +961,16 @@ void DataOutputPublishEvent(const pdw::publishing::PublishEvent& event)
 {
 	if (!g_initialized || InterlockedCompareExchange(&g_stopping, 0, 0)) return;
 	const Config config = SnapshotConfig();
-	if (!config.enabled || !config.acknowledged || !EnabledTargets(config) ||
-		(config.filteredOnly && !event.filtered)) return;
+	if (!config.enabled || !config.acknowledged || !EnabledTargets(config)) return;
+	int targets = EnabledTargets(config);
+	if (event.outputRoutingConfigured)
+		targets &= SelectedTargets(event);
+	else if (config.filteredOnly && !event.filtered)
+		return;
+	if (!targets) return;
 	OutputTask task;
 	task.event = event;
+	task.targets = targets;
 	QueueTask(task);
 }
 

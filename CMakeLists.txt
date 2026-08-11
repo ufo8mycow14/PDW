@@ -704,6 +704,7 @@ if(BUILD_TESTING)
 
 	add_executable(PDWMessageArchiveTests
 		tests/message_archive_tests.cpp
+		utils/filter_match_core.cpp
 		utils/message_archive.cpp
 		utils/publishing_core.cpp
 	)
@@ -720,6 +721,7 @@ if(BUILD_TESTING)
 
 	add_executable(PDWMessageArchiveManagerTests
 		tests/message_archive_manager_tests.cpp
+		utils/filter_match_core.cpp
 		utils/local_dashboard_server.cpp
 		utils/message_archive.cpp
 		utils/message_archive_manager.cpp

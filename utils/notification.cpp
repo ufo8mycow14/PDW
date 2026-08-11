@@ -896,8 +896,14 @@ void NotificationGetStatusText(char *buffer, size_t bufferSize)
 
 void NotificationPublishDecodedMessage(const DecodedMessageNotificationContext &context)
 {
+	const bool explicitlyRouted = context.outputRoutingConfigured;
+	const bool emailSelected = !explicitlyRouted ||
+		(context.outputRoutes & PDW_OUTPUT_ROUTE_EMAIL) != 0;
+	const bool appriseSelected = !explicitlyRouted ? context.filtered :
+		(context.outputRoutes & PDW_OUTPUT_ROUTE_APPRISE) != 0;
 	NotificationRouteDecision routes = NotificationDecideRoutes(Profile.SMTP != 0,
-		InterlockedCompareExchange(&g_appriseEnabled, 0, 0) != 0, context.filtered);
+		InterlockedCompareExchange(&g_appriseEnabled, 0, 0) != 0, appriseSelected);
+	routes.email = routes.email && emailSelected;
 
 	if (routes.email)
 	{

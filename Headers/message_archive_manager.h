@@ -21,6 +21,7 @@ bool MessageArchiveUpsertCapcode(const pdw::archive::CapcodeEntry& entry,
 bool MessageArchiveDeleteCapcode(long long id, std::string& error);
 bool MessageArchiveDeleteCapcode(const std::string& protocol,
 	const std::string& address, std::string& error);
+bool MessageArchiveResetCapcodeHitCounter(long long id, std::string& error);
 bool MessageArchiveReloadRuntimeFilters(std::string& error);
 bool MessageArchivePersistRuntimeFilterState(std::string& error);
 bool MessageArchiveExportCapcodesCsv(std::string& csv, std::string& error);

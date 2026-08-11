@@ -1,4 +1,5 @@
 #include "message_archive.h"
+#include "filter_match_core.h"
 
 #include <winsqlite/winsqlite3.h>
 
@@ -19,7 +20,7 @@ namespace
 	const ULONGLONG QUERY_LIMIT_MS = 3000;
 	const ULONGLONG EXPORT_LIMIT_MS = 5ULL * 60ULL * 1000ULL;
 	const int PDW_ARCHIVE_APPLICATION_ID = 0x50445731; // ASCII "PDW1"
-	const int PDW_ARCHIVE_SCHEMA_VERSION = 2;
+	const int PDW_ARCHIVE_SCHEMA_VERSION = 3;
 
 	struct ProgressDeadline
 	{
@@ -289,6 +290,14 @@ namespace
 		entry.hitCounter = static_cast<unsigned int>(sqlite3_column_int64(statement, 23));
 		entry.lastHitDate = ColumnText(statement, 24);
 		entry.lastHitTime = ColumnText(statement, 25);
+		entry.filterEnabled = sqlite3_column_int(statement, 26) != 0;
+		entry.outputRoutingConfigured = sqlite3_column_int(statement, 27) != 0;
+		entry.outputRoutes = static_cast<unsigned int>(sqlite3_column_int64(statement, 28));
+		entry.agencyLabelPosition = sqlite3_column_int(statement, 29);
+		if (entry.displayName.empty()) entry.displayName = entry.filterLabel;
+		entry.filterLabel = entry.displayName;
+		if (entry.outputRoutingConfigured)
+			entry.emailEnabled = (entry.outputRoutes & PDW_OUTPUT_ROUTE_EMAIL) != 0;
 		return true;
 	}
 
@@ -297,20 +306,22 @@ namespace
 		return "id,protocol,address,display_name,agency,color,notes,enabled,filter_type,match_text,"
 			"filter_label,reject,match_exact,show_label,command_enabled,monitor_only,email_enabled,"
 			"separate_file_enabled,separate_file_1,separate_file_2,separate_file_3,wave_number,"
-			"label_color,hit_counter,last_hit_date,last_hit_time";
+			"label_color,hit_counter,last_hit_date,last_hit_time,filter_enabled,"
+			"output_routing_configured,output_routes,agency_label_position";
 	}
 
 	bool MigrateArchiveSchema(sqlite3* database, std::string& error)
 	{
 		int schemaVersion = 0;
 		if (!ReadSingleInteger(database, "PRAGMA user_version;", schemaVersion, error)) return false;
-		if (schemaVersion == PDW_ARCHIVE_SCHEMA_VERSION) return true;
-		if (schemaVersion != 1)
+		if (schemaVersion < 1 || schemaVersion > PDW_ARCHIVE_SCHEMA_VERSION)
 		{
 			error = "The PDW message archive schema version is not supported.";
 			return false;
 		}
-		const char migration[] =
+		if (schemaVersion == 1)
+		{
+			const char migration[] =
 			"BEGIN IMMEDIATE;"
 			"ALTER TABLE capcode_directory RENAME TO capcode_directory_v1;"
 			"CREATE TABLE capcode_directory("
@@ -330,12 +341,41 @@ namespace
 			"display_name,1,updated_utc FROM capcode_directory_v1;"
 			"DROP TABLE capcode_directory_v1;"
 			"PRAGMA user_version=2;COMMIT;";
-		char* sqliteError = NULL;
-		if (sqlite3_exec(database, migration, NULL, NULL, &sqliteError) == SQLITE_OK) return true;
-		error = sqliteError ? sqliteError : "PDW could not upgrade the Capcode Directory.";
-		if (sqliteError) sqlite3_free(sqliteError);
-		sqlite3_exec(database, "ROLLBACK;", NULL, NULL, NULL);
-		return false;
+			char* sqliteError = NULL;
+			if (sqlite3_exec(database, migration, NULL, NULL, &sqliteError) != SQLITE_OK)
+			{
+				error = sqliteError ? sqliteError : "PDW could not upgrade the Capcode Directory.";
+				if (sqliteError) sqlite3_free(sqliteError);
+				sqlite3_exec(database, "ROLLBACK;", NULL, NULL, NULL);
+				return false;
+			}
+			schemaVersion = 2;
+		}
+		if (schemaVersion == 2)
+		{
+			const char migration[] =
+				"BEGIN IMMEDIATE;"
+				"ALTER TABLE capcode_directory ADD COLUMN filter_enabled INTEGER NOT NULL DEFAULT 1;"
+				"ALTER TABLE capcode_directory ADD COLUMN output_routing_configured INTEGER NOT NULL DEFAULT 0;"
+				"ALTER TABLE capcode_directory ADD COLUMN output_routes INTEGER NOT NULL DEFAULT 0;"
+				"ALTER TABLE capcode_directory ADD COLUMN agency_label_position INTEGER NOT NULL DEFAULT 0;"
+				"UPDATE capcode_directory SET display_name=filter_label "
+				"WHERE display_name='' AND filter_label<>'';"
+				"UPDATE capcode_directory SET filter_enabled=CASE WHEN enabled=1 AND monitor_only=0 THEN 1 ELSE 0 END,"
+				"output_routing_configured=0,"
+				"output_routes=CASE WHEN email_enabled=1 THEN 1 ELSE 0 END,"
+				"filter_label=display_name,command_enabled=1;"
+				"PRAGMA user_version=3;COMMIT;";
+			char* sqliteError = NULL;
+			if (sqlite3_exec(database, migration, NULL, NULL, &sqliteError) != SQLITE_OK)
+			{
+				error = sqliteError ? sqliteError : "PDW could not add per-filter output routing.";
+				if (sqliteError) sqlite3_free(sqliteError);
+				sqlite3_exec(database, "ROLLBACK;", NULL, NULL, NULL);
+				return false;
+			}
+		}
+		return true;
 	}
 }
 
@@ -744,7 +784,10 @@ bool MessageArchive::Open(const std::string& utf8Path, std::string& error)
 		"separate_file_enabled INTEGER NOT NULL DEFAULT 0,separate_file_1 TEXT NOT NULL DEFAULT '',"
 		"separate_file_2 TEXT NOT NULL DEFAULT '',separate_file_3 TEXT NOT NULL DEFAULT '',"
 		"wave_number INTEGER NOT NULL DEFAULT 0,label_color INTEGER NOT NULL DEFAULT 0,hit_counter INTEGER NOT NULL DEFAULT 0,"
-		"last_hit_date TEXT NOT NULL DEFAULT '',last_hit_time TEXT NOT NULL DEFAULT '',updated_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);"
+		"last_hit_date TEXT NOT NULL DEFAULT '',last_hit_time TEXT NOT NULL DEFAULT '',"
+		"filter_enabled INTEGER NOT NULL DEFAULT 1,output_routing_configured INTEGER NOT NULL DEFAULT 1,"
+		"output_routes INTEGER NOT NULL DEFAULT 0,agency_label_position INTEGER NOT NULL DEFAULT 0,"
+		"updated_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);"
 		"CREATE INDEX IF NOT EXISTS idx_capcode_directory_address ON capcode_directory(address);"
 		"CREATE INDEX IF NOT EXISTS idx_capcode_directory_name ON capcode_directory(display_name);"
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_capcode_directory_rule ON capcode_directory(protocol,address,filter_type,match_text);"
@@ -837,7 +880,22 @@ bool MessageArchive::UpsertCapcode(const CapcodeEntry& entry, std::string& error
 	}
 	if (!validAddress) { error = "Enter a capcode/filter pattern of 1 to 18 letters, digits, ? or -, or leave it blank for a Text filter."; return false; }
 	if (!IsValidProtocolName(entry.protocol)) { error = "Choose a supported protocol or Any protocol."; return false; }
-	if (entry.filterType == 3 && entry.matchText.empty()) { error = "A Text filter requires message text."; return false; }
+	if (entry.filterType == 3 && entry.matchText.empty()) { error = "A Text filter requires at least one keyword."; return false; }
+	if (entry.matchExactMessage && entry.matchText.find('+') != std::string::npos)
+	{
+		error = "Use either + between required keywords or Enable exact message match, not both.";
+		return false;
+	}
+	if (!pdw::filters::IsValidRequiredTermsExpression(entry.matchText.c_str(), 10))
+	{
+		error = "Use 2 to 10 non-empty keywords separated by +, or enter one keyword.";
+		return false;
+	}
+	if (entry.filterEnabled && entry.monitorOnly)
+	{
+		error = "Choose either Filter or Monitor only; a message cannot be sent to both panes.";
+		return false;
+	}
 	if (entry.matchText.size() > 40 || entry.filterLabel.size() > 256 || entry.displayName.size() > 256 ||
 		entry.separateFile1.size() > 128 || entry.separateFile2.size() > 128 || entry.separateFile3.size() > 128)
 	{
@@ -851,22 +909,37 @@ bool MessageArchive::UpsertCapcode(const CapcodeEntry& entry, std::string& error
 		error = "The selected audio or label colour is invalid.";
 		return false;
 	}
+	if ((entry.outputRoutes & ~PDW_OUTPUT_ROUTE_ALL) != 0)
+	{
+		error = "One or more selected output routes is invalid.";
+		return false;
+	}
+	if (entry.agencyLabelPosition < PDW_AGENCY_LABEL_HIDDEN ||
+		entry.agencyLabelPosition > PDW_AGENCY_LABEL_AFTER)
+	{
+		error = "Choose whether Agency / service is hidden, before, or after the display name.";
+		return false;
+	}
 	const char* insertSql =
 		"INSERT INTO capcode_directory(protocol,address,display_name,agency,color,notes,enabled,filter_type,match_text,filter_label,"
 		"reject,match_exact,show_label,command_enabled,monitor_only,email_enabled,separate_file_enabled,separate_file_1,separate_file_2,"
-		"separate_file_3,wave_number,label_color,hit_counter,last_hit_date,last_hit_time,updated_utc)"
-		" VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
+		"separate_file_3,wave_number,label_color,hit_counter,last_hit_date,last_hit_time,filter_enabled,output_routing_configured,"
+		"output_routes,agency_label_position,updated_utc)"
+		" VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
 		" ON CONFLICT(protocol,address,filter_type,match_text) DO UPDATE SET display_name=excluded.display_name,agency=excluded.agency,"
 		"color=excluded.color,notes=excluded.notes,enabled=excluded.enabled,filter_label=excluded.filter_label,reject=excluded.reject,"
 		"match_exact=excluded.match_exact,show_label=excluded.show_label,command_enabled=excluded.command_enabled,"
 		"monitor_only=excluded.monitor_only,email_enabled=excluded.email_enabled,separate_file_enabled=excluded.separate_file_enabled,"
 		"separate_file_1=excluded.separate_file_1,separate_file_2=excluded.separate_file_2,separate_file_3=excluded.separate_file_3,"
 		"wave_number=excluded.wave_number,label_color=excluded.label_color,hit_counter=excluded.hit_counter,"
-		"last_hit_date=excluded.last_hit_date,last_hit_time=excluded.last_hit_time,updated_utc=CURRENT_TIMESTAMP;";
+		"last_hit_date=excluded.last_hit_date,last_hit_time=excluded.last_hit_time,filter_enabled=excluded.filter_enabled,"
+		"output_routing_configured=excluded.output_routing_configured,output_routes=excluded.output_routes,"
+		"agency_label_position=excluded.agency_label_position,updated_utc=CURRENT_TIMESTAMP;";
 	const char* updateSql =
 		"UPDATE capcode_directory SET protocol=?,address=?,display_name=?,agency=?,color=?,notes=?,enabled=?,filter_type=?,match_text=?,"
 		"filter_label=?,reject=?,match_exact=?,show_label=?,command_enabled=?,monitor_only=?,email_enabled=?,separate_file_enabled=?,"
 		"separate_file_1=?,separate_file_2=?,separate_file_3=?,wave_number=?,label_color=?,hit_counter=?,last_hit_date=?,last_hit_time=?,"
+		"filter_enabled=?,output_routing_configured=?,output_routes=?,agency_label_position=?,"
 		"updated_utc=CURRENT_TIMESTAMP WHERE id=?;";
 	sqlite3_stmt* statement = NULL;
 	if (sqlite3_prepare_v2(database_, entry.id > 0 ? updateSql : insertSql, -1, &statement, NULL) != SQLITE_OK)
@@ -890,9 +963,13 @@ bool MessageArchive::UpsertCapcode(const CapcodeEntry& entry, std::string& error
 		BindText(statement, 20, entry.separateFile3) && sqlite3_bind_int(statement, 21, entry.waveNumber) == SQLITE_OK &&
 		sqlite3_bind_int(statement, 22, entry.labelColor) == SQLITE_OK &&
 		sqlite3_bind_int64(statement, 23, static_cast<sqlite3_int64>(entry.hitCounter)) == SQLITE_OK &&
-		BindText(statement, 24, entry.lastHitDate) && BindText(statement, 25, entry.lastHitTime);
+		BindText(statement, 24, entry.lastHitDate) && BindText(statement, 25, entry.lastHitTime) &&
+		sqlite3_bind_int(statement, 26, entry.filterEnabled ? 1 : 0) == SQLITE_OK &&
+		sqlite3_bind_int(statement, 27, entry.outputRoutingConfigured ? 1 : 0) == SQLITE_OK &&
+		sqlite3_bind_int64(statement, 28, static_cast<sqlite3_int64>(entry.outputRoutes)) == SQLITE_OK &&
+		sqlite3_bind_int(statement, 29, entry.agencyLabelPosition) == SQLITE_OK;
 	if (entry.id > 0)
-		bound = sqlite3_bind_int64(statement, 26, static_cast<sqlite3_int64>(entry.id)) == SQLITE_OK && bound;
+		bound = sqlite3_bind_int64(statement, 30, static_cast<sqlite3_int64>(entry.id)) == SQLITE_OK && bound;
 	const int result = bound ? sqlite3_step(statement) : SQLITE_ERROR;
 	const int changed = result == SQLITE_DONE ? sqlite3_changes(database_) : 0;
 	if (result != SQLITE_DONE || (entry.id > 0 && changed != 1))
@@ -940,21 +1017,24 @@ bool WriteCapcodeDirectoryCsv(const std::vector<CapcodeEntry>& entries,
 	error.clear();
 	output << "protocol,address,display_name,agency,color,notes,enabled,filter_type,match_text,filter_label,"
 		"reject,match_exact,show_label,command_enabled,monitor_only,email_enabled,separate_file_enabled,"
-		"separate_file_1,separate_file_2,separate_file_3,wave_number,label_color,hit_counter,last_hit_date,last_hit_time\r\n";
+		"separate_file_1,separate_file_2,separate_file_3,wave_number,label_color,hit_counter,last_hit_date,last_hit_time,"
+		"filter_enabled,output_routing_configured,output_routes,agency_label_position\r\n";
 	for (std::vector<CapcodeEntry>::const_iterator item = entries.begin(); item != entries.end(); ++item)
 	{
 		output << CsvEscape(item->protocol.empty() ? "Any" : item->protocol) << ','
 			<< CsvEscape(item->address) << ',' << CsvEscape(item->displayName) << ','
 			<< CsvEscape(item->agency) << ',' << item->color << ',' << CsvEscape(item->notes) << ','
 			<< (item->enabled ? 1 : 0) << ',' << item->filterType << ',' << CsvEscape(item->matchText) << ','
-			<< CsvEscape(item->filterLabel) << ',' << (item->reject ? 1 : 0) << ','
+			<< CsvEscape(item->displayName) << ',' << (item->reject ? 1 : 0) << ','
 			<< (item->matchExactMessage ? 1 : 0) << ',' << (item->showFilterLabel ? 1 : 0) << ','
 			<< (item->commandEnabled ? 1 : 0) << ',' << (item->monitorOnly ? 1 : 0) << ','
 			<< (item->emailEnabled ? 1 : 0) << ',' << (item->separateFileEnabled ? 1 : 0) << ','
 			<< CsvEscape(item->separateFile1) << ',' << CsvEscape(item->separateFile2) << ','
 			<< CsvEscape(item->separateFile3) << ',' << item->waveNumber << ',' << item->labelColor << ','
 			<< item->hitCounter << ',' << CsvEscape(item->lastHitDate) << ','
-			<< CsvEscape(item->lastHitTime) << "\r\n";
+			<< CsvEscape(item->lastHitTime) << ',' << (item->filterEnabled ? 1 : 0) << ','
+			<< (item->outputRoutingConfigured ? 1 : 0) << ',' << item->outputRoutes << ','
+			<< item->agencyLabelPosition << "\r\n";
 		if (!output.good()) { error = "The Capcode Directory CSV could not be written."; return false; }
 	}
 	return output.good();
@@ -1032,7 +1112,33 @@ bool ReadCapcodeDirectoryCsv(std::istream& input,
 		}
 		if (fields.size() > 23) entry.lastHitDate = fields[23];
 		if (fields.size() > 24) entry.lastHitTime = fields[24];
-		if (entry.filterLabel.empty()) entry.filterLabel = entry.displayName;
+		if (fields.size() > 25) entry.filterEnabled = CsvBoolean(fields[25]);
+		else entry.filterEnabled = entry.enabled && !entry.monitorOnly;
+		if (fields.size() > 26)
+		{
+			entry.outputRoutingConfigured = CsvBoolean(fields[26]);
+			if (fields.size() > 27 && !fields[27].empty())
+			{
+				if (!ParseCsvUnsigned(fields[27], PDW_OUTPUT_ROUTE_ALL, parsed)) { ++rejected; continue; }
+				entry.outputRoutes = static_cast<unsigned int>(parsed);
+			}
+			else entry.outputRoutes = 0;
+		}
+		else
+		{
+			entry.outputRoutingConfigured = false;
+			entry.outputRoutes = entry.emailEnabled ? PDW_OUTPUT_ROUTE_EMAIL : 0;
+		}
+		if (fields.size() > 28 && !fields[28].empty())
+		{
+			if (!ParseCsvUnsigned(fields[28], PDW_AGENCY_LABEL_AFTER, parsed)) { ++rejected; continue; }
+			entry.agencyLabelPosition = static_cast<int>(parsed);
+		}
+		if (entry.displayName.empty()) entry.displayName = entry.filterLabel;
+		entry.filterLabel = entry.displayName;
+		entry.commandEnabled = true;
+		if (entry.outputRoutingConfigured)
+			entry.emailEnabled = (entry.outputRoutes & PDW_OUTPUT_ROUTE_EMAIL) != 0;
 		entries.push_back(entry);
 	}
 	if (input.bad()) { error = "The Capcode Directory CSV could not be read."; return false; }

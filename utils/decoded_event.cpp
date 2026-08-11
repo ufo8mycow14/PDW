@@ -94,6 +94,8 @@ pdw::publishing::PublishEvent BuildDecodedEvent(const DecodedMessageNotification
 	event.groupFinal = context.groupFinal;
 	event.fragmented = context.fragmented;
 	event.assembled = context.assembled;
+	event.outputRoutingConfigured = context.outputRoutingConfigured;
+	event.outputRoutes = context.outputRoutes;
 	event.filterIndex = context.filterIndex;
 	event.groupBit = context.groupBit;
 	event.cycle = context.cycle;

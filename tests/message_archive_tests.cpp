@@ -77,7 +77,8 @@ int main()
 		"PRAGMA application_id=1346656049;PRAGMA user_version=1;"
 		"CREATE TABLE capcode_directory(protocol TEXT NOT NULL,address TEXT NOT NULL,display_name TEXT NOT NULL,"
 		"agency TEXT NOT NULL,color INTEGER NOT NULL,notes TEXT NOT NULL,enabled INTEGER NOT NULL,updated_utc TEXT NOT NULL);"
-		"INSERT INTO capcode_directory VALUES('POCSAG','1110001','Synthetic Legacy Unit','Synthetic Agency',13369344,'legacy mapping',1,'2026-08-11');",
+		"INSERT INTO capcode_directory VALUES('POCSAG','1110001','Synthetic Legacy Unit','Synthetic Agency',13369344,'legacy mapping',1,'2026-08-11');"
+		"INSERT INTO capcode_directory VALUES('POCSAG','1110002','Dormant Legacy Unit','Synthetic Agency',13369344,'disabled legacy mapping',0,'2026-08-11');",
 		NULL, NULL, NULL) == SQLITE_OK, "version-one directory fixture is populated");
 	sqlite3_close(versionOne);
 	pdw::archive::MessageArchive migratedArchive;
@@ -86,9 +87,23 @@ int main()
 		"version-one Capcode Directory migrates in place");
 	std::vector<pdw::archive::CapcodeEntry> migratedRows;
 	Expect(migratedArchive.ListCapcodes(std::string(), migratedRows, migrationError) &&
-		migratedRows.size() == 1 && migratedRows[0].displayName == "Synthetic Legacy Unit" &&
-		migratedRows[0].filterLabel == "Synthetic Legacy Unit" && migratedRows[0].matchText.empty(),
+		migratedRows.size() == 2, "both active and dormant legacy rows migrate");
+	const pdw::archive::CapcodeEntry* migratedActive = NULL;
+	const pdw::archive::CapcodeEntry* migratedDormant = NULL;
+	for (std::vector<pdw::archive::CapcodeEntry>::const_iterator row = migratedRows.begin();
+		row != migratedRows.end(); ++row)
+	{
+		if (row->address == "1110001") migratedActive = &*row;
+		if (row->address == "1110002") migratedDormant = &*row;
+	}
+	Expect(migratedActive && migratedActive->displayName == "Synthetic Legacy Unit" &&
+		migratedActive->filterLabel == "Synthetic Legacy Unit" && migratedActive->matchText.empty() &&
+		migratedActive->filterEnabled && !migratedActive->outputRoutingConfigured &&
+		migratedActive->outputRoutes == 0,
 		"existing directory mappings become capcode-only filter rules without a false text requirement");
+	Expect(migratedDormant && !migratedDormant->enabled && !migratedDormant->filterEnabled &&
+		!migratedDormant->outputRoutingConfigured && migratedDormant->outputRoutes == 0,
+		"a disabled legacy directory row stays dormant after migration");
 	migratedArchive.Close();
 	DeleteFileA(databasePath);
 
@@ -108,13 +123,17 @@ int main()
 	capcode.notes = "Local test only";
 	capcode.filterType = 2;
 	capcode.matchText = "PR1+Traffic";
-	capcode.filterLabel = "Station Alpha Dispatch";
+	capcode.filterLabel = "Legacy label that is replaced by Display name";
 	capcode.reject = true;
-	capcode.matchExactMessage = true;
+	capcode.matchExactMessage = false;
 	capcode.showFilterLabel = true;
 	capcode.commandEnabled = true;
-	capcode.monitorOnly = true;
+	capcode.monitorOnly = false;
 	capcode.emailEnabled = true;
+	capcode.filterEnabled = true;
+	capcode.outputRoutes = PDW_OUTPUT_ROUTE_EMAIL | PDW_OUTPUT_ROUTE_MQTT |
+		PDW_OUTPUT_ROUTE_WINDOWS;
+	capcode.agencyLabelPosition = PDW_AGENCY_LABEL_AFTER;
 	capcode.separateFileEnabled = true;
 	capcode.separateFile1 = "alpha.csv";
 	capcode.separateFile2 = "backup.csv";
@@ -132,24 +151,44 @@ int main()
 	emptyTextRule.filterType = 3;
 	Expect(!archive.UpsertCapcode(emptyTextRule, error),
 		"blank Text filter cannot accidentally match every decoded message");
+	pdw::archive::CapcodeEntry conflictingKeywordMode(capcode);
+	conflictingKeywordMode.id = 0;
+	conflictingKeywordMode.matchExactMessage = true;
+	Expect(!archive.UpsertCapcode(conflictingKeywordMode, error),
+		"exact whole-message mode cannot silently reinterpret an all-keyword expression");
+	pdw::archive::CapcodeEntry invalidKeywordMode(capcode);
+	invalidKeywordMode.id = 0;
+	invalidKeywordMode.matchText = "PR1++Traffic";
+	Expect(!archive.UpsertCapcode(invalidKeywordMode, error),
+		"an empty required-keyword term is rejected before the rule is saved");
+	pdw::archive::CapcodeEntry conflictingPaneMode(capcode);
+	conflictingPaneMode.id = 0;
+	conflictingPaneMode.matchText = "Monitor";
+	conflictingPaneMode.monitorOnly = true;
+	conflictingPaneMode.filterEnabled = true;
+	Expect(!archive.UpsertCapcode(conflictingPaneMode, error),
+		"Filter and Monitor only cannot be persisted together");
 	pdw::archive::CapcodeEntry found;
 	Expect(archive.LookupCapcode("POCSAG-1200", "1234567", found, error),
 		"protocol-specific alias matches decoded mode");
 	Expect(found.displayName == "Station Alpha" && found.filterType == 2 &&
-		found.matchText == "PR1+Traffic" && found.filterLabel == "Station Alpha Dispatch" &&
-		found.reject && found.matchExactMessage && found.commandEnabled && found.monitorOnly &&
+		found.matchText == "PR1+Traffic" && found.filterLabel == "Station Alpha" &&
+		found.reject && !found.matchExactMessage && found.commandEnabled && !found.monitorOnly &&
 		found.emailEnabled && found.separateFileEnabled && found.separateFile1 == "alpha.csv" &&
 		found.separateFile2 == "backup.csv" && found.waveNumber == 4 && found.labelColor == 7 &&
-		found.hitCounter == 12 && found.lastHitDate == "10-08-26" && found.lastHitTime == "12:34:56",
-		"all directory-backed legacy filter fields round trip");
+		found.hitCounter == 12 && found.lastHitDate == "10-08-26" && found.lastHitTime == "12:34:56" &&
+		found.filterEnabled && found.outputRoutingConfigured &&
+		found.outputRoutes == capcode.outputRoutes && found.agencyLabelPosition == PDW_AGENCY_LABEL_AFTER,
+		"directory matching, display, and output-routing fields round trip");
 	Expect(archive.UpdateCapcodeRuntimeState(found.id, 13, "11-08-26", "01:02:03", error),
 		"directory hit-counter state updates");
 
 	pdw::archive::CapcodeEntry secondRule(capcode);
 	secondRule.id = 0;
 	secondRule.matchText = "Medical";
-	secondRule.filterLabel = "Station Alpha Medical";
+	secondRule.filterLabel = "Ignored legacy label";
 	secondRule.reject = false;
+	secondRule.matchExactMessage = true;
 	Expect(archive.UpsertCapcode(secondRule, error),
 		"multiple text rules can share one protocol and capcode");
 	std::vector<pdw::archive::CapcodeEntry> directoryRows;
@@ -163,8 +202,22 @@ int main()
 	std::istringstream directoryInput(directoryCsv.str());
 	Expect(pdw::archive::ReadCapcodeDirectoryCsv(directoryInput, parsedDirectory,
 		rejectedDirectoryRows, error) && rejectedDirectoryRows == 0 && parsedDirectory.size() == 2 &&
-		parsedDirectory[0].filterType == 2 && !parsedDirectory[0].filterLabel.empty(),
+		parsedDirectory[0].filterType == 2 && !parsedDirectory[0].filterLabel.empty() &&
+		parsedDirectory[0].outputRoutingConfigured,
 		"expanded directory CSV round trips all rule columns");
+	std::istringstream legacyDisabledDirectory(
+		"protocol,address,display_name,agency,color,notes,enabled,filter_type,match_text,filter_label,"
+		"reject,match_exact,show_label,command_enabled,monitor_only,email_enabled,separate_file_enabled,"
+		"separate_file_1,separate_file_2,separate_file_3,wave_number,label_color,hit_counter,last_hit_date,last_hit_time\r\n"
+		"POCSAG,7654321,,Dormant Agency,13369344,legacy disabled,0,2,,Dormant Label,1,0,1,0,1,1,1,dormant.csv,,,0,0,0,,\r\n");
+	Expect(pdw::archive::ReadCapcodeDirectoryCsv(legacyDisabledDirectory, parsedDirectory,
+		rejectedDirectoryRows, error) && rejectedDirectoryRows == 0 && parsedDirectory.size() == 1 &&
+		!parsedDirectory[0].enabled && !parsedDirectory[0].filterEnabled &&
+		!parsedDirectory[0].outputRoutingConfigured && parsedDirectory[0].emailEnabled &&
+		parsedDirectory[0].outputRoutes == PDW_OUTPUT_ROUTE_EMAIL && parsedDirectory[0].reject &&
+		parsedDirectory[0].monitorOnly && parsedDirectory[0].separateFileEnabled &&
+		parsedDirectory[0].displayName == "Dormant Label",
+		"legacy CSV keeps disabled actions dormant, preserves Email semantics, and rescues a blank Display name");
 	std::istringstream invalidDirectory(
 		"protocol,address,display_name,agency,color,notes,enabled,filter_type\r\nPOCSAG,123,Name,,999999999999999999999,,1,2\r\n");
 	Expect(pdw::archive::ReadCapcodeDirectoryCsv(invalidDirectory, parsedDirectory,

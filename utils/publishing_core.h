@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "../Headers/output_routes.h"
+
 namespace pdw
 {
 namespace publishing
@@ -34,6 +36,8 @@ struct PublishEvent
 	bool groupFinal;
 	bool fragmented;
 	bool assembled;
+	bool outputRoutingConfigured;
+	unsigned int outputRoutes;
 	int filterIndex;
 	int groupBit;
 	int cycle;
@@ -41,7 +45,8 @@ struct PublishEvent
 	PublishEvent()
 		: aliasColor(0), filterMatched(false), monitorOnly(false), filtered(false), rejected(false),
 		  blockedDuplicate(false), groupCall(false), groupFinal(false), fragmented(false),
-		  assembled(false), filterIndex(-1), groupBit(-1), cycle(-1), frame(-1) {}
+		  assembled(false), outputRoutingConfigured(false), outputRoutes(0),
+		  filterIndex(-1), groupBit(-1), cycle(-1), frame(-1) {}
 };
 
 struct TransformOptions
