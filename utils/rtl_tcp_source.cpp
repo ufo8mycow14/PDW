@@ -174,21 +174,7 @@ RtlTcpSource::RtlTcpSource()
 
 RtlTcpSource::~RtlTcpSource()
 {
-	Stop();
-	if (thread_)
-	{
-		// A bounded Stop quarantines a source whose thread exit was not confirmed.
-		// Destruction is the final ownership boundary for this object and its
-		// non-owning sink, so it must join rather than permit a use-after-free.
-		OutputDebugStringA(
-			"PDW RTL-TCP source remained quarantined during destruction; waiting for a safe thread exit.\n");
-		if (stopEvent_) SetEvent(stopEvent_);
-		ShutdownCurrentSocket();
-		const DWORD waitResult = WaitForSingleObject(thread_, INFINITE);
-		if (!RtlThreadResourcesMayBeReleased(waitResult))
-			RaiseFailFastException(NULL, NULL, 0);
-		CleanupStoppedThread();
-	}
+	if (!Stop()) FinalizeForShutdown();
 	DeleteCriticalSection(&lock_);
 }
 
@@ -245,6 +231,25 @@ bool RtlTcpSource::Stop()
 	CleanupStoppedThread();
 	if (state() != RTL_TCP_FAILED) SetState(RTL_TCP_STOPPED, NULL);
 	return true;
+}
+
+void RtlTcpSource::FinalizeForShutdown()
+{
+	// UI Stop remains bounded. Final process shutdown is the ownership boundary
+	// for this object and its non-owning sink, so it must join rather than permit
+	// either to be destroyed while the network thread can still call back.
+	if (stopEvent_) SetEvent(stopEvent_);
+	ShutdownCurrentSocket();
+	if (thread_)
+	{
+		OutputDebugStringA(
+			"PDW RTL-TCP source is finalizing; waiting for a safe network-thread exit.\n");
+		const DWORD waitResult = WaitForSingleObject(thread_, INFINITE);
+		if (!RtlThreadResourcesMayBeReleased(waitResult))
+			RaiseFailFastException(NULL, NULL, 0);
+	}
+	CleanupStoppedThread();
+	if (state() != RTL_TCP_FAILED) SetState(RTL_TCP_STOPPED, NULL);
 }
 
 void RtlTcpSource::CleanupStoppedThread()
@@ -478,18 +483,7 @@ RtlSdrSource::RtlSdrSource()
 
 RtlSdrSource::~RtlSdrSource()
 {
-	Stop();
-	if (thread_)
-	{
-		OutputDebugStringA(
-			"PDW RTL-SDR source remained quarantined during destruction; waiting for a safe thread exit.\n");
-		if (stopEvent_) SetEvent(stopEvent_);
-		RequestDeviceCancellation();
-		const DWORD waitResult = WaitForSingleObject(thread_, INFINITE);
-		if (!RtlThreadResourcesMayBeReleased(waitResult))
-			RaiseFailFastException(NULL, NULL, 0);
-		CleanupStoppedThread();
-	}
+	if (!Stop()) FinalizeForShutdown();
 	DeleteCriticalSection(&lock_);
 }
 
@@ -549,6 +543,22 @@ bool RtlSdrSource::Stop()
 	CleanupStoppedThread();
 	if (state() != RTL_TCP_FAILED) SetState(RTL_TCP_STOPPED, NULL);
 	return true;
+}
+
+void RtlSdrSource::FinalizeForShutdown()
+{
+	if (stopEvent_) SetEvent(stopEvent_);
+	RequestDeviceCancellation();
+	if (thread_)
+	{
+		OutputDebugStringA(
+			"PDW RTL-SDR source is finalizing; waiting for a safe device-thread exit.\n");
+		const DWORD waitResult = WaitForSingleObject(thread_, INFINITE);
+		if (!RtlThreadResourcesMayBeReleased(waitResult))
+			RaiseFailFastException(NULL, NULL, 0);
+	}
+	CleanupStoppedThread();
+	if (state() != RTL_TCP_FAILED) SetState(RTL_TCP_STOPPED, NULL);
 }
 
 void RtlSdrSource::RequestDeviceCancellation()

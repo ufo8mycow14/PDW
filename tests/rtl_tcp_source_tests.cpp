@@ -158,9 +158,10 @@ void ExerciseRtlTcpStopQuarantine()
 	Expect(InterlockedCompareExchange(&g_injectedWaitCalls, 0, 0) >= 2,
 		"RTL-TCP restart rechecks the quarantined thread");
 
-	SetRtlStopThreadWaitFunctionForTesting(NULL);
+	source.FinalizeForShutdown();
 	Expect(source.Stop(),
-		"RTL-TCP quarantine releases resources after a confirmed thread exit");
+		"RTL-TCP final shutdown join releases quarantined resources");
+	SetRtlStopThreadWaitFunctionForTesting(NULL);
 	Expect(WaitForSingleObject(serverThread, 5000) == WAIT_OBJECT_0,
 		"RTL-TCP loopback server observes source shutdown");
 	DWORD serverExitCode = 1;
@@ -466,7 +467,8 @@ int main(int argc, char** argv)
 			"RTL-SDR quarantine releases resources after a confirmed thread exit");
 		Expect(source.Start(config, 0, &sink),
 			"RTL-SDR source can restart after confirmed quarantine cleanup");
-		Expect(source.Stop(), "mock RTL-SDR stops after quarantine recovery");
+		source.FinalizeForShutdown();
+		Expect(source.Stop(), "RTL-SDR final shutdown join is idempotent");
 		Expect(source.state() == RTL_TCP_STOPPED, "mock RTL-SDR stops cleanly");
 	}
 

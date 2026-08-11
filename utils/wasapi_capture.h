@@ -69,6 +69,7 @@ public:
 	bool StartDefault(WasapiCaptureSink* sink);
 	bool StartEndpoint(const std::string& endpointId, WasapiCaptureSink* sink);
 	bool Stop();
+	bool FinalizeForShutdown();
 	WasapiCaptureState state() const;
 	std::string lastError() const;
 

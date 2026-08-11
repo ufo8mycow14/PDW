@@ -97,6 +97,9 @@ public:
 
 	bool Start(const RtlTcpConfig& config, AudioSampleSink* sink);
 	bool Stop();
+	// Final process-shutdown barrier. Unlike bounded UI Stop, this may block
+	// until the source thread exits so callback-reachable state can be destroyed.
+	void FinalizeForShutdown();
 	RtlTcpState state() const;
 	std::string lastError() const;
 
@@ -132,6 +135,8 @@ public:
 
 	bool Start(const RtlTcpConfig& config, unsigned int deviceIndex, AudioSampleSink* sink);
 	bool Stop();
+	// Final process-shutdown barrier; do not use for routine source switching.
+	void FinalizeForShutdown();
 	RtlTcpState state() const;
 	std::string lastError() const;
 	DWORD lastIqCallbackTick() const;

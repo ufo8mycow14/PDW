@@ -1015,6 +1015,31 @@ BOOL Stop_Capturing(void)
 	return(TRUE);
 }
 
+bool FinalizeCaptureForShutdown(void)
+{
+	if (g_diagnosticReplayActive) StopDiagnosticReplayInternal(false);
+
+	// Final shutdown is a stricter ownership boundary than the bounded UI Stop.
+	// Call every modern source finalizer even if a global kind flag drifted: each
+	// finalizer is idempotent and joins its worker before releasing its sink.
+	const bool wasapiFinalized = g_wasapiFallbackSource.FinalizeForShutdown();
+	g_rtlTcpSource.FinalizeForShutdown();
+	g_rtlSdrSource.FinalizeForShutdown();
+	const bool winmmFinalized = ReleaseWinmmResourcesFailClosed();
+	if (!wasapiFinalized || !winmmFinalized)
+		return false;
+
+	g_wasapiFallbackSink.Clear();
+	g_modernCaptureQuarantined = false;
+	bUsingWasapiFallback = false;
+	g_modernCaptureKind = 0;
+	g_wasapiUsesConfiguredEndpoint = false;
+	g_wasapiConfiguredEndpointId.clear();
+	g_wasapiStartError.clear();
+	bCapturing = false;
+	return true;
+}
+
 // Freeup audio buffers and reset "audio_buffer_cnt".
 void free_audio_buffers(void)
 {
@@ -2481,6 +2506,7 @@ namespace
 			result.clippingDetected ? "\nClipping was detected; reduce receiver gain or Windows input level." : "");
 		if (MessageBox(dialog, message, "PDW Signal Calibration",
 			MB_ICONINFORMATION | MB_YESNO | MB_DEFBUTTON2) != IDYES) return true;
+		const PROFILE previousProfile = Profile;
 		for (int index = 0; index < AUDIO_CUSTOM_RATE_COUNT; ++index)
 		{
 			Profile.audioThreshold[index] = result.thresholdIndex;
@@ -2489,7 +2515,17 @@ namespace
 		}
 		Profile.audioConfig = 0;
 		SetAudioConfig(Profile.audioConfig);
-		WriteSettings();
+		if (!TryWriteSettings())
+		{
+			Profile = previousProfile;
+			SetAudioConfig(Profile.audioConfig);
+			SetDlgItemText(dialog, IDC_SIGNAL_DIAGNOSTIC_STATUS,
+				"Calibration was not applied because PDW.INI could not be saved; the previous audio configuration remains active.");
+			MessageBoxA(dialog,
+				"PDW could not save the calibrated Custom audio configuration. The previous audio configuration remains active and this dialog was left open. Choose a writable portable folder or correct PDW.INI permissions, then try again.",
+				"PDW Signal Calibration", MB_ICONERROR);
+			return false;
+		}
 		SetDlgItemText(dialog, IDC_SIGNAL_DIAGNOSTIC_STATUS,
 			"Calibration applied as Custom; legacy receiver presets remain available in Interface settings.");
 		return true;

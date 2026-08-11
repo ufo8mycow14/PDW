@@ -334,6 +334,7 @@
 #include "utils\smtp.h"
 #include "utils\ini_preservation_core.h"
 #include "utils\local_audio_profile.h"
+#include "utils\audio_capture_core.h"
 
 #include "headers\helper_funcs.h"	// Extra functies van Andreas
 
@@ -1574,7 +1575,29 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					KillTimer(ghWnd, PDW_TIMER);
 					bool previousCaptureStopped = true;
 					if (bCapturing) previousCaptureStopped = Stop_Capturing() != FALSE;
+					if (!previousCaptureStopped || bCapturing)
+					{
+						Profile = previousProfile;
+						SetAudioConfig(Profile.audioConfig);
+						if (previousCaptureWasRunning || previousSerialWasRunning)
+							SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL);
+						MessageBoxA(hWnd,
+							"PDW could not confirm that the previous audio input released its resources. The previous in-memory profile and owned input were preserved, no candidate input was started, and no settings were saved. Restart PDW before selecting another input.",
+							"PDW Interface Setup", MB_ICONERROR);
+						break;
+					}
 					if (nDriverLoaded) UnloadDriver();
+					if (nDriverLoaded != DRIVER_NOT_LOADED)
+					{
+						Profile = previousProfile;
+						SetAudioConfig(Profile.audioConfig);
+						if (previousCaptureWasRunning || previousSerialWasRunning)
+							SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL);
+						MessageBoxA(hWnd,
+							"PDW could not confirm that the previous serial input stopped. The previous in-memory profile and owned input were preserved, no candidate input was started, and no settings were saved. Restart PDW before selecting another input.",
+							"PDW Interface Setup", MB_ICONERROR);
+						break;
+					}
 
 					bool desiredInputStarted = previousCaptureStopped && !bCapturing &&
 						nDriverLoaded == DRIVER_NOT_LOADED;
@@ -2166,13 +2189,27 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			KillTimer(ghWnd, PDW_TIMER);
 			KillTimer(ghWnd, MINUTE_TIMER);
 			KillTimer(ghWnd, SECOND_TIMER);
-			if (SettingsCenterWindow()) DestroyWindow(SettingsCenterWindow());
-
-			// Stop every producer before queues, decoder buffers, or drawing state are released.
+			// Stop every producer before any window, queue, decoder buffer, manager,
+			// file, or drawing state reachable from a callback is released.
 			if (nDriverLoaded) UnloadDriver();
-			if (bCapturing) Stop_Capturing();
+			const bool serialReleased = nDriverLoaded == DRIVER_NOT_LOADED;
+			const bool captureFinalized = FinalizeCaptureForShutdown();
 			if (bPlayback) Stop_Playback();
 			if (bRecording) Stop_Recording();
+			if (pdw::signal::DecideCaptureShutdownDisposition(captureFinalized,
+				serialReleased) ==
+				pdw::signal::CAPTURE_SHUTDOWN_TERMINATE_WITHOUT_TEARDOWN)
+			{
+				// A callback owner is still live. Do not run CRT/global/DLL teardown:
+				// any of it can free state below a returning driver callback or deadlock
+				// on a lock held by that thread. This last-resort process termination
+				// asks Windows to reclaim the intact address space without detach work.
+				OutputDebugStringA(
+					"PDW shutdown could not confirm that every input owner exited; terminating without callback-reachable teardown.\n");
+				TerminateProcess(GetCurrentProcess(), ERROR_BUSY);
+				RaiseFailFastException(NULL, NULL, 0);
+			}
+			if (SettingsCenterWindow()) DestroyWindow(SettingsCenterWindow());
 
 			// Stop background destinations while their configuration and shared state still exist.
 			if (!pdw::multichannel::WorkerActive())
@@ -2211,16 +2248,10 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			if (!ConfigurationRestoreCompleted() && !pdw::multichannel::WorkerActive()) WriteSettings();
 
 			if (Profile.SystemTray) SystemTrayIcon(true);	// Remove PDW-icon from systemtray
-			// A misbehaving third-party serial driver may ignore cancellation. In that rare
-			// case leave process-owned decoder/UI memory intact for the OS to reclaim rather
-			// than freeing it under a still-returning worker.
-			if (!nDriverLoaded)
-			{
-				PdwThemeShutdown();
-				Free_Common_Objects();
-				free_lang_tables();
-				acars.free_data();
-			}
+			PdwThemeShutdown();
+			Free_Common_Objects();
+			free_lang_tables();
+			acars.free_data();
 
 //			if (em.symbol_fp) fclose(em.symbol_fp);	// ermes debug data file.
 			if (pd_raw_fp) { fclose(pd_raw_fp); pd_raw_fp = NULL; }	// pocsag/flex debug data file.

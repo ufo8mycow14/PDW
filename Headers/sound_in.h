@@ -48,6 +48,7 @@ void Process_ReadyBuffers(HWND hwnd);
 void free_audio_buffers(void);
 BOOL Stop_Capturing(void);
 BOOL Start_Capturing(void);
+bool FinalizeCaptureForShutdown(void);
 void SignalSourceService(void);
 
 void Audio_To_Bits  (char *lpAudioBuffer, long LenAudioBuffer);

@@ -9,6 +9,20 @@ namespace pdw
 namespace signal
 {
 
+enum CaptureShutdownDisposition
+{
+	CAPTURE_SHUTDOWN_RELEASE_SHARED_STATE,
+	CAPTURE_SHUTDOWN_TERMINATE_WITHOUT_TEARDOWN
+};
+
+inline CaptureShutdownDisposition DecideCaptureShutdownDisposition(
+	bool captureFinalized, bool serialReleased)
+{
+	return captureFinalized && serialReleased ?
+		CAPTURE_SHUTDOWN_RELEASE_SHARED_STATE :
+		CAPTURE_SHUTDOWN_TERMINATE_WITHOUT_TEARDOWN;
+}
+
 class AudioSampleSink
 {
 public:

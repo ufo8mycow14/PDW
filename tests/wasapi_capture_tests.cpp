@@ -21,6 +21,15 @@ void Expect(bool condition, const char* message)
 int main()
 {
 	using namespace pdw::signal;
+	Expect(DecideCaptureShutdownDisposition(true, true) ==
+		CAPTURE_SHUTDOWN_RELEASE_SHARED_STATE,
+		"shutdown releases shared state only after every input owner confirms exit");
+	Expect(DecideCaptureShutdownDisposition(false, true) ==
+		CAPTURE_SHUTDOWN_TERMINATE_WITHOUT_TEARDOWN,
+		"an unconfirmed capture owner blocks callback-reachable teardown");
+	Expect(DecideCaptureShutdownDisposition(true, false) ==
+		CAPTURE_SHUTDOWN_TERMINATE_WITHOUT_TEARDOWN,
+		"an unconfirmed serial owner blocks callback-reachable teardown");
 
 	Expect(WasapiThreadResourcesMayBeReleased(WAIT_OBJECT_0),
 		"a signalled capture thread may be torn down");

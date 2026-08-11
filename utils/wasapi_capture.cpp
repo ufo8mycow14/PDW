@@ -170,28 +170,7 @@ WasapiCaptureSource::WasapiCaptureSource()
 
 WasapiCaptureSource::~WasapiCaptureSource()
 {
-	Stop();
-	if (thread_)
-	{
-		// Stop() is deliberately bounded for normal UI operations. Destruction is
-		// the final ownership boundary for both this object and its non-owning sink,
-		// so returning while the capture thread can still access either would be a
-		// use-after-free. Do not use TerminateThread here: killing a thread inside
-		// COM, an audio driver, the heap, or a sink callback can corrupt the process.
-		// A safety-first final join is the only sound last resort after quarantine.
-		OutputDebugStringA(
-			"PDW WASAPI capture remained quarantined during destruction; waiting for a safe thread exit.\n");
-		if (stopEvent_) SetEvent(stopEvent_);
-		const DWORD waitResult = WaitForSingleObject(thread_, INFINITE);
-		if (!WasapiThreadResourcesMayBeReleased(waitResult))
-		{
-			// A valid thread handle cannot normally fail an infinite wait. If the
-			// invariant is broken, fail fast rather than destroy storage still
-			// reachable by an unknown thread.
-			RaiseFailFastException(NULL, NULL, 0);
-		}
-		CleanupStoppedThread();
-	}
+	FinalizeForShutdown();
 	DeleteCriticalSection(&lock_);
 }
 
@@ -273,6 +252,30 @@ bool WasapiCaptureSource::Stop()
 	CleanupStoppedThread();
 	if (state() != WASAPI_CAPTURE_FAILED && state() != WASAPI_CAPTURE_DEVICE_LOST)
 		SetState(WASAPI_CAPTURE_STOPPED, NULL);
+	return true;
+}
+
+bool WasapiCaptureSource::FinalizeForShutdown()
+{
+	if (stopEvent_) SetEvent(stopEvent_);
+	if (thread_)
+	{
+		// Normal Stop() is deliberately bounded for UI operations. Final process
+		// teardown is the last ownership boundary for this object and its shared
+		// sink, so wait until Windows positively confirms thread exit. Killing a
+		// thread inside COM, an audio driver, the heap, or a sink callback can
+		// corrupt the process and is never used here.
+		OutputDebugStringA(
+			"PDW WASAPI capture remained owned during final shutdown; waiting for a safe thread exit.\n");
+		const DWORD waitResult = WaitForSingleObject(thread_, INFINITE);
+		if (!WasapiThreadResourcesMayBeReleased(waitResult))
+		{
+			RaiseFailFastException(NULL, NULL, 0);
+			return false;
+		}
+	}
+	CleanupStoppedThread();
+	SetState(WASAPI_CAPTURE_STOPPED, NULL);
 	return true;
 }
 

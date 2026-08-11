@@ -408,9 +408,10 @@ int main()
 		"[OperatorOwned]\r\nFirstRunRace=must-survive\r\n",
 		"first-run INI race preserves the operator-created pathname occupant");
 	Expect(!g_missingStagePath.empty() &&
+		g_missingStagePath.find("PDS-") != std::string::npos &&
 		ReadFile(g_missingStagePath.c_str()).find("Password=first-run-secret") !=
 		std::string::npos,
-		"a failed first-run commit retains the complete protected staged settings");
+		"a failed first-run commit retains the complete protected PDS staged settings");
 	Expect(error.find(g_missingStagePath) != std::string::npos,
 		"a failed first-run commit reports the exact retained sensitive path");
 	DeleteFileA(g_missingStagePath.c_str());

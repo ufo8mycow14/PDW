@@ -480,7 +480,7 @@ pdw::audio_profile::SettingsTransactionOutcome WriteMergedSettingsFile(
 
 	std::string temporary;
 	void* temporaryNativeHandle = INVALID_HANDLE_VALUE;
-	if (!CreateSensitiveSettingsTemporaryFile(fullPath, "PDW", temporary,
+	if (!CreateSensitiveSettingsTemporaryFile(fullPath, "PDS", temporary,
 		temporaryNativeHandle, error))
 		return pdw::audio_profile::SETTINGS_TRANSACTION_NOT_COMMITTED;
 	HANDLE file = static_cast<HANDLE>(temporaryNativeHandle);
