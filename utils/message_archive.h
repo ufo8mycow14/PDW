@@ -23,15 +23,37 @@ namespace archive
 
 struct CapcodeEntry
 {
+	long long id;
 	std::string protocol;
 	std::string address;
 	std::string displayName;
 	std::string agency;
 	std::string notes;
+	std::string matchText;
+	std::string filterLabel;
+	std::string separateFile1;
+	std::string separateFile2;
+	std::string separateFile3;
 	unsigned long color;
+	int filterType;
+	int waveNumber;
+	int labelColor;
+	unsigned int hitCounter;
+	std::string lastHitDate;
+	std::string lastHitTime;
 	bool enabled;
+	bool reject;
+	bool matchExactMessage;
+	bool showFilterLabel;
+	bool commandEnabled;
+	bool monitorOnly;
+	bool emailEnabled;
+	bool separateFileEnabled;
 
-	CapcodeEntry() : color(RGB(0, 102, 204)), enabled(true) {}
+	CapcodeEntry() : id(0), color(RGB(0, 102, 204)), filterType(0),
+		waveNumber(0), labelColor(0), hitCounter(0), enabled(true), reject(false),
+		matchExactMessage(false), showFilterLabel(true), commandEnabled(false),
+		monitorOnly(false), emailEnabled(false), separateFileEnabled(false) {}
 };
 
 struct HistoryQuery
@@ -66,6 +88,10 @@ enum CsvRecordReadResult
 	CSV_RECORD_MALFORMED = 2
 };
 CsvRecordReadResult ReadCsvRecord(std::istream& input, std::string& record);
+bool WriteCapcodeDirectoryCsv(const std::vector<CapcodeEntry>& entries,
+	std::ostream& output, std::string& error);
+bool ReadCapcodeDirectoryCsv(std::istream& input,
+	std::vector<CapcodeEntry>& entries, int& rejected, std::string& error);
 bool ExportHistoryCsv(const std::string& utf8Path, const HistoryQuery& query,
 	std::ostream& output, int& exported, std::string& error);
 
@@ -82,6 +108,11 @@ public:
 	bool StoreEvent(const pdw::publishing::PublishEvent& event,
 		bool includeMessage, std::string& error);
 	bool UpsertCapcode(const CapcodeEntry& entry, std::string& error);
+	bool ReplaceCapcodes(const std::vector<CapcodeEntry>& entries, std::string& error);
+	bool UpdateCapcodeRuntimeState(long long id, unsigned int hitCounter,
+		const std::string& lastHitDate, const std::string& lastHitTime,
+		std::string& error);
+	bool DeleteCapcode(long long id, std::string& error);
 	bool DeleteCapcode(const std::string& protocol, const std::string& address,
 		std::string& error);
 	bool LookupCapcode(const std::string& mode, const std::string& address,

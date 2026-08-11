@@ -1,6 +1,6 @@
-# PDW v5.2 2026 Release installation
+# PDW v5.3 2026 Release installation
 
-`PDW-v5.2-2026-Release-Setup.exe` is the recommended distribution for ordinary
+`PDW-v5.3-2026-Release-Setup.exe` is the recommended distribution for ordinary
 Windows users. It contains both maintained PDW architectures and installs per
 user without requiring administrator rights. The portable packages remain
 available for existing deployments and recovery; they run the same PDW code.
@@ -12,7 +12,7 @@ then guides the user through:
 
 1. an installation folder under `%LOCALAPPDATA%\Programs\PDW` by default;
 2. x64 or Win32 compatibility selection on 64-bit Windows;
-3. confirmation that the application, `PDW.INI`, filters, receivers, WAV
+3. confirmation that the application, `PDW.INI`, Capcode Directory, receivers, WAV
    files, and logs remain together in that PDW installation folder;
 4. Start Menu, optional Desktop, and optional delayed Windows-startup
    shortcuts; and
@@ -35,15 +35,20 @@ from another portable or installed copy, finish installation and use
 
 The stable Setup application ID recognises future PDW v5 installers as
 upgrades. Application files and documentation are refreshed, while `PDW.INI`,
-`filters.ini`, receiver additions, WAV files, logs, recordings, queues, and
+the Capcode Directory database, receiver additions, WAV files, logs, recordings, queues, and
 other operator-created data are not overwritten.
 
 Uninstall removes the installed application and shortcuts. Configuration,
-filters, receiver additions, WAV files, logs, recordings, and other operator
+the Capcode Directory, receiver additions, WAV files, logs, recordings, and other operator
 data remain by default so an accidental uninstall does not destroy them. They
 can be reviewed and removed manually after a backup when no longer required.
 
-Portable use is unchanged: start `PDW v5.2 2026 Release.exe` in a writable folder
+Fresh installations no longer contain `filters.ini`. When an older copy is upgraded, PDW merges
+that file into the Capcode Directory without duplicating existing equivalent mappings, fixes known
+duplicated label/text rows, then renames the original to a recoverable `.migrated` backup. Directory saves and CSV imports apply
+immediately; no scheduled regeneration or manual reload is required.
+
+Portable use is unchanged: start `PDW v5.3 2026 Release.exe` in a writable folder
 containing `PDW.INI`. No installed service, background updater, or driver is
 required.
 
@@ -68,7 +73,7 @@ and tests both architecture paths:
   -ScanWithDefender
 
 .\tests\installer_smoke.ps1 `
-  -Setup out\installer\PDW-v5.2-2026-Release-Setup.exe `
+  -Setup out\installer\PDW-v5.3-2026-Release-Setup.exe `
   -TestRoot out\installer-smoke
 ```
 
@@ -85,7 +90,7 @@ Then run:
 
 ```powershell
 .\scripts\audit-installer.ps1 `
-  -Setup out\installer\PDW-v5.2-2026-Release-Setup.exe `
+  -Setup out\installer\PDW-v5.3-2026-Release-Setup.exe `
   -RequireSignature -ScanWithDefender
 ```
 

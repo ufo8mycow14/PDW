@@ -54,8 +54,9 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
   the corresponding receiver source and redistribution evidence.
 - `Receivers/Driver Tools/zadig-2.9.exe`, the libwdi source ZIP, and GPL notice
   are the documented optional driver-installation set.
-- `packaging/PDW.INI` and `packaging/filters.ini` are sanitized release
-  defaults, not operator data.
+- `packaging/PDW.INI` is the sanitized release default, not operator data.
+  Filter persistence is owned by the Capcode Directory in `pdw-history.sqlite3`;
+  fresh packages intentionally do not ship `filters.ini`.
 - `packaging/Wavfiles` and `packaging/Legacy` contain reviewed, non-private
   installer/package inputs required for reproducible clean-clone staging.
 - `installer/PDW.iss` is the maintained guided Windows Setup definition; Inno
@@ -92,15 +93,15 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 
 - Fresh Visual Studio 2022/CMake Release builds completed from new build
   directories for Win32 and x64.
-- Win32 and x64 each pass 28 of 28 CTest tests.
+- Win32 and x64 each pass 29 of 29 CTest tests.
 - Optional WinMM and WASAPI hardware-smoke targets compile for both
   architectures.
 - PE machine values are Win32 `0x014C` and x64 `0x8664`; both executables
-  report file version `5.2.0.0` and product version `5.2.0 2026 Release`.
-- Both embedded manifests report `5.2.0.0`, architecture-neutral assembly
+  report file version `5.3.0.0` and product version `5.3.0 2026 Release`.
+- Both embedded manifests report `5.3.0.0`, architecture-neutral assembly
   metadata, and Per-Monitor V2 DPI awareness.
-- Native UI review remains predecessor-v5 evidence. The v5.2 resources and
-  executable metadata use the shared **PDW v5.2 2026 Release** identity, while
+- Native UI review remains predecessor-v5 evidence. The v5.3 resources and
+  executable metadata use the shared **PDW v5.3 2026 Release** identity, while
   current Light/Dark, compact-size, new-dialog, About, and Settings visual
   confirmation remains open.
 - The preceding v4.6.0 repository-audit packages contain 318 Win32 and 310 x64
@@ -113,11 +114,11 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
   private-runtime, non-empty-secret, or obsolete-source files.
 - Win32 retains the intentional x86 RTL-SDR DLL and four mirrored legacy VxD
   copies; x64 contains neither.
-- The v5.2 guided installer passes isolated x64 and Win32 installation,
-  co-located settings, upgrade-preservation, exact renamed-v5/v5.1 executable
+- The v5.3 guided installer passes isolated x64 and Win32 installation,
+  co-located settings, upgrade-preservation, exact renamed-v5/v5.1/v5.2 executable
   cleanup, and uninstall-preservation smoke. Microsoft Defender reports no
   threat in the unsigned local candidate.
-- `scripts/audit-release.ps1` enforces the v5.2 identity, both CI architectures,
+- `scripts/audit-release.ps1` enforces the v5.3 identity, both CI architectures,
   installer build/smoke coverage, Visual Basic review, obsolete-file
   exclusion, dependency-notice alignment, and prepared-statement SQL
   safeguards.

@@ -20,6 +20,7 @@
 #include "headers\notification.h"
 #include "headers\pdw.h"
 #include "headers\initapp.h"
+#include "headers\message_archive_manager.h"
 #include "headers\publishing.h"
 #include "headers\resource.h"
 #include "headers\ui_theme.h"
@@ -274,10 +275,47 @@ namespace
 		std::string& error)
 	{
 		WriteSettings();
-		WriteFilters(&Profile, 0);
 		return ReadTextFile(szIniPathName, contents.settings, error) &&
-			ReadTextFile(szFilterPathName, contents.filters, error) &&
+			MessageArchiveExportCapcodesCsv(contents.filters, error) &&
 			EnumerateProfileCredentials(contents.credentials, error);
+	}
+
+	bool ApplyDirectoryBackup(const std::string& contents, std::string& error)
+	{
+		if (contents.empty() || contents.compare(0, 8, "protocol") == 0 ||
+			(contents.size() >= 3 && static_cast<unsigned char>(contents[0]) == 0xEF &&
+			 static_cast<unsigned char>(contents[1]) == 0xBB &&
+			 static_cast<unsigned char>(contents[2]) == 0xBF))
+		{
+			int rejected = 0;
+			return MessageArchiveReplaceCapcodesCsv(contents, rejected, error);
+		}
+		if (contents.compare(0, 8, "[Filter]") != 0)
+		{
+			error = "The backup does not contain a supported Capcode Directory or legacy filter set.";
+			return false;
+		}
+
+		char temporaryPath[MAX_PATH] = {};
+		if (!GetTempFileNameA(szPath, "PDF", 0, temporaryPath))
+		{
+			error = "PDW could not prepare the legacy filter migration file.";
+			return false;
+		}
+		if (!AtomicWriteText(temporaryPath, contents, error))
+		{
+			DeleteFileA(temporaryPath);
+			return false;
+		}
+		PROFILE legacy = Profile;
+		legacy.filters.clear();
+		if (!ReadFilters(temporaryPath, &legacy, true))
+		{
+			DeleteFileA(temporaryPath);
+			error = "The legacy filter data in this backup is invalid.";
+			return false;
+		}
+		return MessageArchiveReplaceLegacyFilters(legacy.filters, error);
 	}
 
 	bool RestoreConfiguration(const pdw::backup::BackupContents& restored,
@@ -287,17 +325,23 @@ namespace
 		std::string previousFilters;
 		std::vector<pdw::backup::BackupCredential> previousCredentials;
 		bool settingsExisted = false;
-		bool filtersExisted = false;
 		if (!ReadOptionalTextFile(szIniPathName, previousSettings, settingsExisted, error) ||
-			!ReadOptionalTextFile(szFilterPathName, previousFilters, filtersExisted, error) ||
+			!MessageArchiveExportCapcodesCsv(previousFilters, error) ||
 			!EnumerateProfileCredentials(previousCredentials, error)) return false;
 
 		bool settingsChanged = false;
 		bool filtersChanged = false;
 		bool credentialsChanged = false;
+		char previousArchivePath[MESSAGE_ARCHIVE_PATH_LEN + 1] = {};
+		strncpy(previousArchivePath, Profile.messageArchivePath, sizeof(previousArchivePath) - 1);
 		if (AtomicWriteText(szIniPathName, restored.settings, error)) settingsChanged = true;
-		if (settingsChanged && AtomicWriteText(szFilterPathName, restored.filters, error))
-			filtersChanged = true;
+		if (settingsChanged)
+		{
+			GetPrivateProfileStringA("MessageArchive", "Path", "pdw-history.sqlite3",
+				Profile.messageArchivePath, sizeof(Profile.messageArchivePath), szIniPathName);
+			MessageArchiveSettingsChanged();
+			if (ApplyDirectoryBackup(restored.filters, error)) filtersChanged = true;
+		}
 		if (settingsChanged && filtersChanged &&
 			ApplyCredentialSet(restored.credentials, error)) credentialsChanged = true;
 
@@ -310,9 +354,11 @@ namespace
 				(!DeleteFileA(szIniPathName) && GetLastError() != ERROR_FILE_NOT_FOUND)))
 				rollbackFailed = true;
 			rollbackError.clear();
-			if (filtersChanged && (filtersExisted ?
-				!AtomicWriteText(szFilterPathName, previousFilters, rollbackError) :
-				(!DeleteFileA(szFilterPathName) && GetLastError() != ERROR_FILE_NOT_FOUND)))
+			strncpy(Profile.messageArchivePath, previousArchivePath,
+				sizeof(Profile.messageArchivePath) - 1);
+			Profile.messageArchivePath[sizeof(Profile.messageArchivePath) - 1] = '\0';
+			MessageArchiveSettingsChanged();
+			if (filtersChanged && !ApplyDirectoryBackup(previousFilters, rollbackError))
 				rollbackFailed = true;
 			rollbackError.clear();
 			if (!ApplyCredentialSet(previousCredentials, rollbackError)) rollbackFailed = true;
@@ -472,7 +518,7 @@ namespace
 		}
 		char message[512] = {};
 		_snprintf_s(message, sizeof(message), _TRUNCATE,
-			"PDW saved the encrypted configuration backup.\n\nIt includes PDW.INI, filters.ini and %u Credential Manager record(s).",
+			"PDW saved the encrypted configuration backup.\n\nIt includes PDW.INI, the Capcode Directory and %u Credential Manager record(s).",
 			static_cast<unsigned int>(credentialCount));
 		SetBackupStatus(dialog, "Encrypted backup saved successfully.");
 		MessageBoxA(dialog, message, "PDW Backup", MB_OK | MB_ICONINFORMATION);

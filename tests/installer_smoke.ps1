@@ -82,10 +82,13 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
         $version.ProductVersion -ne $productVersion) {
         throw "Installed executable metadata is incorrect for $Architecture."
     }
-    foreach ($relative in @("PDW.INI", "filters.ini", "Receivers", "Wavfiles")) {
+    foreach ($relative in @("PDW.INI", "Receivers", "Wavfiles")) {
         if (-not (Test-Path -LiteralPath (Join-Path $installDirectory $relative))) {
             throw "Co-located installer content is missing for $Architecture $relative."
         }
+    }
+    if (Test-Path -LiteralPath (Join-Path $installDirectory "filters.ini") -PathType Leaf) {
+        throw "Fresh installation still deploys retired filters.ini for $Architecture."
     }
     if ($Architecture -eq "x64" -and
         (Test-Path -LiteralPath (Join-Path $installDirectory "Receivers\RTL-SDR\rtlsdr.dll"))) {
@@ -101,9 +104,13 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
     $customReceiver = Join-Path $installDirectory "Receivers\custom-receiver.ini"
     Set-Content -LiteralPath $customReceiver -Value "[Receiver]`r`nName=Installer smoke custom receiver" -Encoding Ascii
     $customReceiverHash = (Get-FileHash -LiteralPath $customReceiver -Algorithm SHA256).Hash
+    $legacyFilters = Join-Path $installDirectory "filters.ini"
+    Set-Content -LiteralPath $legacyFilters -Value "[Filter]`r`n`r`nFilterCount=0`r`n" -Encoding Ascii
+    $legacyFiltersHash = (Get-FileHash -LiteralPath $legacyFilters -Algorithm SHA256).Hash
     $predecessorExecutables = @(
         (Join-Path $installDirectory "PDW v5 2026 Release.exe"),
-        (Join-Path $installDirectory "PDW v5.1 2026 Release.exe")
+        (Join-Path $installDirectory "PDW v5.1 2026 Release.exe"),
+        (Join-Path $installDirectory "PDW v5.2 2026 Release.exe")
     )
     foreach ($predecessorExecutable in $predecessorExecutables) {
         Set-Content -LiteralPath $predecessorExecutable -Value "synthetic predecessor executable" -Encoding Ascii
@@ -117,6 +124,9 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
         $customReceiverHash) {
         throw "Upgrade overwrote the operator receiver for $Architecture."
     }
+    if ((Get-FileHash -LiteralPath $legacyFilters -Algorithm SHA256).Hash -ne $legacyFiltersHash) {
+        throw "Upgrade overwrote the operator's recoverable legacy filters.ini for $Architecture."
+    }
     foreach ($predecessorExecutable in $predecessorExecutables) {
         if (Test-Path -LiteralPath $predecessorExecutable -PathType Leaf) {
             throw "Upgrade left predecessor executable $predecessorExecutable for $Architecture."
@@ -128,7 +138,7 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
         throw "Uninstall left the application executable for $Architecture."
     }
     if (-not (Test-Path -LiteralPath (Join-Path $installDirectory "PDW.INI") -PathType Leaf) -or
-        -not (Test-Path -LiteralPath (Join-Path $installDirectory "filters.ini") -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $legacyFilters -PathType Leaf) -or
         -not (Test-Path -LiteralPath (Join-Path $installDirectory "Receivers\custom-receiver.ini") -PathType Leaf)) {
         throw "Uninstall removed preserved operator data for $Architecture."
     }

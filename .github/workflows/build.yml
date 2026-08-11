@@ -67,9 +67,9 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v5.2-2026-Release-${{ matrix.label }}
+          name: PDW-v5.3-2026-Release-${{ matrix.label }}
           path: |
-            build-${{ matrix.architecture }}\Release\PDW v5.2 2026 Release.exe
+            build-${{ matrix.architecture }}\Release\PDW v5.3 2026 Release.exe
             License
             THIRD_PARTY_NOTICES.md
             out\dependencies\${{ matrix.architecture }}\pdw-dependencies.lock
@@ -79,7 +79,7 @@ jobs:
       - name: Upload installer input
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v5.2-2026-Release-InstallerInput-${{ matrix.label }}
+          name: PDW-v5.3-2026-Release-InstallerInput-${{ matrix.label }}
           path: out\installer-input\*
           if-no-files-found: error
 
@@ -95,13 +95,13 @@ jobs:
       - name: Download Win32 installer input
         uses: actions/download-artifact@v8
         with:
-          name: PDW-v5.2-2026-Release-InstallerInput-Win32
+          name: PDW-v5.3-2026-Release-InstallerInput-Win32
           path: installer-input\Win32
 
       - name: Download x64 installer input
         uses: actions/download-artifact@v8
         with:
-          name: PDW-v5.2-2026-Release-InstallerInput-x64
+          name: PDW-v5.3-2026-Release-InstallerInput-x64
           path: installer-input\x64
 
       - name: Install pinned Inno Setup compiler
@@ -124,20 +124,20 @@ jobs:
         shell: pwsh
         run: |
           .\scripts\audit-installer.ps1 `
-            -Setup "out\installer\PDW-v5.2-2026-Release-Setup.exe"
+            -Setup "out\installer\PDW-v5.3-2026-Release-Setup.exe"
 
       - name: Test Win32 and x64 install, settings co-location, upgrade and uninstall
         shell: pwsh
         run: |
           .\tests\installer_smoke.ps1 `
-            -Setup "out\installer\PDW-v5.2-2026-Release-Setup.exe" `
+            -Setup "out\installer\PDW-v5.3-2026-Release-Setup.exe" `
             -TestRoot "out\installer-smoke-${{ github.run_id }}"
 
       - name: Upload unsigned CI Setup candidate
         uses: actions/upload-artifact@v7
         with:
-          name: PDW-v5.2-2026-Release-Setup-Unsigned-CI
+          name: PDW-v5.3-2026-Release-Setup-Unsigned-CI
           path: |
-            out\installer\PDW-v5.2-2026-Release-Setup.exe
-            out\installer\PDW-v5.2-2026-Release-Setup.exe.sha256
+            out\installer\PDW-v5.3-2026-Release-Setup.exe
+            out\installer\PDW-v5.3-2026-Release-Setup.exe.sha256
           if-no-files-found: error

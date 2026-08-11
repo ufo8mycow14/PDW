@@ -1,7 +1,7 @@
 # Windows UI acceptance
 
 This checklist records the manual evidence required to maintain the stable
-PDW v5.2 2026 Release. A successful resource compile, startup
+PDW v5.3 2026 Release. A successful resource compile, startup
 smoke, or unit suite does not prove that every legacy dialog remains readable
 and operable at every Windows scale.
 

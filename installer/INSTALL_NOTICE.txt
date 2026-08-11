@@ -1,4 +1,4 @@
-PDW v5.2 2026 Release keeps all established decoder, receiver, slicer, audio,
+PDW v5.3 2026 Release keeps all established decoder, receiver, slicer, audio,
 serial, filter and output paths. This Setup installs the same PDW application
 that remains available in portable form.
 

@@ -17,6 +17,11 @@
 #include "headers\helper_funcs.h"
 #include "headers\message_router.h"
 #include "utils\binary.h"
+#include "utils\decoded_event.h"
+#include "utils\filter_match_core.h"
+#include "utils\message_archive.h"
+
+#include <sstream>
 
 #define FILTER_PARAM_LEN	500
 #define MAXIMUM_GROUPSIZE	1000
@@ -114,6 +119,8 @@ static bool g_showingAssembledFlexCopy = false;
 
 void ResetBools();
 bool BlockChecker(char *address, int fnu, char *message, bool reject);
+static std::string FilterCsvColumns(const char* columns, bool header);
+static void WriteFilterCsvHeader(FILE* file, const char* columns);
 
 // Displays debug messages in the filter pane.
 void misc_debug_msg(char *msg)
@@ -688,12 +695,31 @@ void ShowMessage()
 
 		if (iMatch != -1)
 		{
-			Profile.filters[iMatch].hitcounter++;								   // Update hitcounter
+			if (Profile.filters[iMatch].directory_id > 0)
+			{
+				unsigned int nextHit = Profile.filters[iMatch].hitcounter;
+				for (FILTERLIST::const_iterator filter = Profile.filters.begin();
+					filter != Profile.filters.end(); ++filter)
+					if (filter->directory_id == Profile.filters[iMatch].directory_id)
+						nextHit = (std::max)(nextHit, filter->hitcounter);
+				++nextHit;
+				for (FILTERLIST::iterator filter = Profile.filters.begin();
+					filter != Profile.filters.end(); ++filter)
+				{
+					if (filter->directory_id != Profile.filters[iMatch].directory_id) continue;
+					filter->hitcounter = nextHit;
+					memcpy(filter->lasthit_time, Current_MSG[MSG_TIME], 8);
+					memcpy(filter->lasthit_date, Current_MSG[MSG_DATE], 8);
+				}
+			}
+			else
+			{
+				Profile.filters[iMatch].hitcounter++;
+				memcpy(Profile.filters[iMatch].lasthit_time, Current_MSG[MSG_TIME], 8);
+				memcpy(Profile.filters[iMatch].lasthit_date, Current_MSG[MSG_DATE], 8);
+			}
 
-			memcpy(Profile.filters[iMatch].lasthit_time, Current_MSG[MSG_TIME], 8);// Update last time
-			memcpy(Profile.filters[iMatch].lasthit_date, Current_MSG[MSG_DATE], 8);// Update last date
-
-			bUpdateFilters = true;										// Update filters.ini in UpdateFilters()
+			bUpdateFilters = true;										// Persist directory-backed hit state when idle.
 
 			bMATCH=true;
 
@@ -921,7 +947,7 @@ void ShowMessage()
 						{
 							if (iTextLengths[0] && !Profile.FlexGroupMode)
 							{
-								for (k=0; k<10 && iTextPositions[k]; k++)
+								for (k=0; k<10 && iTextLengths[k]; k++)
 								{
 									if (pos >= iTextPositions[k] && pos < (iTextPositions[k] + iTextLengths[k]))
 									{
@@ -1208,24 +1234,7 @@ void ShowMessage()
 
 		if (bMATCH)
 		{
-			if (!(Profile.FlexGroupMode & FLEXGROUPMODE_LOGGING))
-			{
-				CollectLogfileLine(Profile.ColFilterfile, true);
-
-				if (szCurrentLabel[1][0])
-				{
-					if (Profile.LabelNewline)
-					{
-						strcat(szLogFileLine, "\n");
-						memset(szLabelspacing, 0,  sizeof(szLabelspacing));
-						memset(szLabelspacing, 32, iLabelspace_Logfile[FILTER]+1);
-						strcat(szLogFileLine, szLabelspacing);
-					}
-					else strcat(szLogFileLine, " ");
-					strcat(szLogFileLine, szCurrentLabel[1]);
-				}
-				strcat(szLogFileLine, "\n");
-			}
+			const std::string filterCsvLine = FilterCsvColumns(Profile.ColFilterfile, false);
 
 			if (bFILTERED)
 			{
@@ -1234,23 +1243,10 @@ void ShowMessage()
 					LogFileHandling(FILTER, szFilename, OPEN_FILE);
 
 					bNewFile = (!FileExists(szFilename)) ? true : false;
-					pFilterFile = fopen(szFilename, "a");
+					pFilterFile = fopen(szFilename, "ab");
+					if (pFilterFile && bNewFile) WriteFilterCsvHeader(pFilterFile, Profile.ColFilterfile);
 				}
-				if (pFilterFile)		// PH: Write current message to filterfile
-				{
-					bNewLine = (bSeparator[FILTER] && !bNewFile) ? true : false;
-
-					if (Profile.FlexGroupMode & FLEXGROUPMODE_LOGGING)
-					{
-						if (isdigit(szLogFileLine[0]) && !bLogged[FILTER] && !bCombine)
-						{
-							fprintf(pFilterFile, "%s%s", bNewLine ? "\n" : "", szLogFileLine);
-							bLogged[FILTER]=true;
-						}
-						fprintf(pFilterFile, "%s    %s  %s\n", bFragment ? szFragment : "               ", Current_MSG[MSG_CAPCODE], szCurrentLabel[0]);
-					}
-					else fprintf(pFilterFile, "%s%s", bNewLine ? "\n" : "", szLogFileLine);
-				}
+				if (pFilterFile) fwrite(filterCsvLine.data(), 1, filterCsvLine.size(), pFilterFile);
 			}
 
 			if (Profile.filters[iMatch].sep_filterfile_en && Profile.filters[iMatch].sep_filterfiles)
@@ -1258,6 +1254,7 @@ void ShowMessage()
 				for (int k=0; k<Profile.filters[iMatch].sep_filterfiles; k++)
 				{
 					LogFileHandling(SEPARATE+k, szSepfilenames[CURRENT], OPEN_FILE);
+					const bool separateNewFile = !FileExists(szSepfilenames[CURRENT]);
 
 					for (iSepfile=1; iSepfile<MAX_SEPFILES; iSepfile++)
 					{
@@ -1275,20 +1272,15 @@ void ShowMessage()
 							break;
 						}
 					}
-					if (!pSepFilterFiles[iSepfile]) pSepFilterFiles[iSepfile] = fopen(szSepfilenames[CURRENT], "a");
-
-					if (pSepFilterFiles[iSepfile])		// PH: Write current message to separate filterfile
+					if (!pSepFilterFiles[iSepfile])
 					{
-						if (Profile.FlexGroupMode & FLEXGROUPMODE_LOGGING)
-						{
-							if (!bLogged[SEPARATE] && isdigit(szLogFileLine[0]))
-							{
-								fprintf(pSepFilterFiles[iSepfile], "%s%s", bNewLine ? "\n" : "", szLogFileLine);
-							}
-							fprintf(pSepFilterFiles[iSepfile], "%s    %s  %s\n", bFragment ? szFragment : "               ", Current_MSG[MSG_CAPCODE], szCurrentLabel[0]);
-						}
-						else fprintf(pSepFilterFiles[iSepfile], "%s%s", bNewLine ? "\n" : "", szLogFileLine);
+						pSepFilterFiles[iSepfile] = fopen(szSepfilenames[CURRENT], "ab");
+						if (pSepFilterFiles[iSepfile] && separateNewFile)
+							WriteFilterCsvHeader(pSepFilterFiles[iSepfile], Profile.ColFilterfile);
 					}
+
+					if (pSepFilterFiles[iSepfile])
+						fwrite(filterCsvLine.data(), 1, filterCsvLine.size(), pSepFilterFiles[iSepfile]);
 				}
 			}
 
@@ -1548,8 +1540,8 @@ char LogFileHandling(int file, char *szFileName, int action)
 			break;
 
 			case FILTER:
-			strcpy(filename, Profile.filterfile);
-			strcpy(ext, ".flt");
+				strcpy(filename, Profile.filterfile);
+				strcpy(ext, ".csv");
 			UseDate = Profile.filterfile_use_date;
 			break;
 
@@ -1933,6 +1925,15 @@ int Check_4_Filtermatch()
 						iTextLength = txt_len-1;
 					}
 				}
+				else if (strchr(Profile.filters[iFilter].text, '+') != 0)
+				{
+					if (pdw::filters::MatchRequiredTerms(Current_MSG[MSG_MESSAGE],
+						Profile.filters[iFilter].text, iTextPositions, iTextLengths, 10) > 0)
+					{
+						iTextMatch = iFilter;
+						iTextLength = txt_len;
+					}
+				}
 				else if (strstr(Profile.filters[iFilter].text, "&") != 0)
 				{
 					while (Profile.filters[iFilter].text[i] != 0 && l < 10)
@@ -2236,6 +2237,38 @@ void CollectLogfileLine(char *string, bool bFilter)
 			}
 		}
 	}
+}
+
+static std::string FilterCsvColumns(const char* columns, bool header)
+{
+	static const char* const names[8] = {
+		"", "Capcode", "Time", "Date", "Mode", "Type", "Bitrate", "Message"
+	};
+	std::ostringstream output;
+	bool first = true;
+	for (int column = 1; column <= 7; ++column)
+	{
+		if (!strchr(columns, '0' + column)) continue;
+		if (!first) output << ',';
+		first = false;
+		if (header) output << names[column];
+		else
+		{
+			const char* value = column == 7 && Profile.monitor_mobitex && Current_MSG[MSG_MOBITEX][0]
+				? Current_MSG[MSG_MOBITEX] : Current_MSG[column];
+			output << pdw::archive::CsvEscape(pdw::events::PdwTextToUtf8(value));
+		}
+	}
+	output << "\r\n";
+	return output.str();
+}
+
+static void WriteFilterCsvHeader(FILE* file, const char* columns)
+{
+	if (!file) return;
+	const std::string header = FilterCsvColumns(columns, true);
+	fwrite("\xEF\xBB\xBF", 1, 3, file);
+	fwrite(header.data(), 1, header.size(), file);
 }
 
 void display_color(PaneStruct *pane, BYTE ct)

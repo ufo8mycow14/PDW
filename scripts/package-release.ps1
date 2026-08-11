@@ -119,7 +119,6 @@ try {
     $applicationFiles = @(
         @{ Source = $executable; Name = "$displayName.exe" },
         @{ Source = (Join-Path $SourceRoot "packaging\PDW.INI"); Name = "PDW.INI" },
-        @{ Source = (Join-Path $SourceRoot "packaging\filters.ini"); Name = "filters.ini" },
         @{ Source = (Join-Path $SourceRoot "pdw-manual.pdf"); Name = "PDW.pdf" },
         @{ Source = (Join-Path $SourceRoot "Readme"); Name = "Readme" },
         @{ Source = (Join-Path $SourceRoot "CHANGELOG.md"); Name = "CHANGELOG.md" },

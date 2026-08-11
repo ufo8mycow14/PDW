@@ -1,5 +1,27 @@
 # Changelog
 
+## PDW v5.3 2026 Release
+
+An additive Capcode Directory filtering release. Existing decoders, protocols,
+signal sources, archive retention, and output behaviour remain unchanged.
+
+### Added
+
+- Capcode Directory now owns live filtering as well as address descriptions. It exposes legacy
+  reject, exact-text, label, monitor-only, command, separate-file and hit-counter behavior in one
+  screen, together with the existing global filter options.
+- Message text can require multiple case-insensitive words using `+`, for example
+  `PR1+Traffic`; every term must occur, in any order. Existing `&` rules remain supported.
+- Expanded Capcode Directory CSV import/export carries all filter-rule fields and hit state.
+
+### Compatibility and security
+
+- Fresh packages retire `filters.ini`. Existing files are merged once without duplicating equivalent
+  directory mappings, the known duplicated label/message-text generator error is repaired, and the
+  source is retained as a `.migrated` backup. Old encrypted configuration backups remain restorable.
+- Directory saves, deletes, imports and reloads rebuild the proven legacy runtime matcher
+  immediately, so scheduled file regeneration and manual filter reloads are no longer needed.
+
 ## PDW v5.2 2026 Release
 
 An additive Message History export release. Existing decoders, protocols,

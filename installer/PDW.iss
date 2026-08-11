@@ -9,10 +9,10 @@
 #endif
 
 #define AppIdValue "{{15A49948-1DBB-4F13-95C1-CB5CEB390E8B}"
-#define AppName "PDW v5.2 2026 Release"
-#define AppVersion "5.2.0"
-#define AppExeName "PDW v5.2 2026 Release.exe"
-#define SetupBaseName "PDW-v5.2-2026-Release-Setup"
+#define AppName "PDW v5.3 2026 Release"
+#define AppVersion "5.3.0"
+#define AppExeName "PDW v5.3 2026 Release.exe"
+#define SetupBaseName "PDW-v5.3-2026-Release-Setup"
 
 [Setup]
 AppId={#AppIdValue}
@@ -42,10 +42,10 @@ RestartApplications=no
 UsePreviousAppDir=yes
 UsePreviousGroup=yes
 UsePreviousTasks=yes
-VersionInfoVersion=5.2.0.0
-VersionInfoProductVersion=5.2.0.0
-VersionInfoDescription=PDW v5.2 2026 Release Setup
-VersionInfoProductName=PDW v5.2 2026 Release
+VersionInfoVersion=5.3.0.0
+VersionInfoProductVersion=5.3.0.0
+VersionInfoDescription=PDW v5.3 2026 Release Setup
+VersionInfoProductName=PDW v5.3 2026 Release
 VersionInfoCompany=PDW Open Source Project
 #ifdef SignToolName
 SignTool={#SignToolName}
@@ -59,13 +59,11 @@ Name: "autostart"; Description: "Start PDW when I sign in to Windows"; GroupDesc
 [Files]
 ; Static application files are refreshed on upgrade. Mutable operator files,
 ; receivers and sounds are handled separately and never overwritten.
-Source: "{#Win32Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,filters.ini,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: not InstallX64
-Source: "{#X64Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,filters.ini,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: InstallX64
+Source: "{#Win32Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: not InstallX64
+Source: "{#X64Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: InstallX64
 
 Source: "{#Win32Application}\PDW.INI"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: not InstallX64
 Source: "{#X64Application}\PDW.INI"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: InstallX64
-Source: "{#Win32Application}\filters.ini"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: not InstallX64
-Source: "{#X64Application}\filters.ini"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: InstallX64
 
 Source: "{#Win32Application}\Receivers\*"; DestDir: "{app}\Receivers"; Flags: onlyifdoesntexist uninsneveruninstall recursesubdirs createallsubdirs; Check: not InstallX64
 Source: "{#X64Application}\Receivers\*"; DestDir: "{app}\Receivers"; Flags: onlyifdoesntexist uninsneveruninstall recursesubdirs createallsubdirs; Check: InstallX64
@@ -77,6 +75,7 @@ Source: "{#X64Application}\Wavfiles\*"; DestDir: "{app}\Wavfiles"; Flags: onlyif
 ; renamed predecessors; never wildcard operator files or other executables.
 Type: files; Name: "{app}\PDW v5 2026 Release.exe"
 Type: files; Name: "{app}\PDW v5.1 2026 Release.exe"
+Type: files; Name: "{app}\PDW v5.2 2026 Release.exe"
 
 [Dirs]
 Name: "{app}\Logfiles"; Flags: uninsneveruninstall
@@ -87,7 +86,7 @@ Name: "{autodesktop}\PDW"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}";
 Name: "{userstartup}\PDW"; Filename: "{app}\{#AppExeName}"; Parameters: "/startup"; WorkingDir: "{app}"; Tasks: autostart
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Launch PDW v5.2 2026 Release"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "Launch PDW v5.3 2026 Release"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var
