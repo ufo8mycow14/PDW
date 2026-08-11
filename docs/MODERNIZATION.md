@@ -31,7 +31,7 @@ boundary at a time.
 ## Phase 1: dependable current build
 
 - Centralize version metadata.
-- Keep Visual Studio 2022 CI green and publish a build artifact.
+- Keep Visual Studio 2026 x64 and Win32 CI green and publish both artifacts.
 - Document a reproducible local Win32 build.
 - Build third-party dependencies from checksum-verified, pinned source
   releases rather than committing opaque binary bundles.
@@ -155,7 +155,7 @@ path; fragment assembly is not required to publish a website or webhook.
 
 A public PDW v5.4 2026 Release build requires:
 
-1. Successful clean Visual Studio 2022 x64 and Win32 Release builds.
+1. Successful clean Visual Studio 2026/MSVC v145 x64 and Win32 Release builds.
 2. Startup and shutdown tests on current Windows.
 3. Audio-device capture smoke testing.
 4. Representative POCSAG and FLEX regression recordings at minimum.

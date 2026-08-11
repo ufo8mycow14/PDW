@@ -2,6 +2,8 @@
 param(
     [ValidateSet("x86", "x64")]
     [string]$Architecture = "x86",
+    [ValidateRange(17, 99)]
+    [int]$VisualStudioMajor = 18,
     [string]$InstallRoot = "",
     [switch]$Force
 )
@@ -30,12 +32,44 @@ function Assert-PathUnderOut {
 
 Assert-PathUnderOut -Path $InstallRoot
 
+foreach ($commandName in @("perl", "tar")) {
+    if (-not (Get-Command $commandName -ErrorAction SilentlyContinue)) {
+        throw "Required build tool '$commandName' was not found. See Readme > Build on Windows."
+    }
+}
+
+$programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
+$vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
+if (-not (Test-Path -LiteralPath $vswhere)) {
+    throw "Visual Studio Installer's vswhere.exe was not found. Install Visual Studio 2026 Desktop development with C++."
+}
+
+$versionRange = "[$VisualStudioMajor.0,$($VisualStudioMajor + 1).0)"
+$visualStudioRoot = (& $vswhere -latest -products * -version $versionRange `
+    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+    -property installationPath | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($visualStudioRoot)) {
+    throw "Visual Studio $VisualStudioMajor C++ x86/x64 build tools were not found."
+}
+
+$toolsetVersionFile = Join-Path $visualStudioRoot "VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt"
+if (-not (Test-Path -LiteralPath $toolsetVersionFile -PathType Leaf)) {
+    throw "The default MSVC toolset version file was not found at '$toolsetVersionFile'."
+}
+$msvcToolsetVersion = (Get-Content -LiteralPath $toolsetVersionFile -Raw).Trim()
+$cmakeToolset = if ($VisualStudioMajor -ge 18) { "v145" } else { "v143" }
+$cmakeGenerator = & (Join-Path $PSScriptRoot "resolve-cmake-generator.ps1") `
+    -VisualStudioMajor $VisualStudioMajor
+Write-Host "Using CMake generator '$cmakeGenerator' and MSVC $msvcToolsetVersion ($cmakeToolset)."
+
 $recipeSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
 $versions = [ordered]@{
     openssl = "3.5.7"
     curl = "8.21.0"
     libssh2 = "1.11.1"
     architecture = $Architecture
+    visualStudioMajor = $VisualStudioMajor
+    msvcToolset = $msvcToolsetVersion
     recipeSha256 = $recipeSha256
 }
 
@@ -89,30 +123,10 @@ if ($dependencySetIsCurrent) {
     exit 0
 }
 
-foreach ($commandName in @("cmake", "perl", "tar")) {
-    if (-not (Get-Command $commandName -ErrorAction SilentlyContinue)) {
-        throw "Required build tool '$commandName' was not found. See Readme > Build on Windows."
-    }
-}
-
-$programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
-$vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
-if (-not (Test-Path -LiteralPath $vswhere)) {
-    throw "Visual Studio Installer's vswhere.exe was not found. Install Visual Studio 2022 Desktop development with C++."
-}
-
-$visualStudioRoot = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
-if ([string]::IsNullOrWhiteSpace($visualStudioRoot)) {
-    throw "Visual Studio C++ x86/x64 build tools were not found."
-}
-
 $vsDevCmd = Join-Path $visualStudioRoot "Common7\Tools\VsDevCmd.bat"
 if (-not (Test-Path -LiteralPath $vsDevCmd)) {
     throw "Visual Studio developer command script was not found at '$vsDevCmd'."
 }
-
-$cmakeGenerator = & (Join-Path $PSScriptRoot "resolve-cmake-generator.ps1")
-Write-Host "Using CMake generator '$cmakeGenerator'."
 
 function Invoke-VsDevCommand {
     param(
@@ -231,6 +245,7 @@ Invoke-CMake -Description "Configuring libssh2 $($versions.libssh2) for $cmakePl
     "-B", $libssh2Build,
     "-G", $cmakeGenerator,
     "-A", $cmakePlatform,
+    "-T", $cmakeToolset,
     "-DCMAKE_INSTALL_PREFIX=$InstallRoot",
     "-DBUILD_SHARED_LIBS=OFF",
     "-DBUILD_STATIC_LIBS=ON",
@@ -252,6 +267,7 @@ Invoke-CMake -Description "Configuring curl $($versions.curl) for $cmakePlatform
     "-B", $curlBuild,
     "-G", $cmakeGenerator,
     "-A", $cmakePlatform,
+    "-T", $cmakeToolset,
     "-DCMAKE_INSTALL_PREFIX=$InstallRoot",
     "-DCMAKE_PREFIX_PATH=$InstallRoot",
     "-DBUILD_SHARED_LIBS=OFF",

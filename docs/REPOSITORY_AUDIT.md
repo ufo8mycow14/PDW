@@ -91,13 +91,15 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 
 ## Current validation state
 
-- Fresh Visual Studio 2022/CMake Release builds completed from new build
-  directories for Win32 and x64.
+- Fresh Visual Studio 2026 Build Tools 18.8.2, MSVC 19.51.36252/v145, and
+  CMake Release builds completed from new build directories for Win32 and x64.
 - Win32 and x64 each pass 29 of 29 CTest tests.
 - Optional WinMM and WASAPI hardware-smoke targets compile for both
   architectures.
 - PE machine values are Win32 `0x014C` and x64 `0x8664`; both executables
   report file version `5.4.0.0` and product version `5.4.0 2026 Release`.
+- Both native executables passed a five-second hidden startup smoke on
+  11 August 2026; receiver-specific live-hardware acceptance remains open.
 - Both embedded manifests report `5.4.0.0`, architecture-neutral assembly
   metadata, and Per-Monitor V2 DPI awareness.
 - Native UI review remains predecessor-v5 evidence. The v5.4 resources and

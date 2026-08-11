@@ -9,19 +9,23 @@ PDW uses one source tree to produce two native Windows applications.
 
 The decoder, filters, configuration schema and output behaviour are shared.
 CI must compile and run the complete automated test suite for both targets.
+Maintained releases use Visual Studio 2026, MSVC v145, and the explicit
+`windows-2025-vs2026` GitHub Actions image.
 
 ## Build commands
 
 ```powershell
-.\scripts\build-dependencies.ps1 -Architecture x64
-cmake -S . -B out\build-x64 -A x64
+$generator = .\scripts\resolve-cmake-generator.ps1 -VisualStudioMajor 18
+.\scripts\build-dependencies.ps1 -Architecture x64 -VisualStudioMajor 18
+cmake -S . -B out\build-x64 -G "$generator" -A x64 -T v145
 cmake --build out\build-x64 --config Release --parallel
 ctest --test-dir out\build-x64 -C Release --output-on-failure
 ```
 
 ```powershell
-.\scripts\build-dependencies.ps1 -Architecture x86
-cmake -S . -B out\build-win32 -A Win32
+$generator = .\scripts\resolve-cmake-generator.ps1 -VisualStudioMajor 18
+.\scripts\build-dependencies.ps1 -Architecture x86 -VisualStudioMajor 18
+cmake -S . -B out\build-win32 -G "$generator" -A Win32 -T v145
 cmake --build out\build-win32 --config Release --parallel
 ctest --test-dir out\build-win32 -C Release --output-on-failure
 ```
@@ -39,7 +43,8 @@ ctest --test-dir out\build-win32 -C Release --output-on-failure
 
 ## Release gates
 
-1. Build pinned dependencies for x64 and x86 independently.
+1. Build pinned dependencies for x64 and x86 independently with Visual Studio
+   2026 and MSVC v145 recorded in each dependency lock marker.
 2. Build PDW Release for both targets.
 3. Run every CTest test on both targets.
 4. Confirm each packaged executable PE machine matches its package label.

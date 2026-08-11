@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +31,14 @@ jobs:
         shell: pwsh
         run: .\scripts\audit-release.ps1
 
+      - name: Audit Visual Studio 2026 toolchain
+        shell: pwsh
+        run: |
+          $generator = .\scripts\resolve-cmake-generator.ps1 -VisualStudioMajor 18
+          if ($generator -ne "Visual Studio 18 2026") {
+            throw "Expected the Visual Studio 18 2026 generator; received '$generator'."
+          }
+
       - name: Cache ${{ matrix.label }} dependencies
         uses: actions/cache@v5
         with:
@@ -39,15 +47,19 @@ jobs:
 
       - name: Build pinned ${{ matrix.label }} dependencies
         shell: pwsh
-        run: .\scripts\build-dependencies.ps1 -Architecture "${{ matrix.architecture }}"
+        run: |
+          .\scripts\build-dependencies.ps1 `
+            -Architecture "${{ matrix.architecture }}" `
+            -VisualStudioMajor 18
 
       - name: Configure CMake (${{ matrix.label }} / Release)
         shell: pwsh
         run: |
-          $generator = .\scripts\resolve-cmake-generator.ps1
+          $generator = .\scripts\resolve-cmake-generator.ps1 -VisualStudioMajor 18
           cmake -S . -B "build-${{ matrix.architecture }}" `
             -G "$generator" `
             -A "${{ matrix.platform }}" `
+            -T v145 `
             -DCMAKE_BUILD_TYPE=Release `
             -DPDW_DEPENDENCY_ROOT="${{ github.workspace }}\out\dependencies\${{ matrix.architecture }}"
 
@@ -89,7 +101,7 @@ jobs:
   installer:
     name: Build and test guided Setup
     needs: build
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
 
     steps:
       - name: Checkout repository

@@ -76,7 +76,9 @@ behavior. See [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
 ## Build on Windows
 
-Install Visual Studio 2022 Desktop development with C++, CMake, Perl and `tar`, then build the pinned dependencies and application for the required architecture:
+Install Visual Studio 2026 Build Tools with the Desktop development with C++
+workload, plus Perl and `tar`. PDW release builds require the stable MSVC v145
+toolset and the `Visual Studio 18 2026` CMake generator.
 
 `CMakeLists.txt` is the only maintained project definition. Open the repository
 as a CMake project in Visual Studio; obsolete VC6 and hand-maintained VS2017
@@ -96,13 +98,16 @@ Binding compatibility and security requirements are in
 [`docs/PROJECT_RULES.md`](docs/PROJECT_RULES.md) and [`SECURITY.md`](SECURITY.md).
 
 ```powershell
-.\scripts\build-dependencies.ps1 -Architecture x64
-cmake -S . -B out\build-x64 -A x64
+$generator = .\scripts\resolve-cmake-generator.ps1 -VisualStudioMajor 18
+.\scripts\build-dependencies.ps1 -Architecture x64 -VisualStudioMajor 18
+cmake -S . -B out\build-x64 -G "$generator" -A x64 -T v145
 cmake --build out\build-x64 --config Release --parallel
 ctest --test-dir out\build-x64 -C Release --output-on-failure
 ```
 
-For the legacy-compatible build, replace `x64` with `x86` in the dependency command and use `-A Win32` with `out\build-win32`.
+For the legacy-compatible build, replace `x64` with `x86` in the dependency
+command and use `-A Win32 -T v145` with `out\build-win32`. Visual Studio 2022
+remains a local rollback toolchain, but it is not the maintained release target.
 
 ## Key Features
 
