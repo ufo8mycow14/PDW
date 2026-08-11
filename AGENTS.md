@@ -29,6 +29,14 @@ Every published update must advance and align all current-version surfaces:
   changelog, Readme, handover, roadmap, release branch, pull request, and fork
   metadata.
 
+A distribution-channel suffix such as **Public Beta 1** may remain outside the
+base `5.5.0` Windows product/file identity when it promotes an already-versioned
+candidate rather than changing the product API or decoder identity. In that
+case the immutable tag, GitHub prerelease title, Readme, changelog, installer
+notice, feedback form, `PDW_BUILD_COMMIT.txt`, and published checksum must all
+identify the same beta. A later beta containing product changes must advance an
+appropriate version surface rather than silently replacing the tag or asset.
+
 Run `scripts/audit-release.ps1` before building or packaging. Historical
 release notes and contributor-version credits remain historical and must not
 be rewritten merely to match the current release.
@@ -65,8 +73,13 @@ be rewritten merely to match the current release.
 8. Generate and independently audit both portable packages.
 9. Build the combined installer; test Win32/x64 install, co-located settings,
    upgrade and uninstall; scan it with Defender.
-10. Require trusted Authenticode signatures on public application, Setup and
-    uninstaller files, then confirm every worktree is clean before publication.
+10. Require trusted Authenticode signatures on stable public application, Setup
+    and uninstaller files. A repository-owner-approved unsigned beta is a narrow
+    exception only when it is a GitHub prerelease, has passed every automated
+    build/security/installer gate, publishes a SHA-256 checksum, prominently
+    warns of the unknown publisher and incomplete physical acceptance, and is
+    never described as stable. Confirm every worktree is clean before either
+    form of publication.
 
 See `docs/PROJECT_RULES.md`, `SECURITY.md`, and
 `docs/REPOSITORY_AUDIT.md` for the human-facing policy and evidence.

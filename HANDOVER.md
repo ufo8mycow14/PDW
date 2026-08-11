@@ -4,9 +4,9 @@ Updated: 11 August 2026
 
 ## Current release identity
 
-- Repository: `C:\PDW Update\tmp\pdw-v5.5-sdr-vbcable`
-- Active branch: `pdw-v5.5-sdr-vbcable-reconciliation`
-- Baseline: fork `master` at `651cedfd2d53a03c27f673d899d9774e0d91f76b`
+- Repository: `C:\PDW Update\PDW-source`
+- Active branch: fork `master`
+- Prerelease tag: `v5.5.0-beta.1` (immutable once published)
 - Product/display name: **PDW v5.5 2026 Release**
 - Executable: `PDW v5.5 2026 Release.exe`
 - Product version: `5.5.0 2026 Release`
@@ -59,8 +59,7 @@ other data-output destination.
 
 ## Installer and package boundary
 
-The maintained Setup definition is `installer/PDW.iss`. The v5.5 candidate is
-intended to:
+The maintained Setup definition is `installer/PDW.iss`. Public Beta 1:
 
 - offer x64 or Win32 on 64-bit Windows and use Win32 on 32-bit Windows;
 - keep the application and mutable operator data in one selected PDW folder;
@@ -93,29 +92,31 @@ vendor's licensing terms.
 
 ## Current verification state
 
-The fork `master` baseline at `651cedf` has successful x64, Win32, guided Setup,
-and CodeQL checks. Those are predecessor-v5.4 baseline results, not evidence for
-the uncommitted v5.5 candidate.
+The v5.5 automated release gate is green. GitHub Build/Setup run `31472856650`
+and CodeQL run `31472856478` passed at beta-promotion commit `3015089`: clean
+Visual Studio 2026/MSVC v145 x64 and Win32 builds, 31 CTest tests per
+architecture, both optional device-smoke programs compiled, deterministic
+portable/source-tamper checks passed, Setup metadata/architecture and Defender
+passed, and the standard/profile/install/upgrade/uninstall preservation matrix
+passed. Subsequent promotion-only commits must pass the same exact-head
+workflows before the immutable beta tag is created.
 
-At this handover, all v5.5 release gates remain pending unless a later dated
-record identifies the exact tested commit and artifacts:
+The following evidence remains open and must not be implied by those automated
+results:
 
-- release audit and complete diff review;
-- fresh Win32 and x64 Release configure/build/CTest runs;
-- optional WinMM and WASAPI device-smoke compilation for both architectures;
-- stable-identity and endpoint-specific WASAPI profile tests;
-- PE machine, file/product version, manifest, main-title and About verification;
-- native Light/Dark, compact-size, keyboard, High Contrast, and DPI acceptance;
-- independent Win32 and x64 portable-package audit;
-- guided Setup clean-profile, standard-profile, upgrade, co-location,
-  predecessor-cleanup, uninstall, and preservation smoke;
-- Microsoft Defender scanning;
-- PR CI and CodeQL on the exact candidate head; and
-- trusted Authenticode signing and timestamp verification for public artifacts.
+- complete native Light/Dark, compact-size, keyboard, High Contrast and DPI
+  acceptance on representative x64 and Win32 systems;
+- physical SDR, SDR#/VB-CABLE, receiver, slicer, serial, hot-plug and
+  device-loss acceptance; and
+- trusted Authenticode signing/timestamp plus post-signing validation.
 
-No v5.5 portable package, installer, signature, tag, GitHub Release, or public
-deployment should be described as complete until its corresponding gate has
-actually passed.
+The repository owner explicitly approved Public Beta 1 without those physical,
+complete visual and signature gates so community testers can provide safe,
+content-free evidence. Publication is allowed only as an unsigned GitHub
+prerelease with the exact-head Setup and checksum, prominent unknown-publisher
+and hardware-unverified warnings, and feedback through Issue #14. Stable
+promotion remains blocked until signing and the required acceptance evidence
+are complete.
 
 ## Rebuild and audit
 
@@ -151,8 +152,10 @@ ctest --test-dir out\v5.5-build-x64 -C Release --output-on-failure
   -TestRoot out\v5.5-installer-smoke
 ```
 
-Public builds additionally require the approved signing command and
-`-RequireSignature` during installer audit.
+Stable public builds additionally require the approved signing command and
+`-RequireSignature` during installer audit. The owner-approved unsigned beta
+exception does not use `-RequireSignature`, remains a prerelease, and still
+requires Defender plus every other installer audit and smoke check.
 
 ## Compatibility and privacy boundaries
 
@@ -171,12 +174,16 @@ Public builds additionally require the approved signing command and
 ## Publication workflow
 
 1. Resolve and review the complete v5.5 diff without disturbing unrelated work.
-2. Pass the local dual-architecture, package, installer, UI, security, and
-   privacy gates above.
-3. Commit and push `pdw-v5.5-sdr-vbcable-reconciliation` to the writable fork.
-4. Open a draft PR against fork `master` and wait for exact-head Build/Setup
-   and CodeQL results.
-5. Merge only after required source gates pass.
-6. Do not publish a stable installer until application, Setup, and uninstaller
-   signatures, timestamps, Defender scan, and clean-machine smoke all pass.
+2. Pass the release audit, dual-architecture, package, installer, security and
+   privacy gates required for the selected beta or stable channel.
+3. Commit and push the release state to fork `master`; wait for exact-head
+   Build/Setup and CodeQL results.
+4. Download only the exact-head Setup artifact and verify its published
+   checksum before creating immutable tag `v5.5.0-beta.1`.
+5. Publish one Setup plus its checksum as a GitHub prerelease, with unsigned and
+   hardware-unverified warnings and the Issue #14 feedback route. GitHub's
+   automatic source-code ZIP/TAR archives are not additional PDW installers.
+6. Do not promote the release to stable until application, Setup and uninstaller
+   signatures, timestamps, Defender scan, clean-machine smoke and required
+   physical acceptance all pass.
 7. Retain historical branches and artifacts as rollback evidence.
