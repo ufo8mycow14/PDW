@@ -8,6 +8,17 @@ An additive Capcode filtering and output-routing release. Public Beta 2 retains
 the complete Public Beta 1 local-audio profile and compatibility boundary while
 giving each directory rule explicit, independently gated behavior.
 
+### Changed
+
+- Consolidate duplicate Settings cards: Filters and Signal & radio now expose
+  one card per underlying editor, and Email plus push/Windows notifications are
+  grouped under Data outputs.
+- When optional FLEX fragment reassembly is enabled, valid fragments are held
+  until one `[Joined FLEX]` event can be displayed, filtered, logged and routed.
+- Automatically join bounded pager text marked `Part X of Y` for the same
+  capcode/protocol/type, including reordered parts, while rejecting ambiguous
+  or conflicting chains instead of guessing.
+
 ### Added
 
 - Independent **Filter** behavior for the lower Filtered pane and **Send to

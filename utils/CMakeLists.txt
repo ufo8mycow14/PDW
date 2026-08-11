@@ -22,6 +22,7 @@ set( PDW_INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/message_archive.h
   ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_manager.h
+	${CMAKE_CURRENT_SOURCE_DIR}/multipart_message_reassembly_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mysql_odbc_output.h
   ${CMAKE_CURRENT_SOURCE_DIR}/notification_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/output_health_core.h
@@ -74,6 +75,7 @@ set( PDW_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_manager.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/multipart_message_reassembly_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/mysql_odbc_output.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/output_health.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/output_health_core.cpp

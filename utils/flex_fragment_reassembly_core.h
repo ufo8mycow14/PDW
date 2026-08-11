@@ -52,9 +52,13 @@ struct FragmentResult
 	FragmentResult();
 };
 
-// A bounded shadow reassembler for standard FLEX K/F/C alpha fragments.
-// It never decides whether a legacy fragment is displayed or discarded; the
-// caller remains responsible for preserving the established decoder path.
+// When reassembly is enabled, these statuses represent a valid chain that is
+// still pending, replayed, or complete. Other statuses retain the direct path.
+bool ShouldHoldOriginalFragment(FragmentStatus status);
+
+// A bounded reassembler for standard FLEX K/F/C alpha fragments. The caller
+// decides whether each observation is held or retains the established direct
+// decoder path by applying ShouldHoldOriginalFragment to the result status.
 class FragmentReassembler
 {
 public:

@@ -43,6 +43,19 @@ int main()
 {
 	using namespace pdw::flex;
 
+	Expect(!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_STANDALONE),
+		"standalone FLEX messages retain the direct display path");
+	Expect(pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_BUFFERED_START) &&
+		pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_BUFFERED_CONTINUATION) &&
+		pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_BUFFERED_OUT_OF_ORDER) &&
+		pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_DUPLICATE) &&
+		pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_ASSEMBLED),
+		"valid FLEX chain states hold the original fragment");
+	Expect(!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_CONFLICT) &&
+		!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_CAPACITY_REACHED) &&
+		!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_INVALID),
+		"unsafe FLEX states fall back to the direct display path");
+
 	FragmentReassembler normal;
 	Expect(Observe(normal, 1234567, 3, false, 100, "standalone").status ==
 		FRAGMENT_STANDALONE, "K-type message remains standalone");

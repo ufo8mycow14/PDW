@@ -65,8 +65,7 @@ namespace
 		{ "Decoder", "Protocols, message handling and decoder behaviour." },
 		{ "Signal & radio", "Select, test and diagnose the live signal source." },
 		{ "Filters", "Control which decoded messages are highlighted or routed." },
-		{ "Notifications", "Email, push notifications and Windows alerts." },
-		{ "Data outputs", "Transfer, publish, or route approved decoded output." },
+		{ "Data outputs", "Configure email, notifications and approved decoded-output destinations." },
 		{ "Health & diagnostics", "Check decoder statistics, diagnostics and delivery health." },
 		{ "About me", "PDW version, credits and help." }
 	};
@@ -81,14 +80,12 @@ namespace
 		{ PDW_SETTINGS_DISPLAY, IDM_SCROLLBACK, "Scrollback", "Set pane sizes, scrolling speed and retained history." },
 		{ PDW_SETTINGS_DISPLAY, IDM_SYSTEMTRAY, "System tray", "Control minimise-to-tray and restore behaviour." },
 		{ PDW_SETTINGS_DECODER, IDM_OPTIONS, "Decoder options", "Configure POCSAG, FLEX and message-processing options." },
-		{ PDW_SETTINGS_SIGNAL, IDM_SIGNAL_SOURCES, "Current source", "Choose local audio, serial, network or USB input." },
-		{ PDW_SETTINGS_SIGNAL, IDM_SIGNAL_SOURCES, "Receiver, recording and replay", "Tune the receiver; record or replay WAV/SigMF signals." },
+		{ PDW_SETTINGS_SIGNAL, IDM_SIGNAL_SOURCES, "Signal source, receiver and replay", "Choose and test local audio, serial, network or USB input; record or replay WAV/SigMF signals." },
 		{ PDW_SETTINGS_SIGNAL, IDM_INTERFACE, "Legacy input setup", "Configure WinMM audio, serial input and slicer settings." },
 		{ PDW_SETTINGS_SIGNAL, IDM_VOLUME, "Windows input volume", "Open the Windows mixer for the selected input." },
-		{ PDW_SETTINGS_FILTERS, IDM_FILTERS, "Manage filters", "Add, edit and test the message filters used by PDW." },
-		{ PDW_SETTINGS_FILTERS, IDM_FILTEROPTIONS, "Filter options", "Set default matching, display and filter-file behaviour." },
-		{ PDW_SETTINGS_NOTIFICATIONS, IDM_APPRISE, "Push and Windows notifications", "Route filtered messages to Apprise or Windows notifications." },
-		{ PDW_SETTINGS_NOTIFICATIONS, IDM_MAIL, "Email", "Configure filtered-message email delivery." },
+		{ PDW_SETTINGS_FILTERS, IDM_FILTERS, "Capcode Directory and filters", "Add, edit and configure matching, display and filter-file behaviour in one place." },
+		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_MAIL, "Email", "Configure filtered-message email delivery." },
+		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_APPRISE, "Push and Windows notifications", "Route matching messages to Apprise or Windows notifications." },
 		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_FTP, "File transfer", "Continuously upload selected files using FTP, FTPS or SFTP." },
 		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_PUBLISHING, "Publish to web", "Maintain approved feeds, web files and HTTPS webhooks." },
 		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_DATA_OUTPUTS, "Data outputs", "Configure privacy-aware MQTT, database and Telnet destinations." },
@@ -563,12 +560,6 @@ namespace
 				LineTo(dc, left + Scale(11), top + Scale(9)); LineTo(dc, left + Scale(11), top + Scale(16));
 				LineTo(dc, left + Scale(7), top + Scale(14)); LineTo(dc, left + Scale(7), top + Scale(9));
 				LineTo(dc, left + Scale(1), top + Scale(2));
-				break;
-			case PDW_SETTINGS_NOTIFICATIONS:
-				Arc(dc, left + Scale(3), top + Scale(2), left + s - Scale(3), top + s - Scale(2),
-					left + Scale(4), top + Scale(12), left + s - Scale(4), top + Scale(12));
-				MoveToEx(dc, left + Scale(3), top + Scale(12), NULL); LineTo(dc, left + s - Scale(3), top + Scale(12));
-				MoveToEx(dc, left + Scale(7), top + Scale(16), NULL); LineTo(dc, left + Scale(11), top + Scale(16));
 				break;
 			case PDW_SETTINGS_DATA_OUTPUTS:
 				Ellipse(dc, left + Scale(2), top + Scale(2), left + s - Scale(2), top + Scale(7));

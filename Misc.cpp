@@ -20,6 +20,7 @@
 #include "utils\decoded_event.h"
 #include "utils\filter_match_core.h"
 #include "utils\message_archive.h"
+#include "utils\multipart_message_reassembly_core.h"
 
 #include <sstream>
 
@@ -112,9 +113,21 @@ BYTE *dsc_pcolor;
 
 FILE *pBlocked = NULL;						// PH: Used for blocked messages
 
-// True only during the synchronous additive copy emitted after a complete
-// FLEX fragment chain. The legacy fragment call always runs first.
+// True only during the synchronous copy emitted after a complete FLEX
+// fragment chain.
 static bool g_showingAssembledFlexCopy = false;
+static pdw::multipart::MultipartReassembler g_multipartMessageReassembler(
+	64, 600000, MAX_STR_LEN - 1, 32);
+
+static std::uint64_t MultipartMessageNowMs()
+{
+	static DWORD previousTick = 0;
+	static std::uint64_t tickEpoch = 0;
+	const DWORD currentTick = GetTickCount();
+	if (currentTick < previousTick) tickEpoch += (static_cast<std::uint64_t>(1) << 32);
+	previousTick = currentTick;
+	return tickEpoch + currentTick;
+}
 
 
 void ResetBools();
@@ -610,6 +623,8 @@ void ShowMessage()
 	bool bBlock=false, bSkip_character=false;
 	bool bMATCH=false, bMONITOR_ONLY=false, bFILTERED=false;
 	const bool bAssembledFlexCopy = g_showingAssembledFlexCopy;
+	bool bAssembledTextMessage = false;
+	unsigned int assembledTextParts = 0;
 	bool bShowMessage=true, bFragment=bAssembledFlexCopy, bGroupcode;
 	bool bNumeric=false;
 	bool bNewFile, bNewLine;					// PH: To indicate if the logfile is new / already exists
@@ -644,6 +659,45 @@ void ShowMessage()
 		message_buffer[iMessageIndex]=0;		// terminate the buffer string
 		message_color[iMessageIndex] = COLOR_UNUSED;
 		iMessageIndex = 0;
+	}
+
+	if (!iConvertingGroupcall && message_buffer[0] != 0)
+	{
+		pdw::multipart::MultipartObservation observation;
+		observation.address = Current_MSG[MSG_CAPCODE];
+		observation.protocol = Current_MSG[MSG_MODE];
+		observation.messageType = Current_MSG[MSG_TYPE];
+		observation.observedAtMs = MultipartMessageNowMs();
+		observation.text = message_buffer;
+		observation.colors = message_color;
+		observation.length = strlen(reinterpret_cast<const char*>(message_buffer));
+		const pdw::multipart::MultipartResult multipart =
+			g_multipartMessageReassembler.Observe(observation);
+		if (multipart.status == pdw::multipart::MULTIPART_BUFFERED ||
+			multipart.status == pdw::multipart::MULTIPART_DUPLICATE)
+		{
+			SuppressCurrentMessage();
+			return;
+		}
+		if (multipart.status == pdw::multipart::MULTIPART_ASSEMBLED)
+		{
+			const std::size_t length = (std::min)(multipart.text.size(),
+				static_cast<std::size_t>(MAX_STR_LEN - 1));
+			memset(message_buffer, 0, sizeof(message_buffer));
+			memset(message_color, COLOR_UNUSED, sizeof(message_color));
+			memcpy(message_buffer, multipart.text.data(), length);
+			if (!multipart.colors.empty())
+				memcpy(message_color, &multipart.colors[0],
+					(std::min)(length, multipart.colors.size()));
+			message_buffer[length] = 0;
+			message_color[length] = COLOR_UNUSED;
+			iMessageIndex = static_cast<int>(length);
+			bAssembledTextMessage = true;
+			assembledTextParts = multipart.totalParts;
+			bFragment = true;
+			snprintf(szFragment, sizeof(szFragment), "[Joined %u-part message]",
+				assembledTextParts);
+		}
 	}
 	
 	if (Profile.lang_mi_index)
@@ -933,7 +987,7 @@ void ShowMessage()
 					{
 						display_color(pPane, COLOR_INSTRUCTIONS);
 						display_show_strV2(pPane, szFragment);
-						if (bAssembledFlexCopy)
+						if (bAssembledFlexCopy || bAssembledTextMessage)
 						{
 							display_show_strV2(pPane, " ");
 						}
@@ -1348,7 +1402,7 @@ void ShowMessage()
 	notification.groupFinal = bGroupcode;
 	notification.groupBit = (eventGroupBit >= 0 && eventGroupBit < 16) ? eventGroupBit : -1;
 	notification.fragmented = eventFragmented;
-	notification.assembled = bAssembledFlexCopy;
+	notification.assembled = bAssembledFlexCopy || bAssembledTextMessage;
 	notification.selectedForEmail = bMATCH ? Profile.filters[iMatch].smtp : 0;
 	notification.outputRoutingConfigured = bMATCH ?
 		Profile.filters[iMatch].output_routing_configured != 0 : false;
@@ -1538,6 +1592,23 @@ void ResetBools()
 	bLogged[MONITOR]  = false;
 	bLogged[FILTER]   = false;
 	bLogged[SEPARATE] = false;
+}
+
+
+void SuppressCurrentMessage(void)
+{
+	ResetBools();
+	bMobitexReplace = false;
+	memset(message_buffer, 0, sizeof(message_buffer));
+	memset(mobitex_buffer, 0, sizeof(mobitex_buffer));
+	memset(message_color, COLOR_UNUSED, sizeof(message_color));
+	iMessageIndex = 0;
+}
+
+
+void multipart_message_reassembly_reset(void)
+{
+	g_multipartMessageReassembler.Reset();
 }
 
 

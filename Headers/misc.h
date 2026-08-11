@@ -36,6 +36,8 @@ void build_show_line(PaneStruct *pane, char cin, int option);
 void display_line(PaneStruct *pane);
 void display_show_strV2(PaneStruct *pane, char strin[]);
 void ShowAssembledFlexCopy(const unsigned char* text, const BYTE* colors, size_t length);
+void SuppressCurrentMessage(void);
+void multipart_message_reassembly_reset(void);
 
 void AddAssignment(int assignedframe, int groupbit, int capcode);
 void ConvertGroupcall(int groupbit, char *vtype, int capcode);
