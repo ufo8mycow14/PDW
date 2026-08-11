@@ -193,7 +193,7 @@ typedef struct
 
 	int  FlexTIME;					// Flag for FlexTIME as systemtime
 	int  FlexGroupMode;				// Flag for FlexGroupMode
-	int  flexFragmentReassemblyEnabled; // additive FLEX alpha copy; legacy fragments remain
+	int  flexFragmentReassemblyEnabled; // wait for and emit one complete FLEX alpha message
 
 	int  SMTP;						// SMTP-email
 	int  appriseEnabled;			// Apprise push notifications for filtered messages

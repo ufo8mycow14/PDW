@@ -318,6 +318,7 @@ set_source_files_properties(
   utils/multi_channel.cpp
   utils/multi_channel_core.cpp
   utils/multi_channel_manager.cpp
+	utils/multipart_message_reassembly_core.cpp
   utils/output_health.cpp
   utils/publishing_delivery_state.cpp
   utils/publishing_job_store.cpp
@@ -901,6 +902,32 @@ target_compile_definitions(PDWMessageArchiveManagerTests PRIVATE
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	add_test(NAME flex-fragment-reassembly COMMAND PDWFlexFragmentReassemblyTests)
+
+	add_executable(PDWMultipartMessageReassemblyTests
+		tests/multipart_message_reassembly_core_tests.cpp
+		utils/multipart_message_reassembly_core.cpp
+	)
+	target_include_directories(PDWMultipartMessageReassemblyTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWMultipartMessageReassemblyTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME multipart-message-reassembly COMMAND PDWMultipartMessageReassemblyTests)
+
+	add_executable(PDWSettingsNavigationTests
+		tests/settings_navigation_tests.cpp
+	)
+	target_compile_options(PDWSettingsNavigationTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME settings-navigation COMMAND PDWSettingsNavigationTests
+		"${CMAKE_CURRENT_SOURCE_DIR}/settings_center.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Headers/settings_center.h")
 
 	add_executable(PDWWasapiDeviceSmoke EXCLUDE_FROM_ALL
 		tests/wasapi_device_smoke.cpp

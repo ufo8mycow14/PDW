@@ -92,9 +92,8 @@ int syncs[8] = { 0x870C, 0x7B18, 0xB068, 0xDEA0, 0, 0, 0, 0x4C7C };
 
 char phase;
 
-// The reassembler is a shadow observer only. FLEX::showframe always sends the
-// original fragment through the established path before an optional assembled
-// copy is emitted.
+// When enabled, the reassembler buffers valid FLEX fragment chains so the
+// established display/routing path receives one completed message.
 static pdw::flex::FragmentReassembler g_flexFragmentReassembler(
 	64, 240000, MAX_STR_LEN - 1, 4096);
 
@@ -131,6 +130,7 @@ void flex_reset(void)
 	bReflex = false;
 	bFlexActive = false;
 	flex_fragment_reassembly_reset();
+	multipart_message_reassembly_reset();
 }
 
 void flex_fragment_reassembly_reset(void)
@@ -545,9 +545,8 @@ void FLEX::showframe(int asa, int vsa)
 					}
 				}
 
-				// Compatibility-first shadow assembly. Every fragment is still shown
-				// by the original ShowMessage()/ConvertGroupcall logic below. Group
-				// mode stays entirely on its proven legacy behavior.
+				// Group mode stays entirely on its proven legacy behavior. Outside
+				// group mode, enabled reassembly waits for a valid complete chain.
 				if (Profile.flexFragmentReassemblyEnabled && !Profile.FlexGroupMode &&
 					!bFLEX_groupmessage && capcode >= 0 &&
 					strchr(Current_MSG[MSG_CAPCODE], '?') == NULL &&
@@ -786,7 +785,10 @@ void FLEX::showframe(int asa, int vsa)
 			}
 			else
 			{
-				ShowMessage();
+				const bool suppressOriginalFlex = Profile.flexFragmentReassemblyEnabled &&
+					pdw::flex::ShouldHoldOriginalFragment(flexFragmentResult.status);
+				if (suppressOriginalFlex) SuppressCurrentMessage();
+				else ShowMessage();
 				if (bFlexAssembledCopyReady)
 				{
 					ShowAssembledFlexCopy(

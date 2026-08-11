@@ -163,14 +163,16 @@ The left navigation remains visible and contains:
 4. Decoder
 5. Signal & radio
 6. Filters
-7. Notifications
-8. Data outputs
-9. Health & diagnostics
-10. About me
+7. Data outputs
+8. Health & diagnostics
+9. About me
 
-General contains **Backup / Restore**. Data outputs contains file transfer,
-web publishing, MQTT, databases, Telnet, and other integrations. This removes
-a duplicate destination category while preserving every underlying editor.
+General contains **Backup / Restore**. Data outputs contains email, push and
+Windows notifications, file transfer, web publishing, MQTT, databases, Telnet,
+and other integrations. This removes a duplicate destination category while
+preserving every underlying editor. Filters and Signal & radio each expose one
+card for their consolidated editor instead of two cards that open the same
+window.
 
 At wide sizes the navigation displays icons and labels. At narrower sizes it
 retains readable icon-and-label rows in a narrower rail. The content header

@@ -186,7 +186,7 @@ BEGIN
     LTEXT           "PDW version",IDC_VERSION,90,12,326,12
     LTEXT           "Architecture",IDC_ABOUT_ARCHITECTURE,90,29,326,12
     LTEXT           "Native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.",IDC_STATIC,90,46,326,22
-    LTEXT           "Inputs include established audio and serial/slicer paths, RTL-TCP, direct RTL-SDR, and WAV/SigMF replay. Current tools include the Capcode Directory, live filtering, optional bounded Message History with CSV export, diagnostics, multi-receiver support, and optional additive FLEX fragment joining.",IDC_ABOUT_FEATURES,14,82,402,52
+    LTEXT           "Inputs include established audio and serial/slicer paths, RTL-TCP, direct RTL-SDR, and WAV/SigMF replay. Current tools include the Capcode Directory, live filtering, optional bounded Message History with CSV export, diagnostics, multi-receiver support, and bounded pager-message reassembly.",IDC_ABOUT_FEATURES,14,82,402,52
     LTEXT           "The optional SDR# + VB-Audio Cable profile is selected by the operator. PDW does not install or configure those external products. Network and data outputs remain disabled until configured.",IDC_STATIC,14,140,402,34
     LTEXT           "Use PDW only where monitoring is lawful and authorised. Protect decoded content.",IDC_STATIC,14,179,402,12
     LTEXT           "GNU GPL v3 or later. Credits: Jason Petty, Peter Hunt, Herman Withaar, open-source contributors, Kieran O'Rourke and spiralshapeturtl.",IDC_STATIC,14,196,402,22
@@ -791,7 +791,7 @@ BEGIN
                     "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,146,66,173,10
     CONTROL         "Hide groupcodes within successfully converted groupcalls",IDC_FGM_HIDEGROUPCODES,
                     "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,146,85,203,10
-    CONTROL         "Join split FLEX alpha/secure messages (original fragments remain)",IDC_FLEX_REASSEMBLY,
+    CONTROL         "Wait for complete split FLEX alpha/secure message (show joined only)",IDC_FLEX_REASSEMBLY,
                     "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,14,105,300,10
     PUSHBUTTON      "OK",IDOK,140,130,38,14
     PUSHBUTTON      "Cancel",IDCANCEL,194,130,38,14

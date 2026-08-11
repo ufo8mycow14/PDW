@@ -25,6 +25,15 @@ FragmentResult::FragmentResult()
 {
 }
 
+bool ShouldHoldOriginalFragment(FragmentStatus status)
+{
+	return status == FRAGMENT_BUFFERED_START ||
+		status == FRAGMENT_BUFFERED_CONTINUATION ||
+		status == FRAGMENT_BUFFERED_OUT_OF_ORDER ||
+		status == FRAGMENT_DUPLICATE ||
+		status == FRAGMENT_ASSEMBLED;
+}
+
 FragmentReassembler::Slot::Part::Part()
 	: present(false), fragmentNumber(3), continuation(false), observedAtMs(0)
 {

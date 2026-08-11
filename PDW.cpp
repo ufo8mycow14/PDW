@@ -12376,7 +12376,6 @@ void ShowContextMenu(int menu, HWND hWindow)
 		AppendMenu(hMenu, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(hMenu, MF_STRING,    IDM_OPTIONS,      "Options...") ;
 		AppendMenu(hMenu, MF_STRING,    IDM_FILTERS,      "Filter List...") ;
-		AppendMenu(hMenu, MF_STRING,	IDM_FILTEROPTIONS,"Filter Options...") ;
 		AppendMenu(hMenu, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(hMenu, MF_STRING,    IDM_SCROLLBACK,   "Scrollback...") ;
 		AppendMenu(hMenu, MF_STRING,    IDM_CLEARDISPLAY, "Clear Screen...") ;
