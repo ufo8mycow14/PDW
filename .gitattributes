@@ -2,3 +2,6 @@
 # format includes insignificant trailing spaces that must not be normalized.
 packaging/Legacy/base-ids.txt whitespace=-trailing-space
 packaging/Legacy/language.df whitespace=-trailing-space
+
+# The editable manual is an Office Open XML binary artifact.
+*.docx binary
