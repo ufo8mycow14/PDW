@@ -30,7 +30,7 @@ PDW. The URL must end in either:
   notify schema does not accept the stateless `urls` field.
 
 The Apprise server is an independently operated component. It is not packaged
-inside `PDW v5.3 2026 Release.exe` and PDW does not contact any endpoint until the operator saves
+inside `PDW v5.4 2026 Release.exe` and PDW does not contact any endpoint until the operator saves
 valid settings and selects **Enable Apprise**.
 
 ## Configure PDW

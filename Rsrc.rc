@@ -788,7 +788,7 @@ BEGIN
                     "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,146,66,173,10
     CONTROL         "Hide groupcodes within successfully converted groupcalls",IDC_FGM_HIDEGROUPCODES,
                     "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,146,85,203,10
-    CONTROL         "Also show assembled FLEX alpha copy (original fragments remain)",IDC_FLEX_REASSEMBLY,
+    CONTROL         "Join split FLEX alpha/secure messages (original fragments remain)",IDC_FLEX_REASSEMBLY,
                     "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,14,105,300,10
     PUSHBUTTON      "OK",IDOK,140,130,38,14
     PUSHBUTTON      "Cancel",IDCANCEL,194,130,38,14

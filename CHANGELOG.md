@@ -1,5 +1,33 @@
 # Changelog
 
+## PDW v5.4 2026 Release
+
+An additive FLEX fragment and display-layout release. Existing protocol
+decoders, original fragment content and routing, signal sources, filters, and
+external outputs remain available with their established semantics.
+
+### Added
+
+- Optional joining of complete standard FLEX alpha and secure fragment chains,
+  while every original fragment continues through the established display,
+  filter, duplicate, logging, notification, and output path first.
+- Bounded, timeout-controlled fragment state keyed by capcode, message number,
+  and message type, with normal, reordered, wrapped, replayed, conflicting,
+  and truncated cases covered by synthetic regression tests.
+- Message display wrapping that uses the available monitor width and retains a
+  visible continuation marker without truncating the underlying routed text.
+
+### Compatibility and security
+
+- Joining is disabled by default, excluded from FLEX Group Mode, reset with
+  decoder/input changes, and never suppresses or delays an original fragment.
+- Expected `0`, `1`, `2` positions may wrap repeatedly. Ambiguous cross-cycle
+  out-of-order data fails closed, and exact completed-chain replays inside the
+  bounded retention window do not emit an extra assembled copy.
+- Reassembly remains memory-bounded and emits no private traffic in diagnostics
+  or fixtures; live-radio validation requires authorised synthetic, redacted,
+  or licensed traffic.
+
 ## PDW v5.3 2026 Release
 
 An additive Capcode Directory filtering release. Existing decoders, protocols,

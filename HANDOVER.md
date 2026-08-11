@@ -1,20 +1,20 @@
-# PDW v5.3 2026 Release handover
+# PDW v5.4 2026 Release handover
 
 Updated: 11 August 2026
 
 ## Current release identity
 
-- Repository: `C:\PDW Update\tmp\pdw-capcode-directory-filters`
-- Active branch: `pdw-v5.3-capcode-directory-filters`
-- Product/display name: **PDW v5.3 2026 Release**
-- Executable: `PDW v5.3 2026 Release.exe`
-- Product version: `5.3.0 2026 Release`
-- File version: `5.3.0.0`
-- Installer: `PDW-v5.3-2026-Release-Setup.exe`
-- Portable packages: `PDW-v5.3-2026-Release-Win32` and
-  `PDW-v5.3-2026-Release-x64`
+- Repository: `C:\PDW Update\tmp\pdw-message-reassembly`
+- Active branch: `pdw-v5.4-flex-reassembly-display`
+- Product/display name: **PDW v5.4 2026 Release**
+- Executable: `PDW v5.4 2026 Release.exe`
+- Product version: `5.4.0 2026 Release`
+- File version: `5.4.0.0`
+- Installer: `PDW-v5.4-2026-Release-Setup.exe`
+- Portable packages: `PDW-v5.4-2026-Release-Win32` and
+  `PDW-v5.4-2026-Release-x64`
 
-The v5.3 release is one PDW product. The installer contains both application
+The v5.4 release is one PDW product. The installer contains both application
 architectures and selects x64 by default on 64-bit Windows while retaining a
 clear Win32 compatibility choice. The portable folder workflow remains fully
 supported.
@@ -23,7 +23,7 @@ supported.
 display name from that header for the output filename; the About dialog and
 Settings **About me** page render the same display macro. The installer,
 packaging, audit scripts, workflow names, documentation, and manifests are
-aligned to the v5.3 identity.
+aligned to the v5.4 identity.
 
 ## Guided installer
 
@@ -57,7 +57,7 @@ Local Visual Studio 2022 Release builds completed for Win32 and x64. Each
 architecture passes **29 of 29 CTest tests**, and the optional WinMM and WASAPI
 device-smoke targets compile for both architectures. The following physical
 audio measurements are retained predecessor-v5 evidence and were not rerun for
-the v5.3 candidate:
+the v5.4 candidate:
 
 - Win32 WinMM: 44,100 bytes at 44.1 kHz, 8-bit mono;
 - Win32 WASAPI: 48,480 samples at 48 kHz;
@@ -66,22 +66,22 @@ the v5.3 candidate:
 
 The current executables report:
 
-- Win32 PE machine `0x014C`, file version `5.3.0.0`, product version
-  `5.3.0 2026 Release`;
-- x64 PE machine `0x8664`, file version `5.3.0.0`, product version
-  `5.3.0 2026 Release`; and
-- embedded manifest version `5.3.0.0` with Per-Monitor V2 DPI awareness.
+- Win32 PE machine `0x014C`, file version `5.4.0.0`, product version
+  `5.4.0 2026 Release`;
+- x64 PE machine `0x8664`, file version `5.4.0.0`, product version
+  `5.4.0 2026 Release`; and
+- embedded manifest version `5.4.0.0` with Per-Monitor V2 DPI awareness.
 
 Content-free native UI review passed for the predecessor-v5 application on both
-architectures. A v5.3 native Light/Dark and compact-size UI smoke remains open.
-The shared resources and binary metadata now carry **PDW v5.3 2026 Release**;
+architectures. A v5.4 native Light/Dark and compact-size UI smoke remains open.
+The shared resources and binary metadata now carry **PDW v5.4 2026 Release**;
 visual confirmation of the main window, new dialogs, About dialog, and Settings
 **About me** page remains part of that open UI gate.
 
-The current v5.3 isolated installer smoke passes for x64 and Win32. It verifies application
+The current v5.4 isolated installer smoke passes for x64 and Win32. It verifies application
 architecture and version, settings co-location, upgrade preservation of
 modified settings and custom receivers, removal of the exact renamed v5 and
-v5.1/v5.2 predecessor executables, clean uninstall, and
+v5.1/v5.2/v5.3 predecessor executables, clean uninstall, and
 retention of operator-owned configuration after uninstall. Microsoft Defender
 reported no threat in the locally generated candidate.
 
@@ -129,33 +129,33 @@ security product will ever inspect the application.
 
 ```powershell
 .\scripts\build-dependencies.ps1
-cmake -S . -B out\v5.3-build-win32 -A Win32
-cmake --build out\v5.3-build-win32 --config Release --target clean
-cmake --build out\v5.3-build-win32 --config Release --parallel
-ctest --test-dir out\v5.3-build-win32 -C Release --output-on-failure
+cmake -S . -B out\v5.4-build-win32 -A Win32
+cmake --build out\v5.4-build-win32 --config Release --target clean
+cmake --build out\v5.4-build-win32 --config Release --parallel
+ctest --test-dir out\v5.4-build-win32 -C Release --output-on-failure
 
 .\scripts\build-dependencies.ps1 -Architecture x64
-cmake -S . -B out\v5.3-build-x64 -A x64 `
+cmake -S . -B out\v5.4-build-x64 -A x64 `
   -DPDW_DEPENDENCY_ROOT="$PWD\out\dependencies\x64"
-cmake --build out\v5.3-build-x64 --config Release --target clean
-cmake --build out\v5.3-build-x64 --config Release --parallel
-ctest --test-dir out\v5.3-build-x64 -C Release --output-on-failure
+cmake --build out\v5.4-build-x64 --config Release --target clean
+cmake --build out\v5.4-build-x64 --config Release --parallel
+ctest --test-dir out\v5.4-build-x64 -C Release --output-on-failure
 
 .\scripts\stage-installer-input.ps1 -Architecture Win32 `
-  -BuildDirectory out\v5.3-build-win32\Release `
-  -Destination out\v5.3-installer-input\Win32
+  -BuildDirectory out\v5.4-build-win32\Release `
+  -Destination out\v5.4-installer-input\Win32
 .\scripts\stage-installer-input.ps1 -Architecture x64 `
-  -BuildDirectory out\v5.3-build-x64\Release `
-  -Destination out\v5.3-installer-input\x64
+  -BuildDirectory out\v5.4-build-x64\Release `
+  -Destination out\v5.4-installer-input\x64
 .\scripts\build-installer.ps1 `
-  -Win32ApplicationDirectory out\v5.3-installer-input\Win32 `
-  -X64ApplicationDirectory out\v5.3-installer-input\x64 `
-  -OutputDirectory out\v5.3-installer
+  -Win32ApplicationDirectory out\v5.4-installer-input\Win32 `
+  -X64ApplicationDirectory out\v5.4-installer-input\x64 `
+  -OutputDirectory out\v5.4-installer
 .\scripts\audit-installer.ps1 `
-  -Setup 'out\v5.3-installer\PDW-v5.3-2026-Release-Setup.exe'
+  -Setup 'out\v5.4-installer\PDW-v5.4-2026-Release-Setup.exe'
 .\tests\installer_smoke.ps1 `
-  -Setup 'out\v5.3-installer\PDW-v5.3-2026-Release-Setup.exe' `
-  -TestRoot out\v5.3-installer-smoke
+  -Setup 'out\v5.4-installer\PDW-v5.4-2026-Release-Setup.exe' `
+  -TestRoot out\v5.4-installer-smoke
 
 .\scripts\audit-release.ps1
 ```
@@ -179,8 +179,8 @@ current product identity.
 
 ## Publication workflow
 
-- Inspect and commit the complete v5.3 release diff.
-- Push `pdw-v5.3-capcode-directory-filters` to the writable `fork` remote.
+- Inspect and commit the complete v5.4 release diff.
+- Push `pdw-v5.4-flex-reassembly-display` to the writable `fork` remote.
 - Open a draft pull request against the fork's `master` and let dual CI,
   installer smoke, CodeQL, and artifact checks complete.
 - Merge the source PR only after dual CI, installer smoke, and security checks

@@ -82,6 +82,16 @@ dependency and reuses the existing Windows SQLite binding and project code.
 All repository pins and release decisions therefore remain unchanged for
 v5.3.
 
+The 11 August 2026 v5.4 refresh again checked the official upstream release
+and security sources. OpenSSL 3.5.7 remains the current supported 3.5 LTS
+release through 8 April 2030; curl 8.21.0 remains the current published
+release with zero listed vulnerabilities; libssh2 1.11.1 remains the newest
+official archive and has no published security advisory; and Inno Setup 6.7.3
+remains the current 6.x compiler revision. FLEX shadow reassembly and display
+layout introduce no third-party native or runtime dependency and use only
+existing project and C++ standard-library code. Repository pins and release
+decisions therefore remain unchanged for v5.4.
+
 ## Required review procedure
 
 1. Check every official release and advisory page above.
