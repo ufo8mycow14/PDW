@@ -13,6 +13,7 @@ set( PDW_INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/decoded_event.h
   ${CMAKE_CURRENT_SOURCE_DIR}/decoder_candidate_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/flex_fragment_reassembly_core.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/filter_match_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/ini_preservation_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/ipcnfg.h
   ${CMAKE_CURRENT_SOURCE_DIR}/local_dashboard_server.h
@@ -53,6 +54,7 @@ set( PDW_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/decoded_event.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/decoder_candidate_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/flex_fragment_reassembly_core.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/filter_match_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/signal_recording_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/signal_diagnostics.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/wasapi_capture.cpp

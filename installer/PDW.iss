@@ -59,13 +59,11 @@ Name: "autostart"; Description: "Start PDW when I sign in to Windows"; GroupDesc
 [Files]
 ; Static application files are refreshed on upgrade. Mutable operator files,
 ; receivers and sounds are handled separately and never overwritten.
-Source: "{#Win32Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,filters.ini,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: not InstallX64
-Source: "{#X64Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,filters.ini,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: InstallX64
+Source: "{#Win32Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: not InstallX64
+Source: "{#X64Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: InstallX64
 
 Source: "{#Win32Application}\PDW.INI"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: not InstallX64
 Source: "{#X64Application}\PDW.INI"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: InstallX64
-Source: "{#Win32Application}\filters.ini"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: not InstallX64
-Source: "{#X64Application}\filters.ini"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: InstallX64
 
 Source: "{#Win32Application}\Receivers\*"; DestDir: "{app}\Receivers"; Flags: onlyifdoesntexist uninsneveruninstall recursesubdirs createallsubdirs; Check: not InstallX64
 Source: "{#X64Application}\Receivers\*"; DestDir: "{app}\Receivers"; Flags: onlyifdoesntexist uninsneveruninstall recursesubdirs createallsubdirs; Check: InstallX64

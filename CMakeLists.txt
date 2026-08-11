@@ -134,6 +134,7 @@ set_source_files_properties(
   utils/data_outputs.cpp
   utils/decoded_event.cpp
   utils/flex_fragment_reassembly_core.cpp
+  utils/filter_match_core.cpp
   utils/local_dashboard_server.cpp
   utils/message_archive.cpp
   utils/message_archive_manager.cpp
@@ -276,6 +277,20 @@ if(BUILD_TESTING)
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	add_test(NAME decoder-candidate-core COMMAND PDWDecoderCandidateTests)
+
+	add_executable(PDWFilterMatchCoreTests
+		tests/filter_match_core_tests.cpp
+		utils/filter_match_core.cpp
+	)
+	target_include_directories(PDWFilterMatchCoreTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWFilterMatchCoreTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME filter-match-core COMMAND PDWFilterMatchCoreTests)
 
 	add_executable(PDWDecodedEventTests
 		tests/decoded_event_tests.cpp

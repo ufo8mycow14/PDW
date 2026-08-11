@@ -3,7 +3,9 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cstring>
 #include <deque>
+#include <map>
 #include <sstream>
 
 #include "headers\pdw.h"
@@ -194,7 +196,10 @@ namespace
 			for (std::vector<pdw::archive::CapcodeEntry>::iterator entry = g_state.aliases.begin();
 				entry != g_state.aliases.end(); ++entry)
 			{
-				if (entry->protocol == updated.protocol && entry->address == updated.address)
+				if ((updated.id > 0 && entry->id == updated.id) ||
+					(updated.id <= 0 && entry->protocol == updated.protocol &&
+					 entry->address == updated.address && entry->filterType == updated.filterType &&
+					 entry->matchText == updated.matchText))
 				{
 					*entry = updated;
 					replaced = true;
@@ -202,6 +207,21 @@ namespace
 				}
 			}
 			if (!replaced) g_state.aliases.push_back(updated);
+		}
+		LeaveCriticalSection(&g_state.lock);
+	}
+
+	void DeleteFromAliasCache(const std::string& configuredPath, long long id)
+	{
+		EnterCriticalSection(&g_state.lock);
+		if (g_state.config.path == configuredPath)
+		{
+			for (std::vector<pdw::archive::CapcodeEntry>::iterator entry = g_state.aliases.begin();
+				entry != g_state.aliases.end();)
+			{
+				if (entry->id == id) entry = g_state.aliases.erase(entry);
+				else ++entry;
+			}
 		}
 		LeaveCriticalSection(&g_state.lock);
 	}
@@ -234,6 +254,127 @@ namespace
 			ReplaceAliasCache(configuredPath, entries);
 		}
 		return true;
+	}
+
+	FILTER_TYPE InferRuntimeFilterType(const pdw::archive::CapcodeEntry& entry)
+	{
+		if (entry.filterType >= FLEX_FILTER && entry.filterType <= MOBITEX_FILTER)
+			return static_cast<FILTER_TYPE>(entry.filterType);
+		if (_stricmp(entry.protocol.c_str(), "FLEX") == 0) return FLEX_FILTER;
+		if (_stricmp(entry.protocol.c_str(), "POCSAG") == 0) return POCSAG_FILTER;
+		if (_stricmp(entry.protocol.c_str(), "ERMES") == 0) return ERMES_FILTER;
+		if (_stricmp(entry.protocol.c_str(), "ACARS") == 0) return ACARS_FILTER;
+		if (_stricmp(entry.protocol.c_str(), "MOBITEX") == 0) return MOBITEX_FILTER;
+		return UNUSED_FILTER;
+	}
+
+	template <std::size_t Size>
+	void CopyRuntimeText(char (&destination)[Size], const std::string& source)
+	{
+		if (!Size) return;
+		strncpy(destination, source.c_str(), Size - 1);
+		destination[Size - 1] = '\0';
+	}
+
+	FILTER MakeRuntimeFilter(const pdw::archive::CapcodeEntry& entry, FILTER_TYPE type)
+	{
+		FILTER filter = {};
+		filter.directory_id = entry.id;
+		filter.type = type;
+		CopyRuntimeText(filter.capcode, entry.address);
+		CopyRuntimeText(filter.text, entry.matchText);
+		CopyRuntimeText(filter.label, entry.filterLabel.empty() ? entry.displayName : entry.filterLabel);
+		filter.match_exact_msg = entry.matchExactMessage ? 1 : 0;
+		filter.cmd_enabled = entry.commandEnabled ? 1 : 0;
+		filter.reject = entry.reject ? 1 : 0;
+		filter.monitor_only = entry.monitorOnly ? 1 : 0;
+		filter.wave_number = entry.waveNumber;
+		filter.label_enabled = entry.showFilterLabel ? 1 : 0;
+		filter.label_color = entry.labelColor;
+		filter.smtp = entry.emailEnabled ? 1 : 0;
+		filter.sep_filterfile_en = entry.separateFileEnabled ? 1 : 0;
+		const std::string files[3] = { entry.separateFile1, entry.separateFile2, entry.separateFile3 };
+		for (int index = 0; index < 3; ++index)
+		{
+			CopyRuntimeText(filter.sep_filterfile[index], files[index]);
+			if (!files[index].empty()) ++filter.sep_filterfiles;
+		}
+		filter.hitcounter = entry.hitCounter;
+		CopyRuntimeText(filter.lasthit_date, entry.lastHitDate);
+		CopyRuntimeText(filter.lasthit_time, entry.lastHitTime);
+		return filter;
+	}
+
+	std::string ProtocolForLegacyType(FILTER_TYPE type)
+	{
+		switch (type)
+		{
+			case FLEX_FILTER: return "FLEX";
+			case POCSAG_FILTER: return "POCSAG";
+			case ERMES_FILTER: return "ERMES";
+			case ACARS_FILTER: return "ACARS";
+			case MOBITEX_FILTER: return "MOBITEX";
+			default: return std::string();
+		}
+	}
+
+	pdw::archive::CapcodeEntry LegacyFilterEntry(const FILTER& filter)
+	{
+		pdw::archive::CapcodeEntry entry;
+		entry.protocol = ProtocolForLegacyType(filter.type);
+		entry.address = filter.capcode;
+		entry.displayName = filter.label;
+		entry.filterLabel = filter.label;
+		entry.filterType = static_cast<int>(filter.type);
+		entry.matchText = filter.text;
+		// Some third-party generators copied the friendly label into the
+		// required message-text field. A capcode-only legacy rule never needed
+		// that duplicate condition, so repair it during the one-time migration.
+		if (filter.type != TEXT_FILTER && !entry.matchText.empty() &&
+			_stricmp(entry.matchText.c_str(), entry.filterLabel.c_str()) == 0)
+			entry.matchText.clear();
+		entry.enabled = true;
+		entry.reject = filter.reject != 0;
+		entry.matchExactMessage = filter.match_exact_msg != 0;
+		entry.showFilterLabel = filter.label_enabled != 0;
+		entry.commandEnabled = filter.cmd_enabled != 0;
+		entry.monitorOnly = filter.monitor_only != 0;
+		entry.emailEnabled = filter.smtp != 0;
+		entry.separateFileEnabled = filter.sep_filterfile_en != 0;
+		entry.separateFile1 = filter.sep_filterfile[0];
+		entry.separateFile2 = filter.sep_filterfile[1];
+		entry.separateFile3 = filter.sep_filterfile[2];
+		entry.waveNumber = filter.wave_number;
+		entry.labelColor = filter.label_color;
+		entry.hitCounter = filter.hitcounter;
+		entry.lastHitDate = filter.lasthit_date;
+		entry.lastHitTime = filter.lasthit_time;
+		return entry;
+	}
+
+	void BuildRuntimeFilters(const std::vector<pdw::archive::CapcodeEntry>& entries,
+		FILTERLIST& filters)
+	{
+		filters.clear();
+		for (std::vector<pdw::archive::CapcodeEntry>::const_iterator entry = entries.begin();
+			entry != entries.end(); ++entry)
+		{
+			if (!entry->enabled) continue;
+			const FILTER_TYPE inferred = InferRuntimeFilterType(*entry);
+			if (inferred != UNUSED_FILTER)
+			{
+				filters.push_back(MakeRuntimeFilter(*entry, inferred));
+				continue;
+			}
+			// "Any protocol" address entries remain one directory row, but become
+			// protocol-specific runtime filters so the proven legacy matcher stays intact.
+			if (entry->address.empty()) continue;
+			filters.push_back(MakeRuntimeFilter(*entry, FLEX_FILTER));
+			filters.push_back(MakeRuntimeFilter(*entry, POCSAG_FILTER));
+			filters.push_back(MakeRuntimeFilter(*entry, ERMES_FILTER));
+			filters.push_back(MakeRuntimeFilter(*entry, ACARS_FILTER));
+			filters.push_back(MakeRuntimeFilter(*entry, MOBITEX_FILTER));
+		}
 	}
 
 	bool PopQueuedEvent(QueuedEvent& queued)
@@ -463,6 +604,9 @@ void MessageArchiveSettingsChanged(void)
 		else g_status.Set(g_dashboard.Status());
 	}
 	else g_dashboard.Stop();
+	std::string filterError;
+	if (!MessageArchiveReloadRuntimeFilters(filterError))
+		g_status.Set("Capcode Directory: " + filterError);
 }
 
 bool MessageArchiveAnnotateEvent(pdw::publishing::PublishEvent& event)
@@ -552,6 +696,18 @@ bool MessageArchiveUpsertCapcode(const pdw::archive::CapcodeEntry& entry,
 	return true;
 }
 
+bool MessageArchiveDeleteCapcode(long long id, std::string& error)
+{
+	const ArchiveConfig config = CurrentConfig();
+	const std::string resolvedPath = ResolveArchivePath(config.path);
+	{
+		ArchiveOperationGuard operation(resolvedPath);
+		if (!EnsureOpen(resolvedPath, error) || !g_archive.DeleteCapcode(id, error)) return false;
+		DeleteFromAliasCache(config.path, id);
+	}
+	return true;
+}
+
 bool MessageArchiveDeleteCapcode(const std::string& protocol,
 	const std::string& address, std::string& error)
 {
@@ -563,6 +719,150 @@ bool MessageArchiveDeleteCapcode(const std::string& protocol,
 			!g_archive.DeleteCapcode(protocol, address, error)) return false;
 		DeleteFromAliasCache(config.path, protocol, address);
 	}
+	return true;
+}
+
+bool MessageArchiveReloadRuntimeFilters(std::string& error)
+{
+	const ArchiveConfig config = CurrentConfig();
+	const std::string resolvedPath = ResolveArchivePath(config.path);
+	std::vector<pdw::archive::CapcodeEntry> entries;
+	{
+		ArchiveOperationGuard operation(resolvedPath);
+		if (!EnsureOpen(resolvedPath, error) ||
+			!g_archive.ListCapcodes(std::string(), entries, error)) return false;
+		ReplaceAliasCache(config.path, entries);
+	}
+	FILTERLIST filters;
+	BuildRuntimeFilters(entries, filters);
+	Profile.filters.swap(filters);
+	return true;
+}
+
+bool MessageArchivePersistRuntimeFilterState(std::string& error)
+{
+	struct RuntimeState
+	{
+		unsigned int hits;
+		std::string date;
+		std::string time;
+		RuntimeState() : hits(0) {}
+	};
+	std::map<long long, RuntimeState> states;
+	for (FILTERLIST::const_iterator filter = Profile.filters.begin(); filter != Profile.filters.end(); ++filter)
+	{
+		if (filter->directory_id <= 0) continue;
+		RuntimeState& runtimeState = states[filter->directory_id];
+		if (filter->hitcounter >= runtimeState.hits)
+		{
+			runtimeState.hits = filter->hitcounter;
+			runtimeState.date = filter->lasthit_date;
+			runtimeState.time = filter->lasthit_time;
+		}
+	}
+	const ArchiveConfig config = CurrentConfig();
+	const std::string resolvedPath = ResolveArchivePath(config.path);
+	ArchiveOperationGuard operation(resolvedPath);
+	if (!EnsureOpen(resolvedPath, error)) return false;
+	for (std::map<long long, RuntimeState>::const_iterator state = states.begin(); state != states.end(); ++state)
+		if (!g_archive.UpdateCapcodeRuntimeState(state->first, state->second.hits,
+			state->second.date, state->second.time, error)) return false;
+	return true;
+}
+
+bool MessageArchiveExportCapcodesCsv(std::string& csv, std::string& error)
+{
+	std::vector<pdw::archive::CapcodeEntry> entries;
+	if (!MessageArchiveListCapcodes(std::string(), entries, error)) return false;
+	std::ostringstream output;
+	if (!pdw::archive::WriteCapcodeDirectoryCsv(entries, output, error)) return false;
+	csv = output.str();
+	return true;
+}
+
+bool MessageArchiveReplaceCapcodesCsv(const std::string& csv, int& rejected,
+	std::string& error)
+{
+	std::istringstream input(csv);
+	std::vector<pdw::archive::CapcodeEntry> entries;
+	if (!pdw::archive::ReadCapcodeDirectoryCsv(input, entries, rejected, error)) return false;
+	if (rejected)
+	{
+		error = "The Capcode Directory CSV contains invalid rows; no current entries were replaced.";
+		return false;
+	}
+	const ArchiveConfig config = CurrentConfig();
+	const std::string resolvedPath = ResolveArchivePath(config.path);
+	{
+		ArchiveOperationGuard operation(resolvedPath);
+		if (!EnsureOpen(resolvedPath, error) || !g_archive.ReplaceCapcodes(entries, error) ||
+			!g_archive.ListCapcodes(std::string(), entries, error)) return false;
+		ReplaceAliasCache(config.path, entries);
+	}
+	FILTERLIST filters;
+	BuildRuntimeFilters(entries, filters);
+	Profile.filters.swap(filters);
+	return true;
+}
+
+bool MessageArchiveReplaceLegacyFilters(const FILTERLIST& filters,
+	std::string& error)
+{
+	std::vector<pdw::archive::CapcodeEntry> entries;
+	entries.reserve(filters.size());
+	for (FILTERLIST::const_iterator filter = filters.begin(); filter != filters.end(); ++filter)
+		entries.push_back(LegacyFilterEntry(*filter));
+	const ArchiveConfig config = CurrentConfig();
+	const std::string resolvedPath = ResolveArchivePath(config.path);
+	{
+		ArchiveOperationGuard operation(resolvedPath);
+		if (!EnsureOpen(resolvedPath, error) || !g_archive.ReplaceCapcodes(entries, error) ||
+			!g_archive.ListCapcodes(std::string(), entries, error)) return false;
+		ReplaceAliasCache(config.path, entries);
+	}
+	FILTERLIST runtime;
+	BuildRuntimeFilters(entries, runtime);
+	Profile.filters.swap(runtime);
+	return true;
+}
+
+bool MessageArchiveMergeLegacyFilters(const FILTERLIST& filters,
+	std::string& error)
+{
+	std::vector<pdw::archive::CapcodeEntry> entries;
+	if (!MessageArchiveListCapcodes(std::string(), entries, error)) return false;
+	for (FILTERLIST::const_iterator filter = filters.begin(); filter != filters.end(); ++filter)
+	{
+		pdw::archive::CapcodeEntry migrated = LegacyFilterEntry(*filter);
+		bool merged = false;
+		for (std::vector<pdw::archive::CapcodeEntry>::iterator current = entries.begin();
+			current != entries.end(); ++current)
+		{
+			if (_stricmp(current->protocol.c_str(), migrated.protocol.c_str()) != 0 ||
+				current->address != migrated.address || current->filterType != migrated.filterType ||
+				_stricmp(current->matchText.c_str(), migrated.matchText.c_str()) != 0) continue;
+			if (!current->displayName.empty()) migrated.displayName = current->displayName;
+			migrated.agency = current->agency;
+			migrated.color = current->color;
+			migrated.notes = current->notes;
+			migrated.enabled = current->enabled;
+			*current = migrated;
+			merged = true;
+			break;
+		}
+		if (!merged) entries.push_back(migrated);
+	}
+	const ArchiveConfig config = CurrentConfig();
+	const std::string resolvedPath = ResolveArchivePath(config.path);
+	{
+		ArchiveOperationGuard operation(resolvedPath);
+		if (!EnsureOpen(resolvedPath, error) || !g_archive.ReplaceCapcodes(entries, error) ||
+			!g_archive.ListCapcodes(std::string(), entries, error)) return false;
+		ReplaceAliasCache(config.path, entries);
+	}
+	FILTERLIST runtime;
+	BuildRuntimeFilters(entries, runtime);
+	Profile.filters.swap(runtime);
 	return true;
 }
 

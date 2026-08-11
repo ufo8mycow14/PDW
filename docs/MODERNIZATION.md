@@ -19,8 +19,9 @@ boundary at a time.
   playback, INI settings, filters, logs, WAV alerts, and all existing protocol
   parsers. Enhanced capture and decoding run alongside them, never instead of
   them.
-- Preserve existing `pdw.ini`, `filters.ini`, log, recording, and WAV-file
-  behaviour unless a migration is documented and tested.
+- Preserve existing `pdw.ini`, filter-rule, log, recording, and WAV-file
+  behaviour unless a migration is documented and tested. The documented Capcode Directory
+  migration replaces only `filters.ini` persistence; the proven legacy matcher remains in use.
 - When legacy and enhanced decoder candidates agree, show one message. When
   only one succeeds, retain it. When valid candidates conflict, retain the
   ambiguity for operator review rather than silently discarding either result.

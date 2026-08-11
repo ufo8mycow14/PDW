@@ -19,7 +19,7 @@ namespace
 	const ULONGLONG QUERY_LIMIT_MS = 3000;
 	const ULONGLONG EXPORT_LIMIT_MS = 5ULL * 60ULL * 1000ULL;
 	const int PDW_ARCHIVE_APPLICATION_ID = 0x50445731; // ASCII "PDW1"
-	const int PDW_ARCHIVE_SCHEMA_VERSION = 1;
+	const int PDW_ARCHIVE_SCHEMA_VERSION = 2;
 
 	struct ProgressDeadline
 	{
@@ -162,7 +162,7 @@ namespace
 
 		if (applicationId == PDW_ARCHIVE_APPLICATION_ID)
 		{
-			if (schemaVersion == PDW_ARCHIVE_SCHEMA_VERSION) return true;
+			if (schemaVersion >= 1 && schemaVersion <= PDW_ARCHIVE_SCHEMA_VERSION) return true;
 			error = "The PDW message archive schema version is not supported.";
 			return false;
 		}
@@ -201,7 +201,7 @@ namespace
 			error = "The selected SQLite file is not a PDW message archive.";
 			return false;
 		}
-		if (schemaVersion != PDW_ARCHIVE_SCHEMA_VERSION)
+		if (schemaVersion < 1 || schemaVersion > PDW_ARCHIVE_SCHEMA_VERSION)
 		{
 			error = "The PDW message archive schema version is not supported.";
 			return false;
@@ -215,6 +215,27 @@ namespace
 		for (std::size_t index = 0; index < result.size(); ++index)
 			result[index] = static_cast<char>(std::tolower(static_cast<unsigned char>(result[index])));
 		return result;
+	}
+
+	bool CsvBoolean(const std::string& value)
+	{
+		return value != "0" && _stricmp(value.c_str(), "false") != 0;
+	}
+
+	bool ParseCsvUnsigned(const std::string& value, unsigned long maximum,
+		unsigned long& parsed)
+	{
+		if (value.empty()) return false;
+		unsigned long result = 0;
+		for (std::string::const_iterator digit = value.begin(); digit != value.end(); ++digit)
+		{
+			if (*digit < '0' || *digit > '9') return false;
+			const unsigned long next = static_cast<unsigned long>(*digit - '0');
+			if (result > (maximum - next) / 10UL) return false;
+			result = result * 10UL + next;
+		}
+		parsed = result;
+		return true;
 	}
 
 	const char* HistoryFilterWhereSql()
@@ -242,14 +263,79 @@ namespace
 
 	bool ReadCapcodeRow(sqlite3_stmt* statement, CapcodeEntry& entry)
 	{
-		entry.protocol = ColumnText(statement, 0);
-		entry.address = ColumnText(statement, 1);
-		entry.displayName = ColumnText(statement, 2);
-		entry.agency = ColumnText(statement, 3);
-		entry.color = static_cast<unsigned long>(sqlite3_column_int64(statement, 4));
-		entry.notes = ColumnText(statement, 5);
-		entry.enabled = sqlite3_column_int(statement, 6) != 0;
+		entry.id = static_cast<long long>(sqlite3_column_int64(statement, 0));
+		entry.protocol = ColumnText(statement, 1);
+		entry.address = ColumnText(statement, 2);
+		entry.displayName = ColumnText(statement, 3);
+		entry.agency = ColumnText(statement, 4);
+		entry.color = static_cast<unsigned long>(sqlite3_column_int64(statement, 5));
+		entry.notes = ColumnText(statement, 6);
+		entry.enabled = sqlite3_column_int(statement, 7) != 0;
+		entry.filterType = sqlite3_column_int(statement, 8);
+		entry.matchText = ColumnText(statement, 9);
+		entry.filterLabel = ColumnText(statement, 10);
+		entry.reject = sqlite3_column_int(statement, 11) != 0;
+		entry.matchExactMessage = sqlite3_column_int(statement, 12) != 0;
+		entry.showFilterLabel = sqlite3_column_int(statement, 13) != 0;
+		entry.commandEnabled = sqlite3_column_int(statement, 14) != 0;
+		entry.monitorOnly = sqlite3_column_int(statement, 15) != 0;
+		entry.emailEnabled = sqlite3_column_int(statement, 16) != 0;
+		entry.separateFileEnabled = sqlite3_column_int(statement, 17) != 0;
+		entry.separateFile1 = ColumnText(statement, 18);
+		entry.separateFile2 = ColumnText(statement, 19);
+		entry.separateFile3 = ColumnText(statement, 20);
+		entry.waveNumber = sqlite3_column_int(statement, 21);
+		entry.labelColor = sqlite3_column_int(statement, 22);
+		entry.hitCounter = static_cast<unsigned int>(sqlite3_column_int64(statement, 23));
+		entry.lastHitDate = ColumnText(statement, 24);
+		entry.lastHitTime = ColumnText(statement, 25);
 		return true;
+	}
+
+	const char* CapcodeSelectColumns()
+	{
+		return "id,protocol,address,display_name,agency,color,notes,enabled,filter_type,match_text,"
+			"filter_label,reject,match_exact,show_label,command_enabled,monitor_only,email_enabled,"
+			"separate_file_enabled,separate_file_1,separate_file_2,separate_file_3,wave_number,"
+			"label_color,hit_counter,last_hit_date,last_hit_time";
+	}
+
+	bool MigrateArchiveSchema(sqlite3* database, std::string& error)
+	{
+		int schemaVersion = 0;
+		if (!ReadSingleInteger(database, "PRAGMA user_version;", schemaVersion, error)) return false;
+		if (schemaVersion == PDW_ARCHIVE_SCHEMA_VERSION) return true;
+		if (schemaVersion != 1)
+		{
+			error = "The PDW message archive schema version is not supported.";
+			return false;
+		}
+		const char migration[] =
+			"BEGIN IMMEDIATE;"
+			"ALTER TABLE capcode_directory RENAME TO capcode_directory_v1;"
+			"CREATE TABLE capcode_directory("
+			"id INTEGER PRIMARY KEY,protocol TEXT NOT NULL DEFAULT '',address TEXT NOT NULL DEFAULT '',"
+			"display_name TEXT NOT NULL DEFAULT '',agency TEXT NOT NULL DEFAULT '',"
+			"color INTEGER NOT NULL DEFAULT 13369344,notes TEXT NOT NULL DEFAULT '',enabled INTEGER NOT NULL DEFAULT 1,"
+			"filter_type INTEGER NOT NULL DEFAULT 0,match_text TEXT NOT NULL DEFAULT '',filter_label TEXT NOT NULL DEFAULT '',"
+			"reject INTEGER NOT NULL DEFAULT 0,match_exact INTEGER NOT NULL DEFAULT 0,show_label INTEGER NOT NULL DEFAULT 1,"
+			"command_enabled INTEGER NOT NULL DEFAULT 0,monitor_only INTEGER NOT NULL DEFAULT 0,email_enabled INTEGER NOT NULL DEFAULT 0,"
+			"separate_file_enabled INTEGER NOT NULL DEFAULT 0,separate_file_1 TEXT NOT NULL DEFAULT '',"
+			"separate_file_2 TEXT NOT NULL DEFAULT '',separate_file_3 TEXT NOT NULL DEFAULT '',"
+			"wave_number INTEGER NOT NULL DEFAULT 0,label_color INTEGER NOT NULL DEFAULT 0,hit_counter INTEGER NOT NULL DEFAULT 0,"
+			"last_hit_date TEXT NOT NULL DEFAULT '',last_hit_time TEXT NOT NULL DEFAULT '',updated_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);"
+			"INSERT INTO capcode_directory(protocol,address,display_name,agency,color,notes,enabled,filter_type,filter_label,show_label,updated_utc) "
+			"SELECT protocol,address,display_name,agency,color,notes,enabled,"
+			"CASE upper(protocol) WHEN 'FLEX' THEN 1 WHEN 'POCSAG' THEN 2 WHEN 'ERMES' THEN 4 WHEN 'ACARS' THEN 5 WHEN 'MOBITEX' THEN 6 ELSE 0 END,"
+			"display_name,1,updated_utc FROM capcode_directory_v1;"
+			"DROP TABLE capcode_directory_v1;"
+			"PRAGMA user_version=2;COMMIT;";
+		char* sqliteError = NULL;
+		if (sqlite3_exec(database, migration, NULL, NULL, &sqliteError) == SQLITE_OK) return true;
+		error = sqliteError ? sqliteError : "PDW could not upgrade the Capcode Directory.";
+		if (sqliteError) sqlite3_free(sqliteError);
+		sqlite3_exec(database, "ROLLBACK;", NULL, NULL, NULL);
+		return false;
 	}
 }
 
@@ -456,11 +542,10 @@ namespace
 			"SELECT h.received_utc,h.mode,h.address,COALESCE(current_alias.display_name,''),"
 			"COALESCE(current_alias.agency,''),h.message_type,h.message,h.filter_label "
 			"FROM message_history h LEFT JOIN capcode_directory current_alias "
-			"ON current_alias.address=h.address AND current_alias.enabled=1 AND "
-			"current_alias.protocol=(SELECT candidate.protocol FROM capcode_directory candidate "
+			"ON current_alias.id=(SELECT candidate.id FROM capcode_directory candidate "
 			"WHERE candidate.address=h.address AND candidate.enabled=1 AND "
 			"(candidate.protocol='' OR h.mode LIKE candidate.protocol || '%') "
-			"ORDER BY CASE WHEN candidate.protocol='' THEN 1 ELSE 0 END LIMIT 1)") +
+			"ORDER BY CASE WHEN candidate.protocol='' THEN 1 ELSE 0 END,candidate.id LIMIT 1)") +
 			HistoryFilterWhereSql() + " ORDER BY h.received_utc DESC,h.id DESC;";
 		ProgressDeadline deadline(EXPORT_LIMIT_MS);
 		ProgressGuard progress(database, &deadline);
@@ -641,15 +726,28 @@ bool MessageArchive::Open(const std::string& utf8Path, std::string& error)
 		database_ = NULL;
 		return false;
 	}
+	if (!MigrateArchiveSchema(database_, error))
+	{
+		sqlite3_close(database_);
+		database_ = NULL;
+		return false;
+	}
 	const std::string schema =
 		"PRAGMA journal_mode=WAL;PRAGMA synchronous=NORMAL;PRAGMA foreign_keys=ON;"
 		"CREATE TABLE IF NOT EXISTS capcode_directory("
-		"protocol TEXT NOT NULL DEFAULT '',address TEXT NOT NULL,display_name TEXT NOT NULL DEFAULT '',"
-		"agency TEXT NOT NULL DEFAULT '',color INTEGER NOT NULL DEFAULT 13369344,notes TEXT NOT NULL DEFAULT '',"
-		"enabled INTEGER NOT NULL DEFAULT 1,updated_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-		"PRIMARY KEY(protocol,address));"
+		"id INTEGER PRIMARY KEY,protocol TEXT NOT NULL DEFAULT '',address TEXT NOT NULL DEFAULT '',"
+		"display_name TEXT NOT NULL DEFAULT '',agency TEXT NOT NULL DEFAULT '',"
+		"color INTEGER NOT NULL DEFAULT 13369344,notes TEXT NOT NULL DEFAULT '',enabled INTEGER NOT NULL DEFAULT 1,"
+		"filter_type INTEGER NOT NULL DEFAULT 0,match_text TEXT NOT NULL DEFAULT '',filter_label TEXT NOT NULL DEFAULT '',"
+		"reject INTEGER NOT NULL DEFAULT 0,match_exact INTEGER NOT NULL DEFAULT 0,show_label INTEGER NOT NULL DEFAULT 1,"
+		"command_enabled INTEGER NOT NULL DEFAULT 0,monitor_only INTEGER NOT NULL DEFAULT 0,email_enabled INTEGER NOT NULL DEFAULT 0,"
+		"separate_file_enabled INTEGER NOT NULL DEFAULT 0,separate_file_1 TEXT NOT NULL DEFAULT '',"
+		"separate_file_2 TEXT NOT NULL DEFAULT '',separate_file_3 TEXT NOT NULL DEFAULT '',"
+		"wave_number INTEGER NOT NULL DEFAULT 0,label_color INTEGER NOT NULL DEFAULT 0,hit_counter INTEGER NOT NULL DEFAULT 0,"
+		"last_hit_date TEXT NOT NULL DEFAULT '',last_hit_time TEXT NOT NULL DEFAULT '',updated_utc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);"
 		"CREATE INDEX IF NOT EXISTS idx_capcode_directory_address ON capcode_directory(address);"
 		"CREATE INDEX IF NOT EXISTS idx_capcode_directory_name ON capcode_directory(display_name);"
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_capcode_directory_rule ON capcode_directory(protocol,address,filter_type,match_text);"
 		"CREATE TABLE IF NOT EXISTS message_history("
 		"id TEXT PRIMARY KEY NOT NULL,received_utc TEXT NOT NULL,source TEXT NOT NULL DEFAULT '',"
 		"address TEXT NOT NULL DEFAULT '',local_time TEXT NOT NULL DEFAULT '',local_date TEXT NOT NULL DEFAULT '',"
@@ -727,16 +825,51 @@ bool MessageArchive::UpsertCapcode(const CapcodeEntry& entry, std::string& error
 	LockGuard guard(&lock_);
 	error.clear();
 	if (!database_) { error = "Message archive is not open."; return false; }
-	if (!IsValidCapcode(entry.address)) { error = "Capcodes must contain 1 to 18 digits."; return false; }
+	bool validAddress = entry.filterType == 3 && entry.address.empty();
+	if (!validAddress && !entry.address.empty() && entry.address.size() <= 18)
+	{
+		validAddress = true;
+		for (std::string::const_iterator character = entry.address.begin(); character != entry.address.end(); ++character)
+		{
+			const unsigned char value = static_cast<unsigned char>(*character);
+			if (!std::isalnum(value) && value != '?' && value != '-') { validAddress = false; break; }
+		}
+	}
+	if (!validAddress) { error = "Enter a capcode/filter pattern of 1 to 18 letters, digits, ? or -, or leave it blank for a Text filter."; return false; }
 	if (!IsValidProtocolName(entry.protocol)) { error = "Choose a supported protocol or Any protocol."; return false; }
+	if (entry.filterType == 3 && entry.matchText.empty()) { error = "A Text filter requires message text."; return false; }
+	if (entry.matchText.size() > 40 || entry.filterLabel.size() > 256 || entry.displayName.size() > 256 ||
+		entry.separateFile1.size() > 128 || entry.separateFile2.size() > 128 || entry.separateFile3.size() > 128)
+	{
+		error = "One or more filter fields exceeds the established PDW legacy field length.";
+		return false;
+	}
 	if (entry.color > 0x00ffffffUL) { error = "Capcode colours must be a valid Windows RGB value."; return false; }
-	static const char sql[] =
-		"INSERT INTO capcode_directory(protocol,address,display_name,agency,color,notes,enabled,updated_utc)"
-		" VALUES(?,?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(protocol,address) DO UPDATE SET "
-		"display_name=excluded.display_name,agency=excluded.agency,color=excluded.color,notes=excluded.notes,"
-		"enabled=excluded.enabled,updated_utc=CURRENT_TIMESTAMP;";
+	if (entry.filterType < 0 || entry.filterType > 6) { error = "Choose a supported filter type."; return false; }
+	if (entry.waveNumber < 0 || entry.waveNumber > 10 || entry.labelColor < 0 || entry.labelColor > 16)
+	{
+		error = "The selected audio or label colour is invalid.";
+		return false;
+	}
+	const char* insertSql =
+		"INSERT INTO capcode_directory(protocol,address,display_name,agency,color,notes,enabled,filter_type,match_text,filter_label,"
+		"reject,match_exact,show_label,command_enabled,monitor_only,email_enabled,separate_file_enabled,separate_file_1,separate_file_2,"
+		"separate_file_3,wave_number,label_color,hit_counter,last_hit_date,last_hit_time,updated_utc)"
+		" VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
+		" ON CONFLICT(protocol,address,filter_type,match_text) DO UPDATE SET display_name=excluded.display_name,agency=excluded.agency,"
+		"color=excluded.color,notes=excluded.notes,enabled=excluded.enabled,filter_label=excluded.filter_label,reject=excluded.reject,"
+		"match_exact=excluded.match_exact,show_label=excluded.show_label,command_enabled=excluded.command_enabled,"
+		"monitor_only=excluded.monitor_only,email_enabled=excluded.email_enabled,separate_file_enabled=excluded.separate_file_enabled,"
+		"separate_file_1=excluded.separate_file_1,separate_file_2=excluded.separate_file_2,separate_file_3=excluded.separate_file_3,"
+		"wave_number=excluded.wave_number,label_color=excluded.label_color,hit_counter=excluded.hit_counter,"
+		"last_hit_date=excluded.last_hit_date,last_hit_time=excluded.last_hit_time,updated_utc=CURRENT_TIMESTAMP;";
+	const char* updateSql =
+		"UPDATE capcode_directory SET protocol=?,address=?,display_name=?,agency=?,color=?,notes=?,enabled=?,filter_type=?,match_text=?,"
+		"filter_label=?,reject=?,match_exact=?,show_label=?,command_enabled=?,monitor_only=?,email_enabled=?,separate_file_enabled=?,"
+		"separate_file_1=?,separate_file_2=?,separate_file_3=?,wave_number=?,label_color=?,hit_counter=?,last_hit_date=?,last_hit_time=?,"
+		"updated_utc=CURRENT_TIMESTAMP WHERE id=?;";
 	sqlite3_stmt* statement = NULL;
-	if (sqlite3_prepare_v2(database_, sql, -1, &statement, NULL) != SQLITE_OK)
+	if (sqlite3_prepare_v2(database_, entry.id > 0 ? updateSql : insertSql, -1, &statement, NULL) != SQLITE_OK)
 	{
 		error = sqlite3_errmsg(database_);
 		return false;
@@ -744,7 +877,204 @@ bool MessageArchive::UpsertCapcode(const CapcodeEntry& entry, std::string& error
 	bool bound = BindText(statement, 1, entry.protocol) && BindText(statement, 2, entry.address) &&
 		BindText(statement, 3, entry.displayName) && BindText(statement, 4, entry.agency) &&
 		sqlite3_bind_int64(statement, 5, static_cast<sqlite3_int64>(entry.color)) == SQLITE_OK &&
-		BindText(statement, 6, entry.notes) && sqlite3_bind_int(statement, 7, entry.enabled ? 1 : 0) == SQLITE_OK;
+		BindText(statement, 6, entry.notes) && sqlite3_bind_int(statement, 7, entry.enabled ? 1 : 0) == SQLITE_OK &&
+		sqlite3_bind_int(statement, 8, entry.filterType) == SQLITE_OK && BindText(statement, 9, entry.matchText) &&
+		BindText(statement, 10, entry.filterLabel) && sqlite3_bind_int(statement, 11, entry.reject ? 1 : 0) == SQLITE_OK &&
+		sqlite3_bind_int(statement, 12, entry.matchExactMessage ? 1 : 0) == SQLITE_OK &&
+		sqlite3_bind_int(statement, 13, entry.showFilterLabel ? 1 : 0) == SQLITE_OK &&
+		sqlite3_bind_int(statement, 14, entry.commandEnabled ? 1 : 0) == SQLITE_OK &&
+		sqlite3_bind_int(statement, 15, entry.monitorOnly ? 1 : 0) == SQLITE_OK &&
+		sqlite3_bind_int(statement, 16, entry.emailEnabled ? 1 : 0) == SQLITE_OK &&
+		sqlite3_bind_int(statement, 17, entry.separateFileEnabled ? 1 : 0) == SQLITE_OK &&
+		BindText(statement, 18, entry.separateFile1) && BindText(statement, 19, entry.separateFile2) &&
+		BindText(statement, 20, entry.separateFile3) && sqlite3_bind_int(statement, 21, entry.waveNumber) == SQLITE_OK &&
+		sqlite3_bind_int(statement, 22, entry.labelColor) == SQLITE_OK &&
+		sqlite3_bind_int64(statement, 23, static_cast<sqlite3_int64>(entry.hitCounter)) == SQLITE_OK &&
+		BindText(statement, 24, entry.lastHitDate) && BindText(statement, 25, entry.lastHitTime);
+	if (entry.id > 0)
+		bound = sqlite3_bind_int64(statement, 26, static_cast<sqlite3_int64>(entry.id)) == SQLITE_OK && bound;
+	const int result = bound ? sqlite3_step(statement) : SQLITE_ERROR;
+	const int changed = result == SQLITE_DONE ? sqlite3_changes(database_) : 0;
+	if (result != SQLITE_DONE || (entry.id > 0 && changed != 1))
+		error = result != SQLITE_DONE ? sqlite3_errmsg(database_) : "The selected Capcode Directory entry no longer exists.";
+	sqlite3_finalize(statement);
+	return result == SQLITE_DONE && (entry.id <= 0 || changed == 1);
+}
+
+bool MessageArchive::ReplaceCapcodes(const std::vector<CapcodeEntry>& entries,
+	std::string& error)
+{
+	LockGuard guard(&lock_);
+	error.clear();
+	if (!database_) { error = "Message archive is not open."; return false; }
+	if (!Execute("BEGIN IMMEDIATE;", error)) return false;
+	if (!Execute("DELETE FROM capcode_directory;", error))
+	{
+		Execute("ROLLBACK;", error);
+		return false;
+	}
+	for (std::vector<CapcodeEntry>::const_iterator entry = entries.begin();
+		entry != entries.end(); ++entry)
+	{
+		CapcodeEntry insert(*entry);
+		insert.id = 0;
+		if (!UpsertCapcode(insert, error))
+		{
+			std::string ignored;
+			Execute("ROLLBACK;", ignored);
+			return false;
+		}
+	}
+	if (!Execute("COMMIT;", error))
+	{
+		std::string ignored;
+		Execute("ROLLBACK;", ignored);
+		return false;
+	}
+	return true;
+}
+
+bool WriteCapcodeDirectoryCsv(const std::vector<CapcodeEntry>& entries,
+	std::ostream& output, std::string& error)
+{
+	error.clear();
+	output << "protocol,address,display_name,agency,color,notes,enabled,filter_type,match_text,filter_label,"
+		"reject,match_exact,show_label,command_enabled,monitor_only,email_enabled,separate_file_enabled,"
+		"separate_file_1,separate_file_2,separate_file_3,wave_number,label_color,hit_counter,last_hit_date,last_hit_time\r\n";
+	for (std::vector<CapcodeEntry>::const_iterator item = entries.begin(); item != entries.end(); ++item)
+	{
+		output << CsvEscape(item->protocol.empty() ? "Any" : item->protocol) << ','
+			<< CsvEscape(item->address) << ',' << CsvEscape(item->displayName) << ','
+			<< CsvEscape(item->agency) << ',' << item->color << ',' << CsvEscape(item->notes) << ','
+			<< (item->enabled ? 1 : 0) << ',' << item->filterType << ',' << CsvEscape(item->matchText) << ','
+			<< CsvEscape(item->filterLabel) << ',' << (item->reject ? 1 : 0) << ','
+			<< (item->matchExactMessage ? 1 : 0) << ',' << (item->showFilterLabel ? 1 : 0) << ','
+			<< (item->commandEnabled ? 1 : 0) << ',' << (item->monitorOnly ? 1 : 0) << ','
+			<< (item->emailEnabled ? 1 : 0) << ',' << (item->separateFileEnabled ? 1 : 0) << ','
+			<< CsvEscape(item->separateFile1) << ',' << CsvEscape(item->separateFile2) << ','
+			<< CsvEscape(item->separateFile3) << ',' << item->waveNumber << ',' << item->labelColor << ','
+			<< item->hitCounter << ',' << CsvEscape(item->lastHitDate) << ','
+			<< CsvEscape(item->lastHitTime) << "\r\n";
+		if (!output.good()) { error = "The Capcode Directory CSV could not be written."; return false; }
+	}
+	return output.good();
+}
+
+bool ReadCapcodeDirectoryCsv(std::istream& input,
+	std::vector<CapcodeEntry>& entries, int& rejected, std::string& error)
+{
+	entries.clear();
+	rejected = 0;
+	error.clear();
+	std::string record;
+	int row = 0;
+	for (;;)
+	{
+		const CsvRecordReadResult readResult = ReadCsvRecord(input, record);
+		if (readResult == CSV_RECORD_END) break;
+		++row;
+		if (readResult == CSV_RECORD_MALFORMED)
+		{
+			error = "The Capcode Directory CSV contains an unterminated quoted field.";
+			++rejected;
+			return false;
+		}
+		if (record.size() >= 3 && static_cast<unsigned char>(record[0]) == 0xEF &&
+			static_cast<unsigned char>(record[1]) == 0xBB && static_cast<unsigned char>(record[2]) == 0xBF)
+			record.erase(0, 3);
+		std::vector<std::string> fields;
+		if (!ParseCsvLine(record, fields) || fields.size() < 2) { ++rejected; continue; }
+		if (row == 1 && _stricmp(fields[0].c_str(), "protocol") == 0) continue;
+		CapcodeEntry entry;
+		entry.protocol = _stricmp(fields[0].c_str(), "Any") == 0 ? "" : fields[0];
+		entry.address = fields[1];
+		if (fields.size() > 2) entry.displayName = fields[2];
+		if (fields.size() > 3) entry.agency = fields[3];
+		unsigned long parsed = 0;
+		if (fields.size() > 4 && !fields[4].empty())
+		{
+			if (!ParseCsvUnsigned(fields[4], 0x00ffffffUL, parsed)) { ++rejected; continue; }
+			entry.color = parsed;
+		}
+		if (fields.size() > 5) entry.notes = fields[5];
+		if (fields.size() > 6) entry.enabled = CsvBoolean(fields[6]);
+		if (fields.size() > 7 && !fields[7].empty())
+		{
+			if (!ParseCsvUnsigned(fields[7], 6, parsed)) { ++rejected; continue; }
+			entry.filterType = static_cast<int>(parsed);
+		}
+		if (fields.size() > 8) entry.matchText = fields[8];
+		if (fields.size() > 9) entry.filterLabel = fields[9];
+		if (fields.size() > 10) entry.reject = CsvBoolean(fields[10]);
+		if (fields.size() > 11) entry.matchExactMessage = CsvBoolean(fields[11]);
+		if (fields.size() > 12) entry.showFilterLabel = CsvBoolean(fields[12]);
+		if (fields.size() > 13) entry.commandEnabled = CsvBoolean(fields[13]);
+		if (fields.size() > 14) entry.monitorOnly = CsvBoolean(fields[14]);
+		if (fields.size() > 15) entry.emailEnabled = CsvBoolean(fields[15]);
+		if (fields.size() > 16) entry.separateFileEnabled = CsvBoolean(fields[16]);
+		if (fields.size() > 17) entry.separateFile1 = fields[17];
+		if (fields.size() > 18) entry.separateFile2 = fields[18];
+		if (fields.size() > 19) entry.separateFile3 = fields[19];
+		if (fields.size() > 20 && !fields[20].empty())
+		{
+			if (!ParseCsvUnsigned(fields[20], 10, parsed)) { ++rejected; continue; }
+			entry.waveNumber = static_cast<int>(parsed);
+		}
+		if (fields.size() > 21 && !fields[21].empty())
+		{
+			if (!ParseCsvUnsigned(fields[21], 16, parsed)) { ++rejected; continue; }
+			entry.labelColor = static_cast<int>(parsed);
+		}
+		if (fields.size() > 22 && !fields[22].empty())
+		{
+			if (!ParseCsvUnsigned(fields[22], UINT_MAX, parsed)) { ++rejected; continue; }
+			entry.hitCounter = static_cast<unsigned int>(parsed);
+		}
+		if (fields.size() > 23) entry.lastHitDate = fields[23];
+		if (fields.size() > 24) entry.lastHitTime = fields[24];
+		if (entry.filterLabel.empty()) entry.filterLabel = entry.displayName;
+		entries.push_back(entry);
+	}
+	if (input.bad()) { error = "The Capcode Directory CSV could not be read."; return false; }
+	return true;
+}
+
+bool MessageArchive::UpdateCapcodeRuntimeState(long long id, unsigned int hitCounter,
+	const std::string& lastHitDate, const std::string& lastHitTime, std::string& error)
+{
+	LockGuard guard(&lock_);
+	error.clear();
+	if (!database_) { error = "Message archive is not open."; return false; }
+	if (id <= 0) return true;
+	sqlite3_stmt* statement = NULL;
+	if (sqlite3_prepare_v2(database_,
+		"UPDATE capcode_directory SET hit_counter=?,last_hit_date=?,last_hit_time=?,updated_utc=CURRENT_TIMESTAMP WHERE id=?;",
+		-1, &statement, NULL) != SQLITE_OK)
+	{
+		error = sqlite3_errmsg(database_);
+		return false;
+	}
+	const bool bound = sqlite3_bind_int64(statement, 1, static_cast<sqlite3_int64>(hitCounter)) == SQLITE_OK &&
+		BindText(statement, 2, lastHitDate) && BindText(statement, 3, lastHitTime) &&
+		sqlite3_bind_int64(statement, 4, static_cast<sqlite3_int64>(id)) == SQLITE_OK;
+	const int result = bound ? sqlite3_step(statement) : SQLITE_ERROR;
+	if (result != SQLITE_DONE) error = sqlite3_errmsg(database_);
+	sqlite3_finalize(statement);
+	return result == SQLITE_DONE;
+}
+
+bool MessageArchive::DeleteCapcode(long long id, std::string& error)
+{
+	LockGuard guard(&lock_);
+	error.clear();
+	if (!database_) { error = "Message archive is not open."; return false; }
+	sqlite3_stmt* statement = NULL;
+	if (sqlite3_prepare_v2(database_, "DELETE FROM capcode_directory WHERE id=?;", -1, &statement, NULL) != SQLITE_OK)
+	{
+		error = sqlite3_errmsg(database_);
+		return false;
+	}
+	const bool bound = sqlite3_bind_int64(statement, 1, static_cast<sqlite3_int64>(id)) == SQLITE_OK;
 	const int result = bound ? sqlite3_step(statement) : SQLITE_ERROR;
 	if (result != SQLITE_DONE) error = sqlite3_errmsg(database_);
 	sqlite3_finalize(statement);
@@ -776,12 +1106,11 @@ bool MessageArchive::LookupCapcodeUnlocked(const std::string& mode, const std::s
 {
 	error.clear();
 	if (!database_) { error = "Message archive is not open."; return false; }
-	static const char sql[] =
-		"SELECT protocol,address,display_name,agency,color,notes,enabled FROM capcode_directory "
-		"WHERE address=? AND enabled=1 AND (protocol='' OR ? LIKE protocol || '%') "
-		"ORDER BY CASE WHEN protocol='' THEN 1 ELSE 0 END LIMIT 1;";
+	const std::string sql = std::string("SELECT ") + CapcodeSelectColumns() +
+		" FROM capcode_directory WHERE address=? AND enabled=1 AND (protocol='' OR ? LIKE protocol || '%') "
+		"ORDER BY CASE WHEN protocol='' THEN 1 ELSE 0 END,id LIMIT 1;";
 	sqlite3_stmt* statement = NULL;
-	if (sqlite3_prepare_v2(database_, sql, -1, &statement, NULL) != SQLITE_OK)
+	if (sqlite3_prepare_v2(database_, sql.c_str(), -1, &statement, NULL) != SQLITE_OK)
 	{
 		error = sqlite3_errmsg(database_);
 		return false;
@@ -816,19 +1145,20 @@ bool MessageArchive::ListCapcodes(const std::string& search,
 	ProgressDeadline deadline(QUERY_LIMIT_MS);
 	ProgressGuard progress(database_, &deadline);
 	const std::string pattern = "%" + Lowercase(search) + "%";
-	static const char sql[] =
-		"SELECT protocol,address,display_name,agency,color,notes,enabled FROM capcode_directory "
+	const std::string sql = std::string("SELECT ") + CapcodeSelectColumns() + " FROM capcode_directory "
 		"WHERE ?='' OR lower(protocol) LIKE ? OR lower(address) LIKE ? OR lower(display_name) LIKE ? "
-		"OR lower(agency) LIKE ? OR lower(notes) LIKE ? ORDER BY display_name,address,protocol;";
+		"OR lower(agency) LIKE ? OR lower(notes) LIKE ? OR lower(match_text) LIKE ? OR lower(filter_label) LIKE ? "
+		"ORDER BY display_name,address,protocol,id;";
 	sqlite3_stmt* statement = NULL;
-	if (sqlite3_prepare_v2(database_, sql, -1, &statement, NULL) != SQLITE_OK)
+	if (sqlite3_prepare_v2(database_, sql.c_str(), -1, &statement, NULL) != SQLITE_OK)
 	{
 		error = sqlite3_errmsg(database_);
 		return false;
 	}
 	bool bound = BindText(statement, 1, search) && BindText(statement, 2, pattern) &&
 		BindText(statement, 3, pattern) && BindText(statement, 4, pattern) &&
-		BindText(statement, 5, pattern) && BindText(statement, 6, pattern);
+		BindText(statement, 5, pattern) && BindText(statement, 6, pattern) &&
+		BindText(statement, 7, pattern) && BindText(statement, 8, pattern);
 	int result = bound ? sqlite3_step(statement) : SQLITE_ERROR;
 	while (result == SQLITE_ROW)
 	{

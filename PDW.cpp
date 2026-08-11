@@ -367,7 +367,7 @@ int  nDriverLoaded	= DRIVER_NOT_LOADED;// VxD/comport loaded?
 bool bEditFilter	= false;		// Set before/after calling edit dialog
 bool bPauseFlag		= false;		// Decides if message output is paused.
 HWND hStatusBar		= NULL;
-bool bUpdateFilters	= false;		// PH: Needs FILTERS.INI to be updated?
+bool bUpdateFilters	= false;		// Directory-backed runtime hit state changed.
 
 double dRX_Quality;
 
@@ -543,6 +543,56 @@ bool WorkerCommandRestricted(UINT command)
 		default:
 			return false;
 	}
+}
+
+bool MigrateLegacyFiltersToDirectory()
+{
+	if (GetPrivateProfileIntA("CapcodeDirectory", "LegacyFiltersMigrated", 0,
+		szIniPathName) != 0) return true;
+	if (GetFileAttributesA(szFilterPathName) == INVALID_FILE_ATTRIBUTES) return true;
+	std::vector<pdw::archive::CapcodeEntry> existing;
+	std::string error;
+	if (!MessageArchiveListCapcodes(std::string(), existing, error))
+	{
+		MessageBoxA(ghWnd, error.c_str(), "PDW Capcode Directory", MB_OK | MB_ICONERROR);
+		return false;
+	}
+	PROFILE legacy = Profile;
+	legacy.filters.clear();
+	char migrationCopy[MAX_PATH] = {};
+	if (!GetTempFileNameA(szPath, "PDF", 0, migrationCopy) ||
+		!CopyFileA(szFilterPathName, migrationCopy, FALSE) ||
+		!ReadFilters(migrationCopy, &legacy, true))
+	{
+		if (migrationCopy[0]) DeleteFileA(migrationCopy);
+		MessageBoxA(ghWnd,
+			"PDW found filters.ini, but it could not be read safely. The file was left unchanged and the Capcode Directory was not replaced.",
+			"Legacy Filter Migration", MB_OK | MB_ICONERROR);
+		return false;
+	}
+	if (!MessageArchiveMergeLegacyFilters(legacy.filters, error))
+	{
+		const std::string message = "PDW could not migrate the legacy filters into the Capcode Directory. filters.ini was left unchanged.\r\n\r\n" + error;
+		MessageBoxA(ghWnd, message.c_str(), "Legacy Filter Migration", MB_OK | MB_ICONERROR);
+		return false;
+	}
+
+	char archivedPath[MAX_PATH] = {};
+	_snprintf_s(archivedPath, sizeof(archivedPath), _TRUNCATE, "%s.migrated", szFilterPathName);
+	for (unsigned int suffix = 1; GetFileAttributesA(archivedPath) != INVALID_FILE_ATTRIBUTES; ++suffix)
+		_snprintf_s(archivedPath, sizeof(archivedPath), _TRUNCATE,
+			"%s.migrated.%03u", szFilterPathName, suffix);
+	const bool archived = MoveFileExA(szFilterPathName, archivedPath, MOVEFILE_WRITE_THROUGH) != FALSE;
+	WritePrivateProfileStringA("CapcodeDirectory", "LegacyFiltersMigrated", "1", szIniPathName);
+	bUpdateFilters = false;
+	char message[640] = {};
+	_snprintf_s(message, sizeof(message), _TRUNCATE,
+		"PDW migrated %u legacy filter(s) into the Capcode Directory.\r\n\r\n%s",
+		static_cast<unsigned int>(legacy.filters.size()),
+		archived ? "The old filters.ini was retained as a .migrated backup." :
+			"The old filters.ini could not be renamed, so it was left unchanged. PDW will now use the Capcode Directory.");
+	MessageBoxA(ghWnd, message, "Legacy Filter Migration", MB_OK | MB_ICONINFORMATION);
+	return true;
 }
 
 
@@ -840,6 +890,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	PublishingManagerInitialize();
 	DataOutputManagerInitialize();
 	MessageArchiveManagerInitialize();
+	MigrateLegacyFiltersToDirectory();
 
 	if (hToolbar) TB_AutoSize(hToolbar);	// keep toolbar correct size!
 
@@ -978,8 +1029,8 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				{
 					if (bUpdateFilters)
 					{
-						WriteFilters(&Profile, 0);	// PH: Save FILTERS.INI
-						bUpdateFilters = false;		// PH: Reset for new messages
+						std::string filterError;
+						if (MessageArchivePersistRuntimeFilterState(filterError)) bUpdateFilters = false;
 					}
 				}
 				lTime = time(NULL);
@@ -1638,20 +1689,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 				case IDT_TOOLBAR_BTN7:
 				case IDM_FILTERS:
-
-				if (!hFilterDlg)
-				{
-					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(FILTERDLGBOX),
-										  hWnd, (DLGPROC) FilterDlgProc, 0L);
-				}
-				break;
-
 				case IDM_FILTEROPTIONS:
-
-				GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(FILTEROPTIONSDLGBOX),
-									  hWnd, (DLGPROC) FilterOptionsDlgProc, 0L);
-				break;
-
 				case IDM_CAPCODE_DIRECTORY:
 					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(CAPCODE_DIRECTORY_DLGBOX),
 						hWnd, (DLGPROC) CapcodeDirectoryDlgProc, 0L);
@@ -1759,32 +1797,17 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				break;
 
 				case IDM_RELOAD:
-
-				if (FileExists(szFilterPathName))
 				{
-					sprintf(filters_temp, "Old  number  of filters :  %zu\n",Profile.filters.size());
-					strcpy (filters_reload, filters_temp);
-						
-					Profile.filters.clear();
-							
-					if (ReadFilters(szFilterPathName, &Profile, false))
+					const size_t oldCount = Profile.filters.size();
+					std::string filterError;
+					if (MessageArchiveReloadRuntimeFilters(filterError))
 					{
-						sprintf(filters_temp, "New number of filters :  %zu",Profile.filters.size());
-						strcat (filters_reload, filters_temp);
-
-						MessageBox(ghWnd, filters_reload, "PDW Reloaded filters", MB_ICONINFORMATION);
+						_snprintf_s(filters_reload, sizeof(filters_reload), _TRUNCATE,
+							"Reloaded the Capcode Directory.\n\nOld runtime filters: %zu\nNew runtime filters: %zu",
+							oldCount, Profile.filters.size());
+						MessageBoxA(ghWnd, filters_reload, "PDW Capcode Directory", MB_ICONINFORMATION);
 					}
-					else
-					{
-						if (MessageBox(ghWnd, "An error occured while loading filters.ini.\nTry to load a backup instead?", "PDW Filters", MB_ICONQUESTION | MB_OKCANCEL) == IDOK)
-						{
-							if (ReadFilters(szFilterBackup, &Profile, false) == false)
-							{
-								MessageBox(ghWnd, "Also failed...", "PDW Filters", MB_ICONINFORMATION);
-							}
-						}
-					}
-
+					else MessageBoxA(ghWnd, filterError.c_str(), "PDW Capcode Directory", MB_ICONERROR);
 				}
 				break;
 
@@ -1810,7 +1833,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				case IDM_KEYBOARD_SHORTCUTS:
 					MessageBoxA(hWnd,
 						"Ctrl+,    Open or focus Settings\n"
-						"Ctrl+F    Manage filters\n"
+						"Ctrl+F    Open Capcode Directory and filters\n"
 						"Ctrl+C    Copy selected decoded text\n"
 						"Ctrl+D    Clear monitor\n"
 						"Alt+Shift+R    Record signal\n"
@@ -2152,6 +2175,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				std::string channelStopStatus;
 				pdw::multichannel::StopAllChannels(channelStopStatus);
 			}
+			if (!ConfigurationRestoreCompleted() && !pdw::multichannel::WorkerActive() && bUpdateFilters)
+			{
+				std::string filterError;
+				MessageArchivePersistRuntimeFilterState(filterError);
+			}
 			MessageArchiveManagerShutdown();
 			DataOutputManagerShutdown();
 			PublishingManagerShutdown();
@@ -2178,9 +2206,6 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			if (!ConfigurationRestoreCompleted() && !pdw::multichannel::WorkerActive()) WriteSettings();
 
 			if (Profile.SystemTray) SystemTrayIcon(true);	// Remove PDW-icon from systemtray
-			if (!ConfigurationRestoreCompleted() && !pdw::multichannel::WorkerActive() && bUpdateFilters)
-				WriteFilters(&Profile, 0);	// Save FILTERS.INI
-
 			// A misbehaving third-party serial driver may ignore cancellation. In that rare
 			// case leave process-owned decoder/UI memory intact for the OS to reclaim rather
 			// than freeing it under a still-returning worker.
@@ -6727,6 +6752,7 @@ BOOL FAR PASCAL ScrollDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 void Copy_Filter_Fields(FILTER *out_filter, FILTER in_filter)
 {
+	out_filter->directory_id = in_filter.directory_id;
 	out_filter->type = in_filter.type;
 
 	if (in_filter.capcode[0]) strcpy(out_filter->capcode, in_filter.capcode);
@@ -7403,7 +7429,7 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 				PostMessage(hFilterDlg, WM_COMMAND, IDC_FILTEREDIT, 0L);
 				break;
 			}
-			bUpdateFilters = true;	// PH: Update filters.ini in UpdateFilters() when IDLE
+			bUpdateFilters = true;	// Persist directory-backed hit state when idle.
 			bFilterFindCASE = false;
 
 			hFilterDlg = NULL;
@@ -10281,19 +10307,9 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	GetPrivateProfileString("Filter", TEXT("FilterCmdFile"), "", pProfile->filter_cmd, MAX_FILE_LEN, lpszIniPathName);
 	GetPrivateProfileString("Filter", TEXT("FilterCmdArgs"), "", pProfile->filter_cmd_args, MAX_FILE_LEN, lpszIniPathName);
 	pProfile->filter_default_type = (INT) GetPrivateProfileInt("Filter", TEXT("FilterDefaultType"), pProfile->filter_default_type, lpszIniPathName);
-	if (pProfile->filter_default_type < 0 || pProfile->filter_default_type > 5)
+	if (pProfile->filter_default_type < 0 || pProfile->filter_default_type > 6)
 		pProfile->filter_default_type = 0;
 
-	if (ReadFilters(szFilterPathName, &Profile, false) == false)
-	{
-		if (MessageBox(ghWnd, "An error occured while loading filters.ini.\nTry to load a backup instead?", "PDW Filters", MB_ICONQUESTION | MB_OKCANCEL) == IDOK)
-		{
-			if (ReadFilters(szFilterBackup, &Profile, false) == false)
-			{
-				MessageBox(ghWnd, "Also failed, starting without filters...", "PDW Filters", MB_ICONINFORMATION);
-			}
-		}
-	}
 	return (TRUE);
 } // end of GetPrivateProfileSettings
 
@@ -10307,7 +10323,7 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 	bool bError=false;
 	int  i=0, pos, nLines=0, iFilterCount=0, iFilter=0;
 
-	FILTER filter;
+	FILTER filter = {};
 	auto copyQuotedField = [&szLine](int& position, char* destination,
 		size_t destinationSize) -> bool
 	{
@@ -10340,7 +10356,7 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 
 	if (pFile)
 	{
-		if (bNew) Profile.filters.clear();
+		if (bNew) pProfile->filters.clear();
 
 		while (fgets(szLine, sizeof(szLine), pFile) != NULL)
 		{
@@ -10562,7 +10578,7 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 					}
 					if (!bError)
 					{
-						Profile.filters.insert(Profile.filters.begin() + iFilter, filter);
+						pProfile->filters.insert(pProfile->filters.begin() + iFilter, filter);
 						iFilter++;
 					}
 				}
@@ -10593,7 +10609,7 @@ bool ReadFilters(char *szFilters, PPROFILE pProfile, bool bNew)
 	else if (iFilterCount)
 	{
 		CopyFile(szFilters, szFilterBackup, false);
-		bUpdateFilters = true;	// PH: Update filters.ini in UpdateFilters() when IDLE
+		bUpdateFilters = true;	// Legacy importer changed runtime filter state.
 	}
 	return(true);
 }
@@ -10916,7 +10932,8 @@ void WriteSettings()
 void WriteFilters(PPROFILE pProfile, int backup)
 {
 	// Isolated receiver workers share the main installation directory. Never
-	// let timer, dialog, or shutdown paths race the main process on filters.ini.
+	// Retained only as a compatibility serializer for legacy tooling. Live PDW
+	// persistence uses the Capcode Directory and never calls this function.
 	if (pdw::multichannel::WorkerActive()) return;
 	char szLine[256];
 	char szFilename[MAX_PATH];
@@ -11764,10 +11781,7 @@ void PasteFilter(void)
 
 void ResetHitcounters(bool bAll)
 {
-	int index=-1, i=0;
-
-	char filename[MAX_PATH];
-	char ext[10] = "";
+	int index=-1;
 				
 	if (MessageBox(ghWnd, "Are you sure?", "Reset Hitcounters", MB_ICONQUESTION | MB_OKCANCEL) == IDCANCEL) return;
 
@@ -11779,16 +11793,11 @@ void ResetHitcounters(bool bAll)
 			Profile.filters[index].lasthit_date[0] = '\0' ;
 			Profile.filters[index].lasthit_time[0] = '\0' ;
 		}
-		strcpy(filename, szFilterPathName);
-		while (FileExists(filename))
-		{
-			i++;
-			sprintf(ext, ".%03i", i);
-			ChangeFileExtension(filename, ext);
-		}
-		WriteFilters(&Profile, i);
-		sprintf(filename, "The old filters.ini has been backed up as 'filters%s'", ext);
-		MessageBox(ghWnd, filename, "PDW Filters", MB_ICONINFORMATION);
+		std::string error;
+		if (!MessageArchivePersistRuntimeFilterState(error))
+			MessageBoxA(ghWnd, error.c_str(), "PDW Capcode Directory", MB_ICONERROR);
+		else MessageBoxA(ghWnd, "All Capcode Directory hit counters were reset.",
+			"PDW Capcode Directory", MB_ICONINFORMATION);
 	}
 	else
 	{
@@ -11798,7 +11807,7 @@ void ResetHitcounters(bool bAll)
 			Profile.filters[index].lasthit_date[0] = '\0' ;
 			Profile.filters[index].lasthit_time[0] = '\0' ;
 		}
-		bUpdateFilters = true;	// PH: Update filters.ini in UpdateFilters() when IDLE
+		bUpdateFilters = true;	// Persist Capcode Directory counters when idle.
 	}
 }
 

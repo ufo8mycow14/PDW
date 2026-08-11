@@ -16,7 +16,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 
 | Area | Current state | Next gate |
 | --- | --- | --- |
-| Win32 build | PDW v5.2 2026 Release builds locally and passes all 28 tests | Keep the 28-test suite green in dual-architecture CI |
+| Win32 build | PDW v5.2 2026 Release builds locally and passes all 29 tests | Keep the 29-test suite green in dual-architecture CI |
 | Windows interface | Approved 2026 command bar, live meter, modeless 10-page Settings Center, encrypted configuration backup/restore, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
 | Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
 | Windows audio | WinMM and WASAPI captured from the real default device on the development machine | Live device-loss, hot-plug, and broader device-matrix acceptance |
@@ -32,7 +32,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Repository hygiene | File-by-file x64/Win32 audit complete; obsolete VC6/VS2017 state, caches, duplicate archive, and unused code/assets removed; CMake is authoritative | Enforce `scripts/audit-release.ps1` and repeat the review when adding native dependencies or release-only assets |
 | Local operations | Capcode Directory, optional bounded history, loopback-only dashboard, spectrum/waterfall, isolated multi-channel workers, and optional RTL conditioning are implemented | Complete signed-in operator UI and physical multi-receiver acceptance without changing decoder behavior |
 | Release packaging | The guided `PDW-v5.2-2026-Release-Setup.exe` pipeline selects x64 or Win32, preserves mutable files, and removes exact renamed v5/v5.1 predecessors during upgrade | Pass current PR installer CI; apply trusted Authenticode signing before public release; retain portable packages as the no-install alternative |
-| x64 | PDW v5.2 2026 Release builds locally and passes all 28 tests; receiver DLL architecture is validated before load | Complete PR CI, native UI, and physical receiver acceptance while keeping Win32 available |
+| x64 | PDW v5.2 2026 Release builds locally and passes all 29 tests; receiver DLL architecture is validated before load | Complete PR CI, native UI, and physical receiver acceptance while keeping Win32 available |
 
 ## Safe integration sequence
 

@@ -45,6 +45,7 @@ enum FILTER_TYPE {	UNUSED_FILTER  = 0,
 
 typedef struct
 {
+	long long	 directory_id;			// Capcode Directory row backing this runtime filter
 	FILTER_TYPE  type;
 	char		 capcode[FILTER_CAPCODE_LEN+1];
 	char		 label[FILTER_LABEL_LEN+1];
@@ -467,7 +468,7 @@ extern int g_sps;
 extern int g_sps2;
 extern int level;
 
-extern bool bUpdateFilters;			// PH: Does FILTERS.INI need to be updated?
+extern bool bUpdateFilters;			// Does directory-backed runtime hit state need persisting?
 
 // ************* Function Prototypes **************
 

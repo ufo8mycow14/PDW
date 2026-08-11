@@ -70,6 +70,28 @@ int main()
 	sqlite3_close(unrelated);
 	DeleteFileA(databasePath);
 
+	sqlite3* versionOne = NULL;
+	Expect(sqlite3_open(databasePath, &versionOne) == SQLITE_OK,
+		"version-one Capcode Directory fixture opens");
+	Expect(sqlite3_exec(versionOne,
+		"PRAGMA application_id=1346656049;PRAGMA user_version=1;"
+		"CREATE TABLE capcode_directory(protocol TEXT NOT NULL,address TEXT NOT NULL,display_name TEXT NOT NULL,"
+		"agency TEXT NOT NULL,color INTEGER NOT NULL,notes TEXT NOT NULL,enabled INTEGER NOT NULL,updated_utc TEXT NOT NULL);"
+		"INSERT INTO capcode_directory VALUES('POCSAG','1708068','SAAS Unit Goolwa','SAAS',13369344,'legacy mapping',1,'2026-08-11');",
+		NULL, NULL, NULL) == SQLITE_OK, "version-one directory fixture is populated");
+	sqlite3_close(versionOne);
+	pdw::archive::MessageArchive migratedArchive;
+	std::string migrationError;
+	Expect(migratedArchive.Open(databasePath, migrationError),
+		"version-one Capcode Directory migrates in place");
+	std::vector<pdw::archive::CapcodeEntry> migratedRows;
+	Expect(migratedArchive.ListCapcodes(std::string(), migratedRows, migrationError) &&
+		migratedRows.size() == 1 && migratedRows[0].displayName == "SAAS Unit Goolwa" &&
+		migratedRows[0].filterLabel == "SAAS Unit Goolwa" && migratedRows[0].matchText.empty(),
+		"existing directory mappings become capcode-only filter rules without a false text requirement");
+	migratedArchive.Close();
+	DeleteFileA(databasePath);
+
 	pdw::archive::MessageArchive archive;
 	std::string error;
 	const bool archiveOpened = archive.Open(databasePath, error);
@@ -84,15 +106,70 @@ int main()
 	capcode.displayName = "Station Alpha";
 	capcode.agency = "Test Agency";
 	capcode.notes = "Local test only";
+	capcode.filterType = 2;
+	capcode.matchText = "PR1+Traffic";
+	capcode.filterLabel = "Station Alpha Dispatch";
+	capcode.reject = true;
+	capcode.matchExactMessage = true;
+	capcode.showFilterLabel = true;
+	capcode.commandEnabled = true;
+	capcode.monitorOnly = true;
+	capcode.emailEnabled = true;
+	capcode.separateFileEnabled = true;
+	capcode.separateFile1 = "alpha.csv";
+	capcode.separateFile2 = "backup.csv";
+	capcode.waveNumber = 4;
+	capcode.labelColor = 7;
+	capcode.hitCounter = 12;
+	capcode.lastHitDate = "10-08-26";
+	capcode.lastHitTime = "12:34:56";
 	capcode.enabled = true;
 	Expect(archive.UpsertCapcode(capcode, error), "capcode directory upsert succeeds");
 	pdw::archive::CapcodeEntry invalidColor(capcode);
 	invalidColor.color = 0x01000000UL;
 	Expect(!archive.UpsertCapcode(invalidColor, error), "out-of-range capcode colour rejected");
+	pdw::archive::CapcodeEntry emptyTextRule;
+	emptyTextRule.filterType = 3;
+	Expect(!archive.UpsertCapcode(emptyTextRule, error),
+		"blank Text filter cannot accidentally match every decoded message");
 	pdw::archive::CapcodeEntry found;
 	Expect(archive.LookupCapcode("POCSAG-1200", "1234567", found, error),
 		"protocol-specific alias matches decoded mode");
-	Expect(found.displayName == "Station Alpha", "alias name round trips");
+	Expect(found.displayName == "Station Alpha" && found.filterType == 2 &&
+		found.matchText == "PR1+Traffic" && found.filterLabel == "Station Alpha Dispatch" &&
+		found.reject && found.matchExactMessage && found.commandEnabled && found.monitorOnly &&
+		found.emailEnabled && found.separateFileEnabled && found.separateFile1 == "alpha.csv" &&
+		found.separateFile2 == "backup.csv" && found.waveNumber == 4 && found.labelColor == 7 &&
+		found.hitCounter == 12 && found.lastHitDate == "10-08-26" && found.lastHitTime == "12:34:56",
+		"all directory-backed legacy filter fields round trip");
+	Expect(archive.UpdateCapcodeRuntimeState(found.id, 13, "11-08-26", "01:02:03", error),
+		"directory hit-counter state updates");
+
+	pdw::archive::CapcodeEntry secondRule(capcode);
+	secondRule.id = 0;
+	secondRule.matchText = "Medical";
+	secondRule.filterLabel = "Station Alpha Medical";
+	secondRule.reject = false;
+	Expect(archive.UpsertCapcode(secondRule, error),
+		"multiple text rules can share one protocol and capcode");
+	std::vector<pdw::archive::CapcodeEntry> directoryRows;
+	Expect(archive.ListCapcodes("Station Alpha", directoryRows, error) && directoryRows.size() == 2,
+		"directory lists both same-capcode rules without collapsing them");
+	std::ostringstream directoryCsv;
+	Expect(pdw::archive::WriteCapcodeDirectoryCsv(directoryRows, directoryCsv, error),
+		"expanded directory exports as CSV");
+	std::vector<pdw::archive::CapcodeEntry> parsedDirectory;
+	int rejectedDirectoryRows = 0;
+	std::istringstream directoryInput(directoryCsv.str());
+	Expect(pdw::archive::ReadCapcodeDirectoryCsv(directoryInput, parsedDirectory,
+		rejectedDirectoryRows, error) && rejectedDirectoryRows == 0 && parsedDirectory.size() == 2 &&
+		parsedDirectory[0].filterType == 2 && !parsedDirectory[0].filterLabel.empty(),
+		"expanded directory CSV round trips all rule columns");
+	std::istringstream invalidDirectory(
+		"protocol,address,display_name,agency,color,notes,enabled,filter_type\r\nPOCSAG,123,Name,,999999999999999999999,,1,2\r\n");
+	Expect(pdw::archive::ReadCapcodeDirectoryCsv(invalidDirectory, parsedDirectory,
+		rejectedDirectoryRows, error) && rejectedDirectoryRows == 1 && parsedDirectory.empty(),
+		"overflowing directory numeric fields are rejected safely");
 
 	pdw::publishing::PublishEvent event;
 	event.id = "archive-test-event";

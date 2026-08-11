@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../utils/message_archive.h"
+#include "pdw.h"
 
 void MessageArchiveManagerInitialize(void);
 void MessageArchiveManagerShutdown(void);
@@ -17,8 +18,18 @@ bool MessageArchiveListCapcodes(const std::string& search,
 	std::vector<pdw::archive::CapcodeEntry>& entries, std::string& error);
 bool MessageArchiveUpsertCapcode(const pdw::archive::CapcodeEntry& entry,
 	std::string& error);
+bool MessageArchiveDeleteCapcode(long long id, std::string& error);
 bool MessageArchiveDeleteCapcode(const std::string& protocol,
 	const std::string& address, std::string& error);
+bool MessageArchiveReloadRuntimeFilters(std::string& error);
+bool MessageArchivePersistRuntimeFilterState(std::string& error);
+bool MessageArchiveExportCapcodesCsv(std::string& csv, std::string& error);
+bool MessageArchiveReplaceCapcodesCsv(const std::string& csv, int& rejected,
+	std::string& error);
+bool MessageArchiveReplaceLegacyFilters(const FILTERLIST& filters,
+	std::string& error);
+bool MessageArchiveMergeLegacyFilters(const FILTERLIST& filters,
+	std::string& error);
 bool MessageArchiveQueryHistory(const pdw::archive::HistoryQuery& query,
 	std::vector<pdw::archive::HistoryRow>& rows, int& total, std::string& error);
 bool MessageArchiveExportHistoryCsv(const pdw::archive::HistoryQuery& query,

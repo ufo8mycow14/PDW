@@ -54,8 +54,9 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
   the corresponding receiver source and redistribution evidence.
 - `Receivers/Driver Tools/zadig-2.9.exe`, the libwdi source ZIP, and GPL notice
   are the documented optional driver-installation set.
-- `packaging/PDW.INI` and `packaging/filters.ini` are sanitized release
-  defaults, not operator data.
+- `packaging/PDW.INI` is the sanitized release default, not operator data.
+  Filter persistence is owned by the Capcode Directory in `pdw-history.sqlite3`;
+  fresh packages intentionally do not ship `filters.ini`.
 - `packaging/Wavfiles` and `packaging/Legacy` contain reviewed, non-private
   installer/package inputs required for reproducible clean-clone staging.
 - `installer/PDW.iss` is the maintained guided Windows Setup definition; Inno
@@ -92,7 +93,7 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 
 - Fresh Visual Studio 2022/CMake Release builds completed from new build
   directories for Win32 and x64.
-- Win32 and x64 each pass 28 of 28 CTest tests.
+- Win32 and x64 each pass 29 of 29 CTest tests.
 - Optional WinMM and WASAPI hardware-smoke targets compile for both
   architectures.
 - PE machine values are Win32 `0x014C` and x64 `0x8664`; both executables

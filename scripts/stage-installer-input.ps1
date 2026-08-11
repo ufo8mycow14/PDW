@@ -59,7 +59,6 @@ try {
     foreach ($file in @(
         @{ Source = $executable; Name = "$displayName.exe" },
         @{ Source = (Join-Path $sourceRoot "packaging\PDW.INI"); Name = "PDW.INI" },
-        @{ Source = (Join-Path $sourceRoot "packaging\filters.ini"); Name = "filters.ini" },
         @{ Source = (Join-Path $sourceRoot "packaging\Legacy\base-ids.txt"); Name = "base-ids.txt" },
         @{ Source = (Join-Path $sourceRoot "packaging\Legacy\language.df"); Name = "language.df" },
         @{ Source = (Join-Path $sourceRoot "packaging\Legacy\PDW.HLP"); Name = "PDW.HLP" },
