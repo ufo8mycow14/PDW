@@ -7,7 +7,7 @@
 A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
 ![Version](https://img.shields.io/badge/version-v5.5.2%202026%20Release-2E74B5)
-![Status](https://img.shields.io/badge/status-release-2E8B57)
+![Status](https://img.shields.io/badge/status-stable%20candidate%20awaiting%20signing-F0A000)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
 ![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20Win32-555555)
 ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
@@ -68,9 +68,11 @@ Configuration and decoder behaviour are shared between the builds. Native DLLs m
 
 ## Install on Windows
 
-**PDW v5.5.2 2026 Release** is available from
-[GitHub Releases](https://github.com/ufo8mycow14/PDW/releases/tag/v5.5.2)
-as one **PDW-v5.5.2-2026-Release-Setup.exe**. The guided Setup contains both
+**PDW v5.5.2 2026 Release** is prepared as a normal stable release, but its
+public download is not available until trusted Authenticode signing and final
+release acceptance pass. Once published, the
+[v5.5.2 GitHub Release](https://github.com/ufo8mycow14/PDW/releases/tag/v5.5.2)
+will provide one **PDW-v5.5.2-2026-Release-Setup.exe**. The guided Setup contains both
 architectures, keeps the executable, `PDW.INI`, Capcode Directory database, any
 existing legacy `filters.ini` recovery file, receivers, WAV files and logs
 together in one PDW folder, creates normal Windows shortcuts, preserves
@@ -294,21 +296,23 @@ PDW is being modernised conservatively.
 
 ## Release History
 
-### Current release
+### Stable release candidate
 
-**PDW v5.5.2 2026 Release** retains the Public Beta 2 Capcode
+**PDW v5.5.2 2026 Release** is the prepared normal stable candidate. It is not
+a beta or GitHub prerelease. It retains the Public Beta 2 Capcode
 Directory and Adelaide FLEX profile while hard-discarding rejected messages,
 removing the synthetic joined-message banner, and repainting retained message
 panes after idle return, display changes, DPI changes, and power resume.
 Capcode CSV import now updates matching capcodes and collapses duplicates. An
 optional disabled-by-default Local Gateway Outbox provides an isolated,
 one-way SQLite WAL handoff with no cloud or network client. The
-exact-head x64/Win32 CI, package/source-tamper checks, CodeQL, Defender, signing,
-and the combined Setup install/upgrade/uninstall matrix gate publication.
+exact-head x64/Win32 CI, package/source-tamper checks, CodeQL, Defender, and the
+combined Setup install/upgrade/uninstall matrix pass. Trusted signing and final
+manual/acceptance evidence still gate publication.
 
 | Version | Status | Highlights |
 | --- | --- | --- |
-| **PDW v5.5.2 2026 Release** | **12 August 2026** | Hard-discarded rejected messages, normal joined-message presentation, idle-return pane repainting, Capcode CSV upsert/deduplication, optional local gateway outbox, and retained Public Beta 2 behavior. |
+| **PDW v5.5.2 2026 Release** | **Stable candidate - publication pending trusted signing** | Hard-discarded rejected messages, normal joined-message presentation, idle-return pane repainting, Capcode CSV upsert/deduplication, optional local gateway outbox, and retained Public Beta 2 behavior. |
 
 ### Current Generation
 
