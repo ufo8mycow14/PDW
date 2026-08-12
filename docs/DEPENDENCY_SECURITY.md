@@ -12,7 +12,7 @@ the complete Win32 and x64 gates and preserves legacy support.
 | curl/libcurl | 8.21.0 | Current published curl release; the next release is listed as pending | Retain 8.21.0 and its verified source hash |
 | libssh2 | 1.11.1 | Newest archive on the official download index | Retain 1.11.1 and its verified source hash |
 | Windows SQLite | Operating-system component | Uses the supported Windows `winsqlite3` API; no bundled SQLite DLL | Retain the platform binding; require fully patched Windows and fail closed when archive connection protections are unavailable |
-| MySQL | Operator-installed ODBC driver | Connector/ODBC 9.7 is the released line reviewed for this release; 26.7.0 is documented but not yet released; PDW does not bundle a driver or server | Keep DSN-based integration; require a supported, fully patched, architecture-matched driver and separately validate x86 |
+| MySQL | Operator-installed ODBC driver | Connector/ODBC 9.7.0 is the current GA release and Windows x64 download reviewed for this release; PDW does not bundle a driver or server | Use Connector/ODBC 9.7.0 with a secured Windows DSN for x64; require a supported architecture-matched driver before enabling Win32 MySQL output |
 | Inno Setup | 6.7.3 | Latest 6.x compiler; Inno Setup 7.0.2 is also available | Retain 6.7.3 for v5.5.2 so a compiler-major migration does not overlap the message-handling and display-recovery change; evaluate 7 separately through full dual installer gates |
 | Visual Studio / MSVC | Visual Studio 2026 / v145 | Current maintained Windows release toolchain; v145 targets Windows 10/Server 2016 and newer | Build and test both architectures on the explicit VS 2026 runner; distribute only the reviewed architecture-matched app-local Microsoft Visual C++ runtime DLLs; record the exact compiler, generator and CMake version in each dependency lock |
 | SDR# | Production revision 1921 | External Windows SDR application used only by the named local-audio profile; the official x86/x64 revision 1922 downloads are labelled beta | Record 1921 as the reviewed stable integration target; operator installs, configures, updates, and supports it; PDW does not bundle or control it |
@@ -23,12 +23,13 @@ Oracle's January 2026 Critical Patch Update lists CVE-2025-9230 for those
 versions. Operators must use an actively supported, matching-bitness driver
 and apply current Oracle CPU updates.
 
-Oracle's July 2026 Critical Patch Update also lists affected MySQL Connector
-versions in the 9.7 line. Connector/ODBC 26.7.0 appears in the official release
-notes as not yet released and must not be treated as an available GA update.
-PDW does not install an ODBC driver; operators must use a currently supported,
-fully patched, architecture-matched release and repeat the vendor-advisory
-review rather than relying on these historical ranges.
+Oracle's July 2026 Critical Patch Update lists affected Connector/NET,
+Connector/J and Connector/C++ components in the 9.7 line; it does not identify
+Connector/ODBC as an affected component in that risk matrix. The current
+Connector/ODBC 9.7.0 GA download remains the reviewed PDW x64 integration
+target. PDW does not install the driver, and operators must still repeat the
+vendor-advisory review before deployment rather than relying indefinitely on
+this release record.
 
 Official review sources:
 
@@ -162,8 +163,9 @@ release and security pages. OpenSSL 3.5.7 remains the supported 3.5 LTS
 release through 8 April 2030; curl 8.21.0 remains the current published
 release with zero listed vulnerabilities; libssh2 1.11.1 remains the newest
 official archive; Inno Setup 6.7.3 remains the latest 6.x compiler while 7.0.2
-is a separate major-version migration; Connector/ODBC 9.7 is the released line
-reviewed while 26.7.0 remains unreleased; and the external profile references
+is a separate major-version migration; Connector/ODBC 9.7.0 is the current GA
+release reviewed for the optional x64 DSN integration; and the external
+profile references
 remain SDR# production revision 1921 and VB-CABLE Package 45. Rejected-message
 discarding, multipart presentation, pane repainting, Capcode CSV upsert, and
 the Local Gateway Outbox add no bundled third-party native or runtime
