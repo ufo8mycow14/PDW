@@ -14,11 +14,13 @@ capture may remain disabled while the directory and filters continue to work.
   `PR:1` and `Traffic`. Matching ignores case.
 - **Enable exact message match** changes the keyword test into a case-insensitive comparison of the
   complete pager message. Do not enable it for a `+` keyword expression.
-- When several rules can match the same capcode, PDW evaluates the most specific message condition
-  first (exact, then multi-keyword, then single-keyword, then capcode-only) so a broad directory row
-  cannot hide a more specific output route.
+- When several rules can match the same capcode, **Reject** rules are evaluated first. Among rules
+  with the same reject state, PDW evaluates the most specific message condition first (exact, then
+  multi-keyword, then single-keyword, then capcode-only).
 - Existing legacy `&` expressions remain supported for compatibility.
-- **Reject** suppresses a matched message using the existing PDW rejection path.
+- **Reject** is a hard discard. A matched message is not shown in either panel or repeated in the
+  title/status area, and is not logged, archived, notified, or sent to an enabled output. When the
+  existing rejected/blocked status option is enabled, PDW shows only a generic discard confirmation.
 - **Monitor Only** keeps a match in the upper monitor instead of the filtered pane.
 - **Filter** and **Monitor Only** are mutually exclusive because they select different panes.
 - **Display name** is the one friendly label used by the live filter, history, outputs, and command

@@ -238,6 +238,32 @@ int main()
 	}
 	Expect(fnuRuleIndex >= 0 && broadRuleIndex >= 0 && fnuRuleIndex < broadRuleIndex,
 		"a POCSAG function-number rule is evaluated before the broad capcode rule");
+	pdw::archive::CapcodeEntry discardAlias(alias);
+	discardAlias.address = "3456789";
+	discardAlias.displayName = "Hard Discard Rule";
+	discardAlias.matchText.clear();
+	discardAlias.reject = true;
+	pdw::archive::CapcodeEntry routedDiscardAlias(discardAlias);
+	routedDiscardAlias.displayName = "Specific Routed Rule";
+	routedDiscardAlias.matchText = "Traffic";
+	routedDiscardAlias.reject = false;
+	Expect(MessageArchiveUpsertCapcode(discardAlias, error) &&
+		MessageArchiveUpsertCapcode(routedDiscardAlias, error) &&
+		MessageArchiveReloadRuntimeFilters(error),
+		"a reject rule can coexist with a more-specific routed rule");
+	int discardRuleIndex = -1;
+	specificRuleIndex = -1;
+	for (std::size_t index = 0; index < Profile.filters.size(); ++index)
+	{
+		if (std::string(Profile.filters[index].capcode) != "3456789") continue;
+		if (Profile.filters[index].reject != 0)
+			discardRuleIndex = static_cast<int>(index);
+		else if (std::string(Profile.filters[index].text) == "Traffic")
+			specificRuleIndex = static_cast<int>(index);
+	}
+	Expect(discardRuleIndex >= 0 && specificRuleIndex >= 0 &&
+		discardRuleIndex < specificRuleIndex,
+		"Reject is evaluated first so a matching message is discarded before display or routing");
 	pdw::archive::CapcodeEntry dormantAlias;
 	dormantAlias.protocol = "POCSAG";
 	dormantAlias.address = "9990001";

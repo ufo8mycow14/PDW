@@ -416,6 +416,10 @@ namespace
 			[](const pdw::archive::CapcodeEntry* left,
 				const pdw::archive::CapcodeEntry* right)
 			{
+				// Reject is an absolute discard action. Evaluate every matching
+				// reject rule before display/output rules so a more-specific route
+				// cannot allow the message into either pane or any downstream output.
+				if (left->reject != right->reject) return left->reject;
 				return RuntimeRuleSpecificity(*left) > RuntimeRuleSpecificity(*right);
 			});
 		for (std::vector<const pdw::archive::CapcodeEntry*>::const_iterator item = ordered.begin();

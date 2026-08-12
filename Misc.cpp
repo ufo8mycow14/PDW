@@ -785,8 +785,11 @@ void ShowMessage()
 			{
 				if (Profile.show_rejectblocked)
 				{
-					sprintf(szWindowText[5], "Rejected Message : %s %s", Current_MSG[MSG_CAPCODE], Current_MSG[MSG_MESSAGE]);
+					// Confirm the discard without repeating the rejected capcode or
+					// decoded content in the title/status area.
+					strcpy(szWindowText[5], "Rejected message discarded");
 				}
+				else szWindowText[5][0] = '\0';
 
 				if (bGroupcode)
 				{
