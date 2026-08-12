@@ -974,6 +974,24 @@ void Free_Common_Objects(void)
 	FreeToolBarImages(ghInstance);	// Free toolbar button bitmaps
 }
 
+static void RefreshMessagePaneSurfaces()
+{
+	// Some display drivers do not preserve child-window pixels while the screen
+	// is off, the session is locked, or the machine is suspended. The decoded
+	// lines remain in the pane buffers, so force both panes to repaint from those
+	// buffers instead of waiting for a scroll operation to expose a paint region.
+	if (Pane1.hWnd && IsWindow(Pane1.hWnd))
+	{
+		RedrawWindow(Pane1.hWnd, NULL, NULL,
+			RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW);
+	}
+	if (Pane2.hWnd && IsWindow(Pane2.hWnd))
+	{
+		RedrawWindow(Pane2.hWnd, NULL, NULL,
+			RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW);
+	}
+}
+
 LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	HDC ghDC;
@@ -1075,6 +1093,13 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		case WM_POWERBROADCAST :
 
 		OUTPUTDEBUGMSG((("WM_POWERBROADCAST PowerMode = 0x%08lX Data 0x%08lX\n"), (DWORD) wParam, (DWORD) lParam));
+		if (wParam == PBT_APMRESUMECRITICAL ||
+			wParam == PBT_APMRESUMESUSPEND ||
+			wParam == PBT_APMRESUMESTANDBY ||
+			wParam == PBT_APMRESUMEAUTOMATIC)
+		{
+			RefreshMessagePaneSurfaces();
+		}
 
 		if (bWin9x)
 		{
@@ -1100,6 +1125,10 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			}
 		}
 		break ;
+
+		case WM_ACTIVATEAPP:
+		if (wParam && !IsIconic(hWnd)) RefreshMessagePaneSurfaces();
+		break;
 
 		case WM_PAINT: // Keep main gfx data valid
 
@@ -2047,6 +2076,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				SendMessage(hWnd, WM_SIZE,
 					IsZoomed(hWnd) ? SIZE_MAXIMIZED : SIZE_RESTORED,
 					MAKELPARAM(client.right, client.bottom));
+				RefreshMessagePaneSurfaces();
 			}
 			return 0;
 		}
@@ -2060,6 +2090,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				SendMessage(hWnd, WM_SIZE,
 					IsZoomed(hWnd) ? SIZE_MAXIMIZED : SIZE_RESTORED,
 					MAKELPARAM(client.right, client.bottom));
+				RefreshMessagePaneSurfaces();
 			}
 			return 0;
 		}

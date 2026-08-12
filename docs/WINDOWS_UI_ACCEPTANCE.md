@@ -69,6 +69,11 @@ different scale factors.
 
 Repeat with at least one primary dialog left open while changing the state.
 
+Also leave synthetic text visible in both message panes, allow the display to
+turn off or lock the Windows session, then return without scrolling. Both panes
+must immediately repaint the retained text. Repeat after minimize/restore and a
+display-mode or DPI change.
+
 | State | Main window | Settings | Data Outputs | Delivery Health | High Contrast off recovery |
 | --- | --- | --- | --- | --- | --- |
 | Follow Windows / light | [ ] | [ ] | [ ] | [ ] | [ ] |

@@ -40,6 +40,8 @@ giving each directory rule explicit, independently gated behavior.
   general directory row cannot shadow a routed keyword or POCSAG FNU match.
 - Reject rules take priority over display and output rules, making a match a
   hard discard before either panel, logging, history, notifications or outputs.
+- Restore both message panes from their retained buffers after screen/session
+  return, display changes and power resume instead of waiting for a scroll.
 - Output workers recheck current global enable/acknowledgement state before
   delivery, including work that was already queued.
 - Native x64 and Win32 builds, 31 tests per architecture, CodeQL,
