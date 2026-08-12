@@ -20,6 +20,9 @@ giving each directory rule explicit, independently gated behavior.
   capcode/protocol/type, including reordered parts, while rejecting ambiguous
   or conflicting chains instead of guessing. Reconstructed repeats of an
   already visible identical message are discarded across capcodes.
+- Capcode Directory CSV import now checks capcode numbers before writing:
+  matching capcodes update the existing record, new capcodes are added, and
+  duplicate existing or in-file rows are collapsed with the last CSV row used.
 
 ### Added
 

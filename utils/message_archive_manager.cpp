@@ -766,6 +766,29 @@ bool MessageArchiveUpsertCapcode(const pdw::archive::CapcodeEntry& entry,
 	return true;
 }
 
+bool MessageArchiveImportCapcodes(
+	const std::vector<pdw::archive::CapcodeEntry>& imported,
+	pdw::archive::CapcodeImportStats& stats, std::string& error)
+{
+	const ArchiveConfig config = CurrentConfig();
+	const std::string resolvedPath = ResolveArchivePath(config.path);
+	std::vector<pdw::archive::CapcodeEntry> existing;
+	std::vector<pdw::archive::CapcodeEntry> merged;
+	{
+		ArchiveOperationGuard operation(resolvedPath);
+		if (!EnsureOpen(resolvedPath, error) ||
+			!g_archive.ListCapcodes(std::string(), existing, error)) return false;
+		pdw::archive::MergeCapcodeDirectoryImport(existing, imported, merged, stats);
+		if (!g_archive.ReplaceCapcodes(merged, error) ||
+			!g_archive.ListCapcodes(std::string(), merged, error)) return false;
+		ReplaceAliasCache(config.path, merged);
+	}
+	FILTERLIST filters;
+	BuildRuntimeFilters(merged, filters);
+	Profile.filters.swap(filters);
+	return true;
+}
+
 bool MessageArchiveDeleteCapcode(long long id, std::string& error)
 {
 	const ArchiveConfig config = CurrentConfig();

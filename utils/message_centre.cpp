@@ -660,19 +660,18 @@ namespace
 			MessageBoxA(dialog, parseError.c_str(), "PDW Capcode Directory", MB_ICONERROR);
 			return;
 		}
-		int imported = 0;
-		for (std::vector<pdw::archive::CapcodeEntry>::const_iterator entry = entries.begin();
-			entry != entries.end(); ++entry)
+		pdw::archive::CapcodeImportStats importStats;
+		std::string importError;
+		if (!MessageArchiveImportCapcodes(entries, importStats, importError))
 		{
-			std::string importError;
-			if (MessageArchiveUpsertCapcode(*entry, importError)) ++imported; else ++rejected;
+			MessageBoxA(dialog, importError.c_str(), "PDW Capcode Directory", MB_ICONERROR);
+			return;
 		}
-		std::string reloadError;
-		if (!MessageArchiveReloadRuntimeFilters(reloadError))
-			MessageBoxA(dialog, reloadError.c_str(), "PDW Capcode Directory", MB_ICONERROR);
 		RefreshCapcodes(dialog, state);
 		std::ostringstream status;
-		status << "Imported " << imported << " entries";
+		status << "Added " << importStats.added << ", updated " << importStats.updated;
+		if (importStats.duplicatesDiscarded)
+			status << "; discarded " << importStats.duplicatesDiscarded << " duplicate capcodes";
 		if (rejected) status << "; rejected " << rejected << " invalid rows";
 		status << '.';
 		SetDlgItemTextA(dialog, IDC_CAPCODE_STATUS, status.str().c_str());

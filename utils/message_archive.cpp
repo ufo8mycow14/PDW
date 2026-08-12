@@ -1145,6 +1145,79 @@ bool ReadCapcodeDirectoryCsv(std::istream& input,
 	return true;
 }
 
+void MergeCapcodeDirectoryImport(const std::vector<CapcodeEntry>& existing,
+	const std::vector<CapcodeEntry>& imported, std::vector<CapcodeEntry>& merged,
+	CapcodeImportStats& stats)
+{
+	merged.clear();
+	stats = CapcodeImportStats();
+	std::vector<std::string> existingAddresses;
+	for (std::vector<CapcodeEntry>::const_iterator entry = existing.begin();
+		entry != existing.end(); ++entry)
+	{
+		if (entry->address.empty())
+		{
+			merged.push_back(*entry);
+			continue;
+		}
+		const std::string address = Lowercase(entry->address);
+		if (std::find(existingAddresses.begin(), existingAddresses.end(), address) !=
+			existingAddresses.end())
+		{
+			++stats.duplicatesDiscarded;
+			continue;
+		}
+		existingAddresses.push_back(address);
+		merged.push_back(*entry);
+	}
+
+	std::vector<std::string> importedAddresses;
+	for (std::vector<CapcodeEntry>::const_iterator entry = imported.begin();
+		entry != imported.end(); ++entry)
+	{
+		if (entry->address.empty())
+		{
+			merged.push_back(*entry);
+			++stats.added;
+			continue;
+		}
+		const std::string address = Lowercase(entry->address);
+		const bool repeatedImport = std::find(importedAddresses.begin(),
+			importedAddresses.end(), address) != importedAddresses.end();
+		if (repeatedImport) ++stats.duplicatesDiscarded;
+		else importedAddresses.push_back(address);
+
+		std::vector<CapcodeEntry>::iterator match = merged.end();
+		for (std::vector<CapcodeEntry>::iterator candidate = merged.begin();
+			candidate != merged.end(); ++candidate)
+		{
+			if (!candidate->address.empty() &&
+				Lowercase(candidate->address) == address)
+			{
+				match = candidate;
+				break;
+			}
+		}
+		if (match != merged.end())
+		{
+			CapcodeEntry replacement(*entry);
+			replacement.id = match->id;
+			*match = replacement;
+			if (!repeatedImport)
+			{
+				if (std::find(existingAddresses.begin(), existingAddresses.end(), address) !=
+					existingAddresses.end()) ++stats.updated;
+				else ++stats.added;
+			}
+		}
+		else
+		{
+			merged.push_back(*entry);
+			if (!repeatedImport) ++stats.added;
+		}
+	}
+}
+
 bool MessageArchive::UpdateCapcodeRuntimeState(long long id, unsigned int hitCounter,
 	const std::string& lastHitDate, const std::string& lastHitTime, std::string& error)
 {

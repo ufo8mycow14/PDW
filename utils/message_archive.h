@@ -63,6 +63,15 @@ struct CapcodeEntry
 		filterEnabled(true), outputRoutingConfigured(true) {}
 };
 
+struct CapcodeImportStats
+{
+	int added;
+	int updated;
+	int duplicatesDiscarded;
+
+	CapcodeImportStats() : added(0), updated(0), duplicatesDiscarded(0) {}
+};
+
 struct HistoryQuery
 {
 	std::string search;
@@ -99,6 +108,9 @@ bool WriteCapcodeDirectoryCsv(const std::vector<CapcodeEntry>& entries,
 	std::ostream& output, std::string& error);
 bool ReadCapcodeDirectoryCsv(std::istream& input,
 	std::vector<CapcodeEntry>& entries, int& rejected, std::string& error);
+void MergeCapcodeDirectoryImport(const std::vector<CapcodeEntry>& existing,
+	const std::vector<CapcodeEntry>& imported, std::vector<CapcodeEntry>& merged,
+	CapcodeImportStats& stats);
 bool ExportHistoryCsv(const std::string& utf8Path, const HistoryQuery& query,
 	std::ostream& output, int& exported, std::string& error);
 

@@ -21,6 +21,16 @@ namespace
 		}
 	}
 
+	const pdw::archive::CapcodeEntry* FindCapcode(
+		const std::vector<pdw::archive::CapcodeEntry>& entries,
+		const std::string& address)
+	{
+		for (std::vector<pdw::archive::CapcodeEntry>::const_iterator entry =
+			entries.begin(); entry != entries.end(); ++entry)
+			if (entry->address == address) return &*entry;
+		return NULL;
+	}
+
 	class FailingStreamBuffer : public std::streambuf
 	{
 	protected:
@@ -205,6 +215,43 @@ int main()
 		parsedDirectory[0].filterType == 2 && !parsedDirectory[0].filterLabel.empty() &&
 		parsedDirectory[0].outputRoutingConfigured,
 		"expanded directory CSV round trips all rule columns");
+	std::vector<pdw::archive::CapcodeEntry> importExisting(directoryRows);
+	pdw::archive::CapcodeEntry unrelatedCapcode;
+	unrelatedCapcode.id = 30;
+	unrelatedCapcode.protocol = "FLEX";
+	unrelatedCapcode.address = "8888888";
+	unrelatedCapcode.displayName = "Unchanged";
+	importExisting.push_back(unrelatedCapcode);
+	std::vector<pdw::archive::CapcodeEntry> importRows;
+	pdw::archive::CapcodeEntry update(capcode);
+	update.id = 0;
+	update.protocol = "FLEX";
+	update.displayName = "First CSV value";
+	importRows.push_back(update);
+	update.displayName = "Final CSV value";
+	importRows.push_back(update);
+	pdw::archive::CapcodeEntry added(update);
+	added.address = "9999999";
+	added.displayName = "New first value";
+	importRows.push_back(added);
+	added.displayName = "New final value";
+	importRows.push_back(added);
+	std::vector<pdw::archive::CapcodeEntry> mergedImport;
+	pdw::archive::CapcodeImportStats importStats;
+	pdw::archive::MergeCapcodeDirectoryImport(importExisting, importRows,
+		mergedImport, importStats);
+	const pdw::archive::CapcodeEntry* updatedImport =
+		FindCapcode(mergedImport, "1234567");
+	const pdw::archive::CapcodeEntry* addedImport =
+		FindCapcode(mergedImport, "9999999");
+	Expect(mergedImport.size() == 3 && importStats.added == 1 &&
+		importStats.updated == 1 && importStats.duplicatesDiscarded == 3,
+		"CSV import collapses existing and in-file duplicate capcodes");
+	Expect(updatedImport && updatedImport->displayName == "Final CSV value" &&
+		updatedImport->protocol == "FLEX" && addedImport &&
+		addedImport->displayName == "New final value" &&
+		FindCapcode(mergedImport, "8888888") != NULL,
+		"CSV import updates matching capcodes, keeps the final CSV row, and preserves unrelated entries");
 	std::istringstream legacyDisabledDirectory(
 		"protocol,address,display_name,agency,color,notes,enabled,filter_type,match_text,filter_label,"
 		"reject,match_exact,show_label,command_enabled,monitor_only,email_enabled,separate_file_enabled,"

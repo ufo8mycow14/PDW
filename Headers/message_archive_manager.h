@@ -18,6 +18,9 @@ bool MessageArchiveListCapcodes(const std::string& search,
 	std::vector<pdw::archive::CapcodeEntry>& entries, std::string& error);
 bool MessageArchiveUpsertCapcode(const pdw::archive::CapcodeEntry& entry,
 	std::string& error);
+bool MessageArchiveImportCapcodes(
+	const std::vector<pdw::archive::CapcodeEntry>& imported,
+	pdw::archive::CapcodeImportStats& stats, std::string& error);
 bool MessageArchiveDeleteCapcode(long long id, std::string& error);
 bool MessageArchiveDeleteCapcode(const std::string& protocol,
 	const std::string& address, std::string& error);
