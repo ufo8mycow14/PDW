@@ -16,6 +16,7 @@
 #include "headers\sound_in.h"
 #include "headers\helper_funcs.h"
 #include "headers\message_router.h"
+#include "headers\gateway_outbox.h"
 #include "utils\binary.h"
 #include "utils\assembled_message_visibility_core.h"
 #include "utils\decoded_event.h"
@@ -616,6 +617,44 @@ void Remove_MissedGroupcall(int groupbit)
 }
 
 
+static DecodedMessageNotificationContext BuildGatewayNotification(
+	bool filterMatched, bool monitorOnly, bool filtered, bool rejected,
+	bool blockedDuplicate, bool groupCall, bool groupFinal, bool fragmented,
+	bool assembled, int matchedFilter, const char* filterLabel,
+	const char* messageOverride)
+{
+	DecodedMessageNotificationContext notification;
+	notification.filterMatched = filterMatched;
+	notification.monitorOnly = monitorOnly;
+	notification.filtered = filtered;
+	notification.rejected = rejected;
+	notification.blockedDuplicate = blockedDuplicate;
+	notification.groupCall = groupCall;
+	notification.groupFinal = groupFinal;
+	notification.fragmented = fragmented;
+	notification.assembled = assembled;
+	notification.selectedForEmail = matchedFilter >= 0 ? Profile.filters[matchedFilter].smtp : 0;
+	notification.outputRoutingConfigured = matchedFilter >= 0 ?
+		Profile.filters[matchedFilter].output_routing_configured != 0 : false;
+	notification.outputRoutes = matchedFilter >= 0 ?
+		Profile.filters[matchedFilter].output_routes : 0;
+	notification.filterIndex = matchedFilter;
+	const int groupBit = iConvertingGroupcall ? iConvertingGroupcall - 1 :
+		(groupFinal ? atoi(Current_MSG[MSG_CAPCODE]) - 2029568 : -1);
+	notification.groupBit = (groupBit >= 0 && groupBit < 16) ? groupBit : -1;
+	notification.cycle = strstr(Current_MSG[MSG_MODE], "FLEX") ? iCurrentCycle : -1;
+	notification.frame = strstr(Current_MSG[MSG_MODE], "FLEX") ? iCurrentFrame : -1;
+	notification.address = Current_MSG[MSG_CAPCODE];
+	notification.time = Current_MSG[MSG_TIME];
+	notification.date = Current_MSG[MSG_DATE];
+	notification.mode = Current_MSG[MSG_MODE];
+	notification.messageType = Current_MSG[MSG_TYPE];
+	notification.bitrate = Current_MSG[MSG_BITRATE];
+	notification.message = messageOverride ? messageOverride : Current_MSG[MSG_MESSAGE];
+	notification.filterLabel = filterLabel ? filterLabel : "";
+	return notification;
+}
+
 void ShowMessage()
 {
 	int pos, i, j, k, tmp_pos, iSepfile, pane;
@@ -678,6 +717,14 @@ void ShowMessage()
 		if (multipart.status == pdw::multipart::MULTIPART_BUFFERED ||
 			multipart.status == pdw::multipart::MULTIPART_DUPLICATE)
 		{
+			const bool fragmentGroup = iConvertingGroupcall != 0 ||
+				memcmp(Current_MSG[MSG_CAPCODE], "20295", 5) == 0;
+			DecodedMessageNotificationContext fragment = BuildGatewayNotification(
+				false, false, false, false,
+				multipart.status == pdw::multipart::MULTIPART_DUPLICATE,
+				fragmentGroup, false, true, false, -1, "",
+				reinterpret_cast<const char*>(message_buffer));
+			GatewayOutboxPublishDecodedMessage(fragment);
 			SuppressCurrentMessage();
 			return;
 		}
@@ -796,6 +843,20 @@ void ShowMessage()
 
 			if (Profile.filters[iMatch].reject)
 			{
+				char rejectedLabel[FILTER_LABEL_LEN+50] = {};
+				if (Profile.filters[iMatch].label[0])
+				{
+					if (strchr(Profile.filters[iMatch].label, '%'))
+						MakeFilterLabel(Profile.filters[iMatch].label,
+							Current_MSG[MSG_CAPCODE], rejectedLabel);
+					else strcpy(rejectedLabel, Profile.filters[iMatch].label);
+				}
+				DecodedMessageNotificationContext rejectedEvent = BuildGatewayNotification(
+					bMATCH, bMONITOR_ONLY, bFILTERED, true, false,
+					iConvertingGroupcall != 0 || bGroupcode, bGroupcode,
+					bFragment, bAssembledFlexCopy || bAssembledTextMessage,
+					iMatch, rejectedLabel, NULL);
+				GatewayOutboxPublishDecodedMessage(rejectedEvent);
 				if (Profile.show_rejectblocked)
 				{
 					// Confirm the discard without repeating the rejected capcode or
@@ -825,6 +886,10 @@ void ShowMessage()
 		else if ((strstr(Current_MSG[MSG_MODE], "POCSAG")) &&
 				(memcmp(Current_MSG[MSG_MESSAGE], "WHC+", 4) == 0))
 		{
+			DecodedMessageNotificationContext instruction = BuildGatewayNotification(
+				false, false, false, false, false, false, false,
+				bFragment, bAssembledFlexCopy || bAssembledTextMessage, -1, "", NULL);
+			GatewayOutboxPublishDecodedMessage(instruction);
 			return;
 		}
 
@@ -834,6 +899,20 @@ void ShowMessage()
 
 			if (bBlock)
 			{
+				char blockedLabel[FILTER_LABEL_LEN+50] = {};
+				if (bMATCH && Profile.filters[iMatch].label[0])
+				{
+					if (strchr(Profile.filters[iMatch].label, '%'))
+						MakeFilterLabel(Profile.filters[iMatch].label,
+							Current_MSG[MSG_CAPCODE], blockedLabel);
+					else strcpy(blockedLabel, Profile.filters[iMatch].label);
+				}
+				DecodedMessageNotificationContext blockedEvent = BuildGatewayNotification(
+					bMATCH, bMONITOR_ONLY, bFILTERED, false, true,
+					iConvertingGroupcall != 0 || bGroupcode, bGroupcode,
+					bFragment, bAssembledFlexCopy || bAssembledTextMessage,
+					bMATCH ? iMatch : -1, blockedLabel, NULL);
+				GatewayOutboxPublishDecodedMessage(blockedEvent);
 				if (Profile.show_rejectblocked)			// Show in title bar?
 				{
 					sprintf(szWindowText[5], "Blocked Duplicate Message : %s %s", Current_MSG[MSG_CAPCODE], (Profile.monitor_mobitex && !Current_MSG[MSG_MESSAGE][0]) ? Current_MSG[MSG_TYPE] : Current_MSG[MSG_MESSAGE]);
@@ -875,6 +954,11 @@ void ShowMessage()
 			bAssembledFlexCopy || bAssembledTextMessage,
 			Current_MSG[MSG_MESSAGE], Current_MSG[MSG_TYPE], MultipartMessageNowMs()))
 		{
+			DecodedMessageNotificationContext suppressedCopy = BuildGatewayNotification(
+				bMATCH, bMONITOR_ONLY, bFILTERED, false, true,
+				iConvertingGroupcall != 0 || bGroupcode, bGroupcode,
+				bFragment, true, bMATCH ? iMatch : -1, "", NULL);
+			GatewayOutboxPublishDecodedMessage(suppressedCopy);
 			return;
 		}
 		if (bTrayed && Profile.SystemTrayRestore)
@@ -1362,9 +1446,6 @@ void ShowMessage()
 
 	const bool eventFragmented = bFragment;
 	const bool eventGroupCall = iConvertingGroupcall != 0 || bGroupcode;
-	const int eventGroupBit = iConvertingGroupcall
-		? iConvertingGroupcall - 1
-		: (bGroupcode ? atoi(Current_MSG[MSG_CAPCODE]) - 2029568 : -1);
 
 	if (!iConvertingGroupcall || bGroupcode)
 	{
@@ -1400,30 +1481,13 @@ void ShowMessage()
 				Current_MSG[MSG_CAPCODE], szRoutedLabel);
 		else strcpy(szRoutedLabel, Profile.filters[iMatch].label);
 	}
-	DecodedMessageNotificationContext notification;
-	notification.filterMatched = bMATCH;
-	notification.monitorOnly = bMONITOR_ONLY;
-	notification.filtered = bFILTERED;
-	notification.groupCall = eventGroupCall;
-	notification.groupFinal = bGroupcode;
-	notification.groupBit = (eventGroupBit >= 0 && eventGroupBit < 16) ? eventGroupBit : -1;
-	notification.fragmented = eventFragmented;
-	notification.assembled = bAssembledFlexCopy || bAssembledTextMessage;
-	notification.selectedForEmail = bMATCH ? Profile.filters[iMatch].smtp : 0;
-	notification.outputRoutingConfigured = bMATCH ?
-		Profile.filters[iMatch].output_routing_configured != 0 : false;
-	notification.outputRoutes = bMATCH ? Profile.filters[iMatch].output_routes : 0;
-	notification.filterIndex = bMATCH ? iMatch : -1;
-	notification.cycle = strstr(Current_MSG[MSG_MODE], "FLEX") ? iCurrentCycle : -1;
-	notification.frame = strstr(Current_MSG[MSG_MODE], "FLEX") ? iCurrentFrame : -1;
-	notification.address = Current_MSG[MSG_CAPCODE];
-	notification.time = Current_MSG[MSG_TIME];
-	notification.date = Current_MSG[MSG_DATE];
-	notification.mode = Current_MSG[MSG_MODE];
-	notification.messageType = Current_MSG[MSG_TYPE];
-	notification.bitrate = Current_MSG[MSG_BITRATE];
-	notification.message = iMOBITEX ? Current_MSG[MSG_MOBITEX] : Current_MSG[MSG_MESSAGE];
-	notification.filterLabel = szRoutedLabel;
+	DecodedMessageNotificationContext notification = BuildGatewayNotification(
+		bMATCH, bMONITOR_ONLY, bFILTERED, false, false,
+		eventGroupCall, bGroupcode, eventFragmented,
+		bAssembledFlexCopy || bAssembledTextMessage,
+		bMATCH ? iMatch : -1, szRoutedLabel,
+		iMOBITEX ? Current_MSG[MSG_MOBITEX] : Current_MSG[MSG_MESSAGE]);
+	GatewayOutboxPublishDecodedMessage(notification);
 	MessageRouterPublishDecodedMessage(notification);
 
 	if (Current_MSG[MSG_MOBITEX][0]) Current_MSG[MSG_MOBITEX][0] = '\0';

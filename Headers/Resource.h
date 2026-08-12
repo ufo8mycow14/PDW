@@ -39,6 +39,7 @@
 #define MESSAGE_HISTORY_DLGBOX 135
 #define LIVE_DASHBOARD_DLGBOX 136
 #define MULTI_CHANNEL_DLGBOX 137
+#define GATEWAY_OUTBOX_DLGBOX 138
 
 #define IDM_LOGFILE                201
 #define IDM_EXIT                   202
@@ -102,6 +103,7 @@
 #define IDM_MESSAGE_HISTORY        299
 #define IDM_LIVE_DASHBOARD         300
 #define IDM_MULTI_CHANNEL          301
+#define IDM_GATEWAY_OUTBOX         302
 
 #define IDS_APPNAME                591
 #define IDS_SHORT_APPNAME          592
@@ -718,6 +720,16 @@
 #define IDC_ABOUT_ARCHITECTURE     1592
 #define IDC_ABOUT_FEATURES         1593
 #define IDC_ABOUT_HISTORICAL       1594
+
+#define IDC_GATEWAY_ENABLE              1620
+#define IDC_GATEWAY_PATH                1621
+#define IDC_GATEWAY_RECEIVER_ID         1622
+#define IDC_GATEWAY_RETENTION_DAYS      1623
+#define IDC_GATEWAY_MAX_MB              1624
+#define IDC_GATEWAY_QUEUE_CAPACITY      1625
+#define IDC_GATEWAY_STATUS              1626
+#define IDC_GATEWAY_SYNTHETIC_PROTOCOL  1627
+#define IDC_GATEWAY_GENERATE_SYNTHETIC  1628
 
 #define IDS_SIGIND                1250
 #define IDS_EXCLAM                1251

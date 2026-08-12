@@ -108,6 +108,9 @@ void RequireSafeOutputs(const IniValues& values)
 	RequireZero(values, "MessageArchive", "EnableHistory");
 	RequireZero(values, "MessageArchive", "IncludeMessage");
 	RequireZero(values, "LiveDashboard", "Enable");
+	RequireZero(values, "GatewayOutbox", "Enable");
+	Require(Value(values, "GatewayOutbox", "ReceiverId").empty(),
+		"gateway receiver identity must be operator-approved, not packaged");
 
 	Require(Value(values, "Publishing", "FilteredOnly") == "1", "publishing must default to filtered messages");
 	Require(Value(values, "DataOutputs", "FilteredOnly") == "1", "data outputs must default to filtered messages");

@@ -365,6 +365,7 @@ target_link_libraries(PDW PRIVATE
 	Mmdevapi.lib
 	Uuid.lib
 	Winsqlite3.lib
+	Bcrypt.lib
 	Odbc32.lib
 )
 
@@ -745,6 +746,31 @@ target_compile_definitions(PDWMessageArchiveManagerTests PRIVATE
 	)
 	target_link_libraries(PDWMessageArchiveManagerTests PRIVATE Winsqlite3.lib Ws2_32.lib)
 	add_test(NAME message-archive-manager COMMAND PDWMessageArchiveManagerTests)
+
+	add_executable(PDWGatewayOutboxTests
+		tests/gateway_outbox_tests.cpp
+		utils/decoded_event.cpp
+		utils/gateway_outbox.cpp
+		utils/gateway_outbox_core.cpp
+	)
+	target_include_directories(PDWGatewayOutboxTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Headers"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_definitions(PDWGatewayOutboxTests PRIVATE
+		_CRT_SECURE_NO_WARNINGS
+		PDW_GATEWAY_OUTBOX_TEST_HOOKS
+	)
+	target_compile_options(PDWGatewayOutboxTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	target_link_libraries(PDWGatewayOutboxTests PRIVATE
+		Winsqlite3.lib Bcrypt.lib Ole32.lib User32.lib
+	)
+	add_test(NAME gateway-outbox COMMAND PDWGatewayOutboxTests)
 
 	add_executable(PDWLocalDashboardCoreTests
 		tests/local_dashboard_core_tests.cpp
