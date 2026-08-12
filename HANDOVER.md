@@ -91,12 +91,12 @@ clean-install profiles and documentation without private runtime data.
 
 The 12 August 2026 review retains the pinned OpenSSL 3.5.7 LTS, curl 8.21.0,
 libssh2 1.11.1, Windows `winsqlite3`, and operator-managed MySQL ODBC boundary.
-Oracle's July 2026 CPU and the released Connector/ODBC 9.7 line were reviewed;
-26.7.0 is documented but not yet released. Inno Setup 7.0.2 is available, but
-v5.5.2 deliberately retains pinned
-6.7.3 because changing installer-compiler major version during the profile and
-upgrade change would broaden release risk; migration to 7 remains a separate
-dual-architecture installer project.
+Connector/ODBC 9.7.0 is the current reviewed GA release. PDW does not bundle or
+install it; operators use Oracle's architecture-matched driver and a secured
+Windows DSN. Inno Setup 7.0.2 is available, but v5.5.2 deliberately retains
+pinned 6.7.3 because changing installer-compiler major version during the
+profile and upgrade change would broaden release risk; migration to 7 remains
+a separate dual-architecture installer project.
 
 The reviewed external-profile references are SDR# production revision 1921 and
 VB-CABLE Package 45. Neither is packaged. Operators obtain, secure, support,
