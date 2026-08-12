@@ -314,6 +314,7 @@
 #include "headers\acars.h"
 #include "headers\language.h"
 #include "headers\message_archive_manager.h"
+#include "headers\gateway_outbox.h"
 #include "headers\message_centre.h"
 #include "headers\multi_channel.h"
 #include "headers\mobitex.h"
@@ -530,6 +531,7 @@ bool WorkerCommandRestricted(UINT command)
 		case IDM_PUBLISHING:
 		case IDM_DATA_OUTPUTS:
 		case IDM_OUTPUT_HEALTH:
+		case IDM_GATEWAY_OUTBOX:
 		case IDM_CONFIG_BACKUP:
 		case IDM_FILTERS:
 		case IDM_FILTEROPTIONS:
@@ -693,6 +695,12 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.liveDashboardPort = 8090;
 	Profile.outputHealthAlertsEnabled = 1;
 	Profile.outputHealthFailureThreshold = 3;
+	Profile.gatewayOutboxEnabled = 0;
+	strcpy(Profile.gatewayOutboxPath, "pdw-gateway-outbox.sqlite3");
+	Profile.gatewayReceiverId[0] = '\0';
+	Profile.gatewayOutboxRetentionDays = 30;
+	Profile.gatewayOutboxMaximumMegabytes = 512;
+	Profile.gatewayOutboxQueueCapacity = 1024;
 
 	Profile.FlexTIME			= 0;	// Flag for FlexTIME as systemtime
 	Profile.FlexGroupMode		= 0;
@@ -900,6 +908,7 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	PublishingManagerInitialize();
 	DataOutputManagerInitialize();
 	MessageArchiveManagerInitialize();
+	GatewayOutboxInitialize();
 	MigrateLegacyFiltersToDirectory();
 
 	if (hToolbar) TB_AutoSize(hToolbar);	// keep toolbar correct size!
@@ -1832,6 +1841,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 									 hWnd, (DLGPROC) OutputHealthDlgProc, 0L);
 				break;
 
+				case IDM_GATEWAY_OUTBOX:
+					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(GATEWAY_OUTBOX_DLGBOX),
+						hWnd, (DLGPROC) GatewayOutboxDlgProc, 0L);
+				break;
+
 				case IDM_MESSAGE_HISTORY:
 					GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(MESSAGE_HISTORY_DLGBOX),
 						hWnd, (DLGPROC) MessageHistoryDlgProc, 0L);
@@ -2253,6 +2267,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				std::string filterError;
 				MessageArchivePersistRuntimeFilterState(filterError);
 			}
+			GatewayOutboxShutdown();
 			MessageArchiveManagerShutdown();
 			DataOutputManagerShutdown();
 			PublishingManagerShutdown();
@@ -10542,6 +10557,22 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->outputHealthFailureThreshold = (unsigned int) GetPrivateProfileInt("OutputHealth", TEXT("FailureThreshold"), 3, lpszIniPathName);
 	if (pProfile->outputHealthFailureThreshold < 1 || pProfile->outputHealthFailureThreshold > 20)
 		pProfile->outputHealthFailureThreshold = 3;
+	pProfile->gatewayOutboxEnabled = (INT) GetPrivateProfileInt("GatewayOutbox", TEXT("Enable"), 0, lpszIniPathName);
+	GetPrivateProfileString("GatewayOutbox", TEXT("Path"), "pdw-gateway-outbox.sqlite3",
+		pProfile->gatewayOutboxPath, sizeof(pProfile->gatewayOutboxPath), lpszIniPathName);
+	GetPrivateProfileString("GatewayOutbox", TEXT("ReceiverId"), "",
+		pProfile->gatewayReceiverId, sizeof(pProfile->gatewayReceiverId), lpszIniPathName);
+	pProfile->gatewayOutboxRetentionDays = (unsigned int) GetPrivateProfileInt("GatewayOutbox", TEXT("RetentionDays"), 30, lpszIniPathName);
+	pProfile->gatewayOutboxMaximumMegabytes = (unsigned int) GetPrivateProfileInt("GatewayOutbox", TEXT("MaximumMegabytes"), 512, lpszIniPathName);
+	pProfile->gatewayOutboxQueueCapacity = (unsigned int) GetPrivateProfileInt("GatewayOutbox", TEXT("QueueCapacity"), 1024, lpszIniPathName);
+	if (pProfile->gatewayOutboxRetentionDays < 1 || pProfile->gatewayOutboxRetentionDays > 3650)
+		pProfile->gatewayOutboxRetentionDays = 30;
+	if (pProfile->gatewayOutboxMaximumMegabytes < 16 || pProfile->gatewayOutboxMaximumMegabytes > 102400)
+		pProfile->gatewayOutboxMaximumMegabytes = 512;
+	if (pProfile->gatewayOutboxQueueCapacity < 16 || pProfile->gatewayOutboxQueueCapacity > 65536)
+		pProfile->gatewayOutboxQueueCapacity = 1024;
+	if (!pProfile->gatewayOutboxPath[0] || !pProfile->gatewayReceiverId[0])
+		pProfile->gatewayOutboxEnabled = 0;
 	if (pProfile->dataOutputsEnabled && !pProfile->dataOutputsPermissionAcknowledged)
 		pProfile->dataOutputsEnabled = 0;
 
@@ -11218,6 +11249,14 @@ bool TryWriteSettings()
 		fprintf(pFile, "\n[OutputHealth]\n");
 		fprintf(pFile, "AlertsEnabled=%i\n", Profile.outputHealthAlertsEnabled);
 		fprintf(pFile, "FailureThreshold=%u\n", Profile.outputHealthFailureThreshold);
+
+		fprintf(pFile, "\n[GatewayOutbox]\n");
+		fprintf(pFile, "Enable=%i\n", Profile.gatewayOutboxEnabled);
+		fprintf(pFile, "Path=%s\n", Profile.gatewayOutboxPath);
+		fprintf(pFile, "ReceiverId=%s\n", Profile.gatewayReceiverId);
+		fprintf(pFile, "RetentionDays=%u\n", Profile.gatewayOutboxRetentionDays);
+		fprintf(pFile, "MaximumMegabytes=%u\n", Profile.gatewayOutboxMaximumMegabytes);
+		fprintf(pFile, "QueueCapacity=%u\n", Profile.gatewayOutboxQueueCapacity);
 
 		fprintf(pFile, "\n[Filter]\n");
 		fprintf(pFile, "FilterFileEnabled=%i\n",		Profile.filterfile_enabled);

@@ -89,6 +89,7 @@ namespace
 		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_FTP, "File transfer", "Continuously upload selected files using FTP, FTPS or SFTP." },
 		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_PUBLISHING, "Publish to web", "Maintain approved feeds, web files and HTTPS webhooks." },
 		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_DATA_OUTPUTS, "Data outputs", "Configure privacy-aware MQTT, database and Telnet destinations." },
+		{ PDW_SETTINGS_DATA_OUTPUTS, IDM_GATEWAY_OUTBOX, "Local Gateway Outbox", "Configure the disabled-by-default append-only local gateway handoff." },
 		{ PDW_SETTINGS_HEALTH, IDM_OUTPUT_HEALTH, "Delivery health", "Review destination state, failures and pending alerts." },
 		{ PDW_SETTINGS_HEALTH, IDM_MONSTAT, "Decoder statistics", "Review message counts, errors and current decoder activity." },
 		{ PDW_SETTINGS_HEALTH, IDM_DEBUG, "Diagnostics", "Open PDW's diagnostic information and troubleshooting view." },

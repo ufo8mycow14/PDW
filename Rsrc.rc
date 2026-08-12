@@ -103,6 +103,7 @@ BEGIN
         MENUITEM "&Push and Windows notifications...", IDM_APPRISE
         MENUITEM "&Email...\tCtrl+M",               IDM_MAIL
         MENUITEM "&Data outputs...",                 IDM_DATA_OUTPUTS
+		MENUITEM "Local gateway &outbox...",           IDM_GATEWAY_OUTBOX
 		MENUITEM "Local live &dashboard...",         IDM_LIVE_DASHBOARD
 		MENUITEM "Guarded multi-&channel receivers...", IDM_MULTI_CHANNEL
     END
@@ -136,6 +137,35 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&About PDW...",                    IDM_ABOUT
     END
+END
+
+GATEWAY_OUTBOX_DLGBOX DIALOGEX 0, 0, 560, 300
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Local Gateway Outbox"
+FONT 9, "Segoe UI", 0, 0, 0x0
+BEGIN
+    CONTROL         "Enable Local Gateway Outbox",IDC_GATEWAY_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,12,150,13
+    GROUPBOX        "Append-only local handoff",IDC_STATIC,8,34,544,114
+    LTEXT           "SQLite path",IDC_STATIC,18,53,62,10
+    EDITTEXT        IDC_GATEWAY_PATH,92,50,446,14,ES_AUTOHSCROLL
+    LTEXT           "Receiver ID",IDC_STATIC,18,77,62,10
+    EDITTEXT        IDC_GATEWAY_RECEIVER_ID,92,74,180,14,ES_AUTOHSCROLL
+    LTEXT           "Retention days",IDC_STATIC,286,77,68,10
+    EDITTEXT        IDC_GATEWAY_RETENTION_DAYS,358,74,46,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "Maximum MB",IDC_STATIC,414,77,60,10
+    EDITTEXT        IDC_GATEWAY_MAX_MB,480,74,58,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "Queue capacity",IDC_STATIC,18,101,68,10
+    EDITTEXT        IDC_GATEWAY_QUEUE_CAPACITY,92,98,62,14,ES_NUMBER | ES_AUTOHSCROLL
+    LTEXT           "Gateway readers open this WAL database read-only and keep their own checkpoint. No acknowledgement controls PDW retention.",IDC_STATIC,18,121,520,20
+
+    GROUPBOX        "Health and diagnostics",IDC_STATIC,8,154,544,76
+    LTEXT           "Disabled",IDC_GATEWAY_STATUS,18,171,520,48
+
+    GROUPBOX        "Synthetic gateway event",IDC_STATIC,8,236,308,54
+    COMBOBOX        IDC_GATEWAY_SYNTHETIC_PROTOCOL,18,252,94,64,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Generate synthetic gateway event",IDC_GATEWAY_GENERATE_SYNTHETIC,120,250,180,20
+    DEFPUSHBUTTON   "Save",IDOK,424,264,58,20
+    PUSHBUTTON      "Cancel",IDCANCEL,488,264,58,20
 END
 
 

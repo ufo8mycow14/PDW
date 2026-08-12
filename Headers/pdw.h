@@ -32,6 +32,8 @@
 #define MYSQL_ODBC_USERNAME_LEN 127
 #define TELNET_BIND_ADDRESS_LEN 63
 #define MESSAGE_ARCHIVE_PATH_LEN 511
+#define GATEWAY_OUTBOX_PATH_LEN 511
+#define GATEWAY_RECEIVER_ID_LEN 127
 
 #define AUDIO_SOURCE_LOCAL   0
 #define AUDIO_SOURCE_RTL_TCP 1
@@ -309,6 +311,15 @@ typedef struct
 
 	int outputHealthAlertsEnabled;
 	unsigned int outputHealthFailureThreshold;
+
+	// Optional local-only, one-way gateway handoff. It is independent of all
+	// destination routing and remains disabled unless explicitly enabled.
+	int gatewayOutboxEnabled;
+	char gatewayOutboxPath[GATEWAY_OUTBOX_PATH_LEN+1];
+	char gatewayReceiverId[GATEWAY_RECEIVER_ID_LEN+1];
+	unsigned int gatewayOutboxRetentionDays;
+	unsigned int gatewayOutboxMaximumMegabytes;
+	unsigned int gatewayOutboxQueueCapacity;
 
 	COLORREF color_background;
 	COLORREF color_address;
