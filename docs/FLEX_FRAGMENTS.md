@@ -57,9 +57,10 @@ option, or enabling FLEX Group Mode clears transient fragment state.
 PDW also recognises explicit message text such as **Part 1 of 2** (case
 insensitive, with optional `#` and brackets). It buffers 2-32 parts for the
 same capcode, protocol, message type, and advertised total, accepts reordered
-parts, removes the markers, and emits one **[Joined N-part message]** when every
-part is present. This applies to paging messages independently of the FLEX
-header option because the sender has explicitly advertised the part sequence.
+parts, removes the markers, and emits one ordinary message when every part is
+present. The display does not add a multipart status label. This applies to
+paging messages independently of the FLEX header option because the sender has
+explicitly advertised the part sequence.
 
 The text marker does not contain a unique message identifier. PDW therefore
 allows only one active chain for the same visible identity. Identical repeats

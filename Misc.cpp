@@ -271,18 +271,14 @@ static int PaneNewLinePoint(const PaneStruct *pane)
 static void PrepareContinuationLine(PaneStruct *pane, bool automaticWrap)
 {
 	int indent = iItemPositions[MSG_MESSAGE];
-	const bool fullWidthPagerLine = !Profile.monitor_acars &&
-		!Profile.monitor_mobitex && !Profile.FlexGroupMode;
 	if (Profile.monitor_acars && automaticWrap) indent += 16;
-	if (fullWidthPagerLine) indent = 2;
 
 	char *lineChars = pane->buff_char + pane->Bottom * (LINE_SIZE + 1);
 	BYTE *lineColors = pane->buff_color + pane->Bottom * (LINE_SIZE + 1);
 	for (int index = 0; index < indent; ++index)
 	{
-		lineChars[index] = fullWidthPagerLine && index == 0 ? '>' : ' ';
-		lineColors[index] = fullWidthPagerLine && index == 0
-			? COLOR_INSTRUCTIONS : COLOR_MESSAGE;
+		lineChars[index] = ' ';
+		lineColors[index] = COLOR_MESSAGE;
 		pane->currentPos++;
 	}
 	iPanePos = pane->currentPos;
@@ -624,7 +620,6 @@ void ShowMessage()
 	bool bMATCH=false, bMONITOR_ONLY=false, bFILTERED=false;
 	const bool bAssembledFlexCopy = g_showingAssembledFlexCopy;
 	bool bAssembledTextMessage = false;
-	unsigned int assembledTextParts = 0;
 	bool bShowMessage=true, bFragment=bAssembledFlexCopy, bGroupcode;
 	bool bNumeric=false;
 	bool bNewFile, bNewLine;					// PH: To indicate if the logfile is new / already exists
@@ -693,10 +688,6 @@ void ShowMessage()
 			message_color[length] = COLOR_UNUSED;
 			iMessageIndex = static_cast<int>(length);
 			bAssembledTextMessage = true;
-			assembledTextParts = multipart.totalParts;
-			bFragment = true;
-			snprintf(szFragment, sizeof(szFragment), "[Joined %u-part message]",
-				assembledTextParts);
 		}
 	}
 	
@@ -987,7 +978,7 @@ void ShowMessage()
 					{
 						display_color(pPane, COLOR_INSTRUCTIONS);
 						display_show_strV2(pPane, szFragment);
-						if (bAssembledFlexCopy || bAssembledTextMessage)
+						if (bAssembledFlexCopy)
 						{
 							display_show_strV2(pPane, " ");
 						}

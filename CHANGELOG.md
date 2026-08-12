@@ -110,8 +110,8 @@ external outputs remain available with their established semantics.
 - Bounded, timeout-controlled fragment state keyed by capcode, message number,
   and message type, with normal, reordered, wrapped, replayed, conflicting,
   and truncated cases covered by synthetic regression tests.
-- Message display wrapping that uses the available monitor width and retains a
-  visible continuation marker without truncating the underlying routed text.
+- Message display wrapping that uses the available monitor width and aligns
+  continuation text beneath the message column without truncating routed text.
 
 ### Compatibility and security
 
