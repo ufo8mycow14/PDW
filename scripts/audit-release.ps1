@@ -110,6 +110,9 @@ Require-Match $readme 'https://github\.com/ufo8mycow14/PDW(?:\)|/issues\)|/relea
 
 $resources = Read-RepoFile "Rsrc.rc"
 Require-NoMatch $resources 'Native Win32 decoder' "Architecture-neutral VersionInfo must not label the x64 executable as Win32."
+$messagePipeline = Read-RepoFile "Misc.cpp"
+Require-NoMatch $messagePipeline '\[Joined FLEX\]' "Assembled FLEX messages must not display or log a synthetic joined-message label."
+Require-NoMatch $messagePipeline '\[Joined [^\]]*-part message\]' "Explicit multipart messages must not display or log a synthetic joined-message label."
 
 $changelog = Read-RepoFile "CHANGELOG.md"
 $firstHeading = [regex]::Match($changelog, '(?m)^## ([^\r\n]+)$')

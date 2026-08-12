@@ -34,6 +34,12 @@ struct FragmentObservation
 	unsigned int fragmentNumber;
 	bool continuation;
 	std::uint64_t observedAtMs;
+	std::string displayAddress;
+	std::string displayTime;
+	std::string displayDate;
+	std::string displayMode;
+	std::string displayMessageType;
+	std::string displayBitrate;
 	const unsigned char* text;
 	const std::uint8_t* colors;
 	std::size_t length;
@@ -46,6 +52,12 @@ struct FragmentResult
 	FragmentStatus status;
 	bool assembled;
 	bool truncated;
+	std::string displayAddress;
+	std::string displayTime;
+	std::string displayDate;
+	std::string displayMode;
+	std::string displayMessageType;
+	std::string displayBitrate;
 	std::string text;
 	std::vector<std::uint8_t> colors;
 
@@ -96,6 +108,12 @@ private:
 		bool hasStart;
 		unsigned int nextExpectedFragment;
 		bool truncated;
+		std::string displayAddress;
+		std::string displayTime;
+		std::string displayDate;
+		std::string displayMode;
+		std::string displayMessageType;
+		std::string displayBitrate;
 		std::string text;
 		std::vector<std::uint8_t> colors;
 		Part start;

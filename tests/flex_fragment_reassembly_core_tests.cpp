@@ -22,7 +22,8 @@ namespace
 		const std::string& text,
 		std::uint8_t color = 5,
 		unsigned int messageNumber = 0,
-		unsigned int messageType = 5)
+		unsigned int messageType = 5,
+		const char* displayAddress = NULL)
 	{
 		std::vector<std::uint8_t> colors(text.size(), color);
 		pdw::flex::FragmentObservation observation;
@@ -32,6 +33,13 @@ namespace
 		observation.fragmentNumber = fragment;
 		observation.continuation = continuation;
 		observation.observedAtMs = time;
+		observation.displayAddress = displayAddress != NULL ? displayAddress :
+			std::to_string(address);
+		observation.displayTime = std::to_string(time);
+		observation.displayDate = "test-date";
+		observation.displayMode = "FLEX-A";
+		observation.displayMessageType = "ALPHA";
+		observation.displayBitrate = "1600";
 		observation.text = reinterpret_cast<const unsigned char*>(text.data());
 		observation.colors = colors.empty() ? NULL : &colors[0];
 		observation.length = text.size();
@@ -70,6 +78,8 @@ int main()
 	Expect(assembled.text == "one-two-three", "fragment text retains order");
 	Expect(assembled.colors.size() == assembled.text.size(), "color data follows text");
 	Expect(assembled.colors.back() == 8, "final fragment colors are retained");
+	Expect(assembled.displayAddress == "1234567" && assembled.displayTime == "200",
+		"assembled identity comes from the starting fragment");
 	Expect(normal.ActiveCount() == 0, "completed chain releases its slot");
 
 	FragmentReassembler reordered;
@@ -95,6 +105,17 @@ int main()
 		"conflicting start replaces incomplete state without emitting it");
 	FragmentResult restarted = Observe(restart, 77, 0, false, 2002, "last");
 	Expect(restarted.text == "new-last", "new F=11 cleanly restarts the same address");
+	Expect(restarted.displayTime == "2001",
+		"a replacement start also replaces the assembled identity metadata");
+
+	FragmentReassembler displayIdentity;
+	Observe(displayIdentity, 900, 3, true, 2100, "first-", 5, 2, 5, "1930428");
+	FragmentResult displayIdentityResult =
+		Observe(displayIdentity, 900, 0, false, 2101, "last", 5, 2, 5, "1931424");
+	Expect(displayIdentityResult.assembled &&
+		displayIdentityResult.displayAddress == "1930428" &&
+		displayIdentityResult.displayTime == "2100",
+		"completing fragment cannot replace the original displayed capcode or time");
 
 	FragmentReassembler timeout(16, 100, 5119);
 	Observe(timeout, 88, 3, true, 3000, "old");

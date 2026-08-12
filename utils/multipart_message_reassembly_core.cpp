@@ -200,6 +200,12 @@ MultipartResult MultipartReassembler::Observe(const MultipartObservation& observ
 	Expire(observation.observedAtMs);
 	Part incoming;
 	incoming.present = true;
+	incoming.address = observation.address;
+	incoming.protocol = observation.protocol;
+	incoming.messageType = observation.messageType;
+	incoming.displayTime = observation.displayTime;
+	incoming.displayDate = observation.displayDate;
+	incoming.displayBitrate = observation.displayBitrate;
 	PreparePart(observation, marker, incoming.text, incoming.colors);
 	std::size_t slotIndex = Find(observation, marker.total);
 	if (slotIndex == kNoSlot)
@@ -321,6 +327,13 @@ MultipartResult MultipartReassembler::Complete(std::size_t index)
 	}
 	const Slot& slot = slots_[index];
 	result.totalParts = slot.totalParts;
+	const Part& source = slot.parts[0];
+	result.address = source.address;
+	result.protocol = source.protocol;
+	result.messageType = source.messageType;
+	result.displayTime = source.displayTime;
+	result.displayDate = source.displayDate;
+	result.displayBitrate = source.displayBitrate;
 	for (std::size_t partIndex = 0; partIndex < slot.parts.size(); ++partIndex)
 	{
 		const Part& part = slot.parts[partIndex];

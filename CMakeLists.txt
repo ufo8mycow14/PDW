@@ -308,6 +308,7 @@ set_source_files_properties(
   utils/data_outputs.cpp
   utils/decoded_event.cpp
   utils/flex_fragment_reassembly_core.cpp
+	utils/assembled_message_visibility_core.cpp
   utils/filter_match_core.cpp
   utils/local_dashboard_server.cpp
   utils/local_audio_profile.cpp
@@ -916,6 +917,20 @@ target_compile_definitions(PDWMessageArchiveManagerTests PRIVATE
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	add_test(NAME multipart-message-reassembly COMMAND PDWMultipartMessageReassemblyTests)
+
+	add_executable(PDWAssembledMessageVisibilityTests
+		tests/assembled_message_visibility_core_tests.cpp
+		utils/assembled_message_visibility_core.cpp
+	)
+	target_include_directories(PDWAssembledMessageVisibilityTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWAssembledMessageVisibilityTests PRIVATE
+		/W4 /WX
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME assembled-message-visibility COMMAND PDWAssembledMessageVisibilityTests)
 
 	add_executable(PDWSettingsNavigationTests
 		tests/settings_navigation_tests.cpp

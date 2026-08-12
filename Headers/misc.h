@@ -1,6 +1,8 @@
 #ifndef PDW_MISC_H
 #define PDW_MISC_H
 
+namespace pdw { namespace flex { struct FragmentResult; } }
+
 #define MSG_CAPCODE		1
 #define MSG_TIME		2
 #define MSG_DATE		3
@@ -35,7 +37,7 @@ int  short_nOnes(char k);
 void build_show_line(PaneStruct *pane, char cin, int option);
 void display_line(PaneStruct *pane);
 void display_show_strV2(PaneStruct *pane, char strin[]);
-void ShowAssembledFlexCopy(const unsigned char* text, const BYTE* colors, size_t length);
+void ShowAssembledFlexCopy(const pdw::flex::FragmentResult& result);
 void SuppressCurrentMessage(void);
 void multipart_message_reassembly_reset(void);
 

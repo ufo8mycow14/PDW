@@ -14,10 +14,12 @@ giving each directory rule explicit, independently gated behavior.
   one card per underlying editor, and Email plus push/Windows notifications are
   grouped under Data outputs.
 - When optional FLEX fragment reassembly is enabled, valid fragments are held
-  until one `[Joined FLEX]` event can be displayed, filtered, logged and routed.
+  until one ordinary assembled event can be displayed, filtered, logged and
+  routed without a synthetic joined-message label.
 - Automatically join bounded pager text marked `Part X of Y` for the same
   capcode/protocol/type, including reordered parts, while rejecting ambiguous
-  or conflicting chains instead of guessing.
+  or conflicting chains instead of guessing. Reconstructed repeats of an
+  already visible identical message are discarded across capcodes.
 
 ### Added
 

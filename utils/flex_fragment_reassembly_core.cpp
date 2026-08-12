@@ -129,6 +129,12 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 			replacement.observedAtMs = observation.observedAtMs;
 			replacement.hasStart = true;
 			replacement.nextExpectedFragment = 0;
+			replacement.displayAddress = observation.displayAddress;
+			replacement.displayTime = observation.displayTime;
+			replacement.displayDate = observation.displayDate;
+			replacement.displayMode = observation.displayMode;
+			replacement.displayMessageType = observation.displayMessageType;
+			replacement.displayBitrate = observation.displayBitrate;
 			const Slot::Part start = MakePart(observation);
 			replacement.start = start;
 			Append(replacement, start);
@@ -143,6 +149,12 @@ FragmentResult FragmentReassembler::Observe(const FragmentObservation& observati
 		slot.observedAtMs = observation.observedAtMs;
 		slot.hasStart = true;
 		slot.nextExpectedFragment = 0;
+		slot.displayAddress = observation.displayAddress;
+		slot.displayTime = observation.displayTime;
+		slot.displayDate = observation.displayDate;
+		slot.displayMode = observation.displayMode;
+		slot.displayMessageType = observation.displayMessageType;
+		slot.displayBitrate = observation.displayBitrate;
 		const Slot::Part start = MakePart(observation);
 		slot.start = start;
 		Append(slot, start);
@@ -434,6 +446,12 @@ FragmentResult FragmentReassembler::Complete(std::size_t slotIndex)
 	result.status = FRAGMENT_ASSEMBLED;
 	result.assembled = true;
 	result.truncated = slot.truncated;
+	result.displayAddress = slot.displayAddress;
+	result.displayTime = slot.displayTime;
+	result.displayDate = slot.displayDate;
+	result.displayMode = slot.displayMode;
+	result.displayMessageType = slot.displayMessageType;
+	result.displayBitrate = slot.displayBitrate;
 	result.text.swap(slot.text);
 	result.colors.swap(slot.colors);
 	Clear(slotIndex);

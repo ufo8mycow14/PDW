@@ -560,6 +560,12 @@ void FLEX::showframe(int asa, int vsa)
 					observation.fragmentNumber = static_cast<unsigned int>(iFragmentNumber);
 					observation.continuation = iContinuationFlag != 0;
 					observation.observedAtMs = FlexFragmentNowMs();
+					observation.displayAddress = Current_MSG[MSG_CAPCODE];
+					observation.displayTime = Current_MSG[MSG_TIME];
+					observation.displayDate = Current_MSG[MSG_DATE];
+					observation.displayMode = Current_MSG[MSG_MODE];
+					observation.displayMessageType = Current_MSG[MSG_TYPE];
+					observation.displayBitrate = Current_MSG[MSG_BITRATE];
 					observation.text = message_buffer;
 					observation.colors = reinterpret_cast<const std::uint8_t*>(message_color);
 					observation.length = static_cast<std::size_t>(iMessageIndex);
@@ -791,10 +797,7 @@ void FLEX::showframe(int asa, int vsa)
 				else ShowMessage();
 				if (bFlexAssembledCopyReady)
 				{
-					ShowAssembledFlexCopy(
-						reinterpret_cast<const unsigned char*>(flexFragmentResult.text.data()),
-						flexFragmentResult.colors.empty() ? NULL : &flexFragmentResult.colors[0],
-						flexFragmentResult.text.size());
+					ShowAssembledFlexCopy(flexFragmentResult);
 				}
 			}
 

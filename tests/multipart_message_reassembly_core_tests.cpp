@@ -30,6 +30,9 @@ namespace
 		observation.address = address;
 		observation.protocol = protocol;
 		observation.messageType = type;
+		observation.displayTime = std::to_string(now);
+		observation.displayDate = "test-date";
+		observation.displayBitrate = "1200";
 		observation.observedAtMs = now;
 		observation.text = reinterpret_cast<const unsigned char*>(text.data());
 		observation.colors = colors.empty() ? NULL : &colors[0];
@@ -59,6 +62,8 @@ int main()
 	Expect(result.text == "Road closed Traffic diverted",
 		"part markers are removed and payload follows part order");
 	Expect(result.totalParts == 2, "assembled result reports total parts");
+	Expect(result.address == "1234567" && result.displayTime == "2",
+		"assembled result retains Part 1 identity rather than the completing part");
 	Expect(result.colors.size() == result.text.size(),
 		"assembled text retains aligned display colours");
 
@@ -72,6 +77,8 @@ int main()
 	Expect(result.status == pdw::multipart::MULTIPART_ASSEMBLED,
 		"out-of-order explicit parts assemble when the gap arrives");
 	Expect(result.text == "first second final", "out-of-order payload is ordered");
+	Expect(result.displayTime == "11",
+		"out-of-order assembly still takes visible details from Part 1");
 
 	result = Observe(reassembler, "1111111", "POCSAG", "ALPHA",
 		"Part 1 of 2 hello", 20);

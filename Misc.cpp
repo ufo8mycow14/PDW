@@ -17,8 +17,10 @@
 #include "headers\helper_funcs.h"
 #include "headers\message_router.h"
 #include "utils\binary.h"
+#include "utils\assembled_message_visibility_core.h"
 #include "utils\decoded_event.h"
 #include "utils\filter_match_core.h"
+#include "utils\flex_fragment_reassembly_core.h"
 #include "utils\message_archive.h"
 #include "utils\multipart_message_reassembly_core.h"
 
@@ -108,6 +110,12 @@ unsigned char rev_msg_buffer[MAX_STR_LEN+1];// required for logfile output
 
 int iMessageIndex=0;
 
+static void CopyCurrentMessageField(int field, const std::string& value)
+{
+	strncpy(Current_MSG[field], value.c_str(), MAX_STR_LEN - 1);
+	Current_MSG[field][MAX_STR_LEN - 1] = '\0';
+}
+
 char *dsc_pchar;
 BYTE *dsc_pcolor;
 
@@ -118,6 +126,7 @@ FILE *pBlocked = NULL;						// PH: Used for blocked messages
 static bool g_showingAssembledFlexCopy = false;
 static pdw::multipart::MultipartReassembler g_multipartMessageReassembler(
 	64, 600000, MAX_STR_LEN - 1, 32);
+static pdw::assembled::VisibilityGuard g_assembledMessageVisibility(64, 120000);
 
 static std::uint64_t MultipartMessageNowMs()
 {
@@ -620,7 +629,7 @@ void ShowMessage()
 	bool bMATCH=false, bMONITOR_ONLY=false, bFILTERED=false;
 	const bool bAssembledFlexCopy = g_showingAssembledFlexCopy;
 	bool bAssembledTextMessage = false;
-	bool bShowMessage=true, bFragment=bAssembledFlexCopy, bGroupcode;
+	bool bShowMessage=true, bFragment=false, bGroupcode;
 	bool bNumeric=false;
 	bool bNewFile, bNewLine;					// PH: To indicate if the logfile is new / already exists
 	bool bSeparator[2] = { true, true };		// PH: Set if a separator is needed
@@ -644,11 +653,6 @@ void ShowMessage()
 
 	PaneStruct *pPane;
 
-	if (bAssembledFlexCopy)
-	{
-		strcpy(szFragment, "[Joined FLEX]");
-	}
-
 	if (!iConvertingGroupcall)
 	{
 		message_buffer[iMessageIndex]=0;		// terminate the buffer string
@@ -662,6 +666,9 @@ void ShowMessage()
 		observation.address = Current_MSG[MSG_CAPCODE];
 		observation.protocol = Current_MSG[MSG_MODE];
 		observation.messageType = Current_MSG[MSG_TYPE];
+		observation.displayTime = Current_MSG[MSG_TIME];
+		observation.displayDate = Current_MSG[MSG_DATE];
+		observation.displayBitrate = Current_MSG[MSG_BITRATE];
 		observation.observedAtMs = MultipartMessageNowMs();
 		observation.text = message_buffer;
 		observation.colors = message_color;
@@ -676,6 +683,12 @@ void ShowMessage()
 		}
 		if (multipart.status == pdw::multipart::MULTIPART_ASSEMBLED)
 		{
+			CopyCurrentMessageField(MSG_CAPCODE, multipart.address);
+			CopyCurrentMessageField(MSG_TIME, multipart.displayTime);
+			CopyCurrentMessageField(MSG_DATE, multipart.displayDate);
+			CopyCurrentMessageField(MSG_MODE, multipart.protocol);
+			CopyCurrentMessageField(MSG_TYPE, multipart.messageType);
+			CopyCurrentMessageField(MSG_BITRATE, multipart.displayBitrate);
 			const std::size_t length = (std::min)(multipart.text.size(),
 				static_cast<std::size_t>(MAX_STR_LEN - 1));
 			memset(message_buffer, 0, sizeof(message_buffer));
@@ -815,7 +828,7 @@ void ShowMessage()
 			return;
 		}
 
-		if (Profile.BlockDuplicate && !iConvertingGroupcall && !bAssembledFlexCopy)	// Do we want to block duplicate messages?
+		if (Profile.BlockDuplicate && !iConvertingGroupcall)	// Do we want to block duplicate messages?
 		{
 			bBlock = BlockChecker(Current_MSG[MSG_CAPCODE], strstr(Current_MSG[MSG_MODE], "POCSAG") ? atoi(&Current_MSG[MSG_MODE][7]) : 0, Current_MSG[MSG_MESSAGE], false);
 
@@ -857,6 +870,12 @@ void ShowMessage()
 					}
 				}
 			}
+		}
+		if (g_assembledMessageVisibility.ShouldSuppress(
+			bAssembledFlexCopy || bAssembledTextMessage,
+			Current_MSG[MSG_MESSAGE], Current_MSG[MSG_TYPE], MultipartMessageNowMs()))
+		{
+			return;
 		}
 		if (bTrayed && Profile.SystemTrayRestore)
 		{
@@ -981,17 +1000,10 @@ void ShowMessage()
 					{
 						display_color(pPane, COLOR_INSTRUCTIONS);
 						display_show_strV2(pPane, szFragment);
-						if (bAssembledFlexCopy)
+						display_line(pPane);
+						for (j=iPanePos; j<iItemPositions[MSG_MESSAGE]; j++)
 						{
 							display_show_strV2(pPane, " ");
-						}
-						else
-						{
-							display_line(pPane);
-							for (j=iPanePos; j<iItemPositions[MSG_MESSAGE]; j++)
-							{
-								display_show_strV2(pPane, " ");
-							}
 						}
 					}
 
@@ -1419,8 +1431,12 @@ void ShowMessage()
 } // end of ShowMessage()
 
 
-void ShowAssembledFlexCopy(const unsigned char* text, const BYTE* colors, size_t length)
+void ShowAssembledFlexCopy(const pdw::flex::FragmentResult& result)
 {
+	const unsigned char* text =
+		reinterpret_cast<const unsigned char*>(result.text.data());
+	const BYTE* colors = result.colors.empty() ? NULL : &result.colors[0];
+	size_t length = result.text.size();
 	if (text == NULL || length == 0) return;
 	if (length >= MAX_STR_LEN) length = MAX_STR_LEN - 1;
 
@@ -1450,6 +1466,12 @@ void ShowAssembledFlexCopy(const unsigned char* text, const BYTE* colors, size_t
 	message_buffer[length] = 0;
 	message_color[length] = COLOR_UNUSED;
 	iMessageIndex = static_cast<int>(length);
+	CopyCurrentMessageField(MSG_CAPCODE, result.displayAddress);
+	CopyCurrentMessageField(MSG_TIME, result.displayTime);
+	CopyCurrentMessageField(MSG_DATE, result.displayDate);
+	CopyCurrentMessageField(MSG_MODE, result.displayMode);
+	CopyCurrentMessageField(MSG_TYPE, result.displayMessageType);
+	CopyCurrentMessageField(MSG_BITRATE, result.displayBitrate);
 
 	g_showingAssembledFlexCopy = true;
 	ShowMessage();
@@ -1603,6 +1625,7 @@ void SuppressCurrentMessage(void)
 void multipart_message_reassembly_reset(void)
 {
 	g_multipartMessageReassembler.Reset();
+	g_assembledMessageVisibility.Reset();
 }
 
 

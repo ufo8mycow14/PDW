@@ -14,8 +14,8 @@ Enable it under **Settings > Display and behavior > Screen and columns** with
 When the option is enabled, a valid fragment start or continuation is held in
 the bounded reassembler instead of entering PDW's display, filter, logging,
 email, notification, publishing, or data-output path. When the chain completes,
-one compact message marked **[Joined FLEX]** enters that established path. That
-event is marked `fragmented=true` and `assembled=true` for structured outputs.
+one ordinary message enters that established path without a joined-message
+status label. That event is marked `assembled=true` for structured outputs.
 Standalone FLEX messages and invalid, conflicting, or capacity-rejected
 observations retain the established direct path so PDW never guesses a join.
 
@@ -58,8 +58,11 @@ PDW also recognises explicit message text such as **Part 1 of 2** (case
 insensitive, with optional `#` and brackets). It buffers 2-32 parts for the
 same capcode, protocol, message type, and advertised total, accepts reordered
 parts, removes the markers, and emits one ordinary message when every part is
-present. The display does not add a multipart status label. This applies to
-paging messages independently of the FLEX header option because the sender has
+present. Neither assembly path adds a multipart status label to panes or logs.
+If an identical message and type was already accepted during the preceding two
+minutes, a reconstructed repeat is discarded even when it arrived on another
+capcode. Ordinary repeated traffic is unaffected. This applies to paging
+messages independently of the FLEX header option because the sender has
 explicitly advertised the part sequence.
 
 The text marker does not contain a unique message identifier. PDW therefore

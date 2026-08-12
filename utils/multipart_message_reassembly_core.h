@@ -27,6 +27,9 @@ struct MultipartObservation
 	std::string address;
 	std::string protocol;
 	std::string messageType;
+	std::string displayTime;
+	std::string displayDate;
+	std::string displayBitrate;
 	std::uint64_t observedAtMs;
 	const unsigned char* text;
 	const std::uint8_t* colors;
@@ -42,6 +45,12 @@ struct MultipartResult
 	bool truncated;
 	unsigned int partNumber;
 	unsigned int totalParts;
+	std::string address;
+	std::string protocol;
+	std::string messageType;
+	std::string displayTime;
+	std::string displayDate;
+	std::string displayBitrate;
 	std::string text;
 	std::vector<std::uint8_t> colors;
 
@@ -70,6 +79,12 @@ private:
 		bool present;
 		std::string text;
 		std::vector<std::uint8_t> colors;
+		std::string address;
+		std::string protocol;
+		std::string messageType;
+		std::string displayTime;
+		std::string displayDate;
+		std::string displayBitrate;
 
 		Part();
 	};
