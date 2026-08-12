@@ -17,15 +17,14 @@ for community acceptance evidence, not a claim that untested hardware works.
 The GitHub release and installer documentation must continue to say
 hardware-unverified until representative results are recorded.
 
-## Public Beta 2 rollout decision
+## PDW v5.5.2 release gate
 
-The maintainer explicitly approved the 11 August 2026 unsigned Public Beta 2
-rollout containing the v5.5.1 Capcode filtering and output-routing changes.
+The v5.5.2 release contains the message-handling and display-recovery changes.
 Native dialog automation, dual builds/tests, package/source-tamper checks,
 CodeQL, Defender, and Setup install/upgrade/uninstall validation do not prove
 physical radio, receiver, notification, database, or publishing delivery.
-Beta 2 must remain labelled unsigned and hardware/output-unverified until
-representative content-free evidence is recorded.
+Representative content-free evidence remains required for the applicable
+physical paths.
 
 Testers should report Windows version/build, PDW architecture, receiver/audio
 path, driver or third-party application version, the expected result, the actual

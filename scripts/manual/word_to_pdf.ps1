@@ -19,10 +19,12 @@ try {
     $word.Visible = $false
     $word.DisplayAlerts = 0
     $word.ScreenUpdating = $false
+    $word.AutomationSecurity = 3
+    $word.Options.UpdateLinksAtOpen = $false
     $document = $word.Documents.Open($resolvedInput, $false, $true)
-    foreach ($story in $document.StoryRanges) {
-        try { $story.Fields.Update() | Out-Null } catch { }
-    }
+    # Updating every story field can block indefinitely on embedded link or
+    # compatibility prompts in unattended Word. Export updates page fields;
+    # the manual's linked contents entries do not require external refresh.
     $document.ExportAsFixedFormat($outputPath, 17)
 }
 finally {

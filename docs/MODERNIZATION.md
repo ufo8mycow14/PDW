@@ -7,7 +7,7 @@ boundary at a time.
 
 ## Non-negotiable compatibility boundaries
 
-- Ship one product as `PDW v5.5.1 2026 Release.exe`, with architecture-matched x64
+- Ship one product as `PDW v5.5.2 2026 Release.exe`, with architecture-matched x64
   and Win32 applications inside one guided installer, one settings experience,
   and one consolidated message stream. Retain portable packages; do not create
   separate legacy/enhanced editions or helper services.
@@ -78,7 +78,7 @@ Implemented in 4.1.0 Beta: event-driven WASAPI fallback and recovery, a shared
 normalized sample sink for modern inputs, actual-device smoke coverage, and a
 visually verified Radio and Signal Sources dialog. WinMM remains first choice.
 
-The v5.5.1 candidate retains the explicit clean-install SDR# + VB-Audio Cable
+The v5.5.2 candidate retains the explicit clean-install SDR# + VB-Audio Cable
 (Adelaide FLEX) profile. A friendly name is used only to establish the intended
 Windows endpoint; PDW persists its opaque ID before capture and opens that
 identity through endpoint-specific WASAPI from the start instead of selecting
@@ -157,18 +157,19 @@ idempotency event IDs, rate limiting, pause, bounded retry/backoff, persistent
 queue files, and DeadLetter retention. Optional isolated data-output adapters
 now add MQTT, SQLite, MySQL through Windows ODBC, a loopback-first read-only
 Telnet JSON stream, and native Windows notifications. MQTT remains QoS 0 with
-no retained publish. Optional FLEX K/F/C reassembly is a bounded shadow path:
-legacy non-group alpha fragments are always shown first and a complete strict
-chain can add one marked assembled copy. FLEX Group Mode stays on its legacy
-path; fragment assembly is not required to publish a website or webhook.
+no retained publish. Optional FLEX K/F/C reassembly is bounded and disabled by
+default: a valid complete non-group alpha chain enters the established path as
+one normal message without synthetic helper text. Missing, conflicting,
+timed-out, or capacity-rejected chains do not create a guessed joined message.
+FLEX Group Mode stays on its legacy path; fragment assembly is not required to
+publish a website or webhook. The separately gated Local Gateway Outbox is a
+one-way local SQLite WAL handoff with no network client and cannot block
+decoding.
 
-## Release gate for PDW v5.5.1 2026 Release
+## Release gate for PDW v5.5.2 2026 Release
 
-A stable PDW v5.5.1 2026 Release build requires all of the following; none is
-implied complete merely by preparing the source identity. The maintainer has
-approved Public Beta 2 as an unsigned, hardware-unverified GitHub prerelease so
-community testers can provide the remaining physical evidence. That exception
-does not satisfy or remove any stable-release gate:
+A PDW v5.5.2 2026 Release build requires all of the following; none is implied
+complete merely by preparing the source identity:
 
 1. Successful clean Visual Studio 2026/MSVC v145 x64 and Win32 Release builds.
 2. Startup and shutdown tests on current Windows.

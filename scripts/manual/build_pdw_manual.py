@@ -1140,7 +1140,7 @@ class ManualBuilder:
         self.add_chapter("7. Build filters and alerts", "build-filters-and-alerts")
         self.add_heading("What a filter does", 2)
         self.add_body(
-            "A filter compares an address and/or message text. A normal match can place a record in the filtered pane, add a label, play a WAV, write separate files, increment a hit counter and, when separately enabled, route email or Apprise. Reject filters hide matching records. Monitor Only matches can label or sound without entering the lower pane."
+            "A filter compares an address and/or message text. A normal match can place a record in the filtered pane, add a label, play a WAV, write separate files, increment a hit counter and, when separately enabled, route email or Apprise. Reject rules discard matching messages from both panes and every downstream destination. Monitor Only matches can label or sound without entering the lower pane."
         )
         self.add_figure(
             "05-filter-manager.png",
@@ -1169,7 +1169,7 @@ class ManualBuilder:
         self.add_table(
             ["Field", "Behaviour"],
             [
-                ("Reject", "Prevents matching messages from being displayed or routed as normal filtered output."),
+                ("Reject", "Discards matching messages from both panes, logs, history, notifications and every output."),
                 ("Filter type", "Selects address/message interpretation for the active protocol."),
                 ("Address", "Exact address or ? wildcard pattern, such as 12?????."),
                 ("Text", "Case-insensitive phrase, exact-message rule or up to ten required fragments separated by &."),
@@ -1190,7 +1190,7 @@ class ManualBuilder:
                 ("One POCSAG address plus two words", "POCSAG 1234567 / All", "TRAINING&UNIT 12", "Both fragments must appear in any case."),
                 ("Address range", "POCSAG 12?????", "blank", "Any seven-digit address beginning 12."),
                 ("Exact test phrase", "Text", "TRAINING COMPLETE", "With Match EXACT, longer messages do not match."),
-                ("Suppress known test source", "Appropriate address", "TEST ONLY", "Reject hides matching records."),
+                ("Suppress known test source", "Appropriate address", "TEST ONLY", "Reject discards matching records."),
             ],
             [2400, 2200, 1900, 2860],
             font_size=8.2,
@@ -1670,22 +1670,22 @@ class ManualBuilder:
         self.document.save(self.output)
 
 
-class V551ManualBuilder(ManualBuilder):
-    """Current operator manual for PDW v5.5.1 Public Beta 2."""
+class V552ManualBuilder(ManualBuilder):
+    """Current operator manual for PDW v5.5.2 2026 Release."""
 
     def set_running_header_footer(self, section) -> None:
         header = section.header
         paragraph = header.paragraphs[0]
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         paragraph.paragraph_format.space_after = Pt(0)
-        run = paragraph.add_run("PDW v5.5.1 2026 Release User Manual")
+        run = paragraph.add_run("PDW v5.5.2 2026 Release User Manual")
         set_run_font(run, size=8.5, color=MUTED, bold=True)
 
         footer = section.footer
         paragraph = footer.paragraphs[0]
         paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         paragraph.paragraph_format.space_before = Pt(0)
-        run = paragraph.add_run("PDW v5.5.1  |  Page ")
+        run = paragraph.add_run("PDW v5.5.2  |  Page ")
         set_run_font(run, size=8.5, color=MUTED)
         add_page_field(paragraph)
 
@@ -1733,16 +1733,16 @@ class V551ManualBuilder(ManualBuilder):
     def build_cover(self) -> None:
         self.document.add_paragraph().paragraph_format.space_after = Pt(10)
         self.add_title_line("OPERATOR GUIDE", size=10, color=CYAN, after=13)
-        self.add_title_line("PDW v5.5.1", size=31, color=NAVY, after=2)
+        self.add_title_line("PDW v5.5.2", size=31, color=NAVY, after=2)
         self.add_title_line("Paging Decoder for Windows", size=16, color=DARK_BLUE, bold=False, after=7)
-        self.add_title_line("2026 Release - Public Beta 2", size=12, color=GOLD, after=12)
+        self.add_title_line("2026 Release", size=12, color=GOLD, after=12)
         self.add_figure(
             "01-main-window-v5.png",
             "Content-free PDW v5 command bar and live-input layout.",
             "Dark PDW main window with File, Monitor, Filters, Outputs, View and Help menus; Source, Pause, Record, Filters, Clear and Settings command buttons; a live input meter; monitored and filtered panes; and a status bar. No decoded traffic is shown.",
             width=6.45,
         )
-        self.add_title_line("Edition 2.0  |  11 August 2026  |  Covers PDW v5.5.1 Public Beta 2", size=9.3, color=MUTED, after=4)
+        self.add_title_line("Edition 3.0  |  12 August 2026  |  Covers PDW v5.5.2", size=9.3, color=MUTED, after=4)
         self.add_title_line("Native x64 and Win32 applications for supported Windows 10/11 and Windows Server systems", size=8.8, color=MUTED, bold=False, after=3)
         self.add_title_line("All addresses, messages, accounts, endpoints and credentials in this guide are synthetic or masked.", size=8.4, color=RED, bold=True, after=0)
 
@@ -1755,24 +1755,24 @@ class V551ManualBuilder(ManualBuilder):
             kind="warning",
         )
         self.add_body(
-            "This manual replaces the 2010 PDW v3.1 guide and the interim v4.1 draft. It keeps the established protocol, decoder, filter and logging concepts, but follows the v5.5.1 installer, dual-architecture packages, 2026 command bar, Settings Center, Capcode Directory, message history, secure outputs and named local-audio profile."
+            "This manual replaces the 2010 PDW v3.1 guide and the interim v4.1 draft. It keeps the established protocol, decoder, filter and logging concepts, but follows the v5.5.2 installer, dual-architecture packages, 2026 command bar, Settings Center, Capcode Directory, message history, secure outputs and named local-audio profile."
         )
         self.add_heading("Feature status used in this manual", 2)
         self.add_table(
             ["Status", "Meaning"],
             [
-                ("Public Beta 2", "Included in the published v5.5.1 prerelease. It remains unsigned and is not a signed stable release."),
+                ("Release", "Included in the published, signed PDW v5.5.2 release."),
                 ("Preserved legacy", "Established decoder, serial, slicer, WinMM, filter or display behaviour intentionally retained for compatibility."),
                 ("Optional / off", "Included but disabled until an operator deliberately enables and configures it."),
                 ("Hardware-unverified", "Automated checks pass, but representative physical-device acceptance remains incomplete."),
-                ("Development preview", "Visible in the active 11 August 2026 source worktree, but not part of the published Public Beta 2 contract."),
+                ("Hardware-unverified UI", "Automated checks cover the retained message state, but real sleep, lock, display-off and physical-device acceptance remain open."),
             ],
             [2200, 7160],
             font_size=8.5,
         )
         self.add_heading("Ten-minute first run", 2)
         self.add_steps((
-            "Download the v5.5.1 Public Beta 2 Setup only from the maintained GitHub release and verify its published SHA-256 checksum.",
+            "Download the v5.5.2 Setup only from the maintained GitHub release, verify its published SHA-256 checksum and confirm the trusted publisher.",
             "Run Setup, read the unknown-publisher warning, and choose x64 for normal current Windows use or Win32 only when a legacy 32-bit receiver or integration requires it.",
             "Choose Standard PDW settings. Select the Adelaide FLEX profile only for the documented SDR# and VB-Audio Cable workflow.",
             "Start PDW, open Settings, and choose the intended source under Signal & radio. Use only transmissions you are authorised to receive.",
@@ -1801,15 +1801,15 @@ class V551ManualBuilder(ManualBuilder):
             [1500, 2450, 5410],
             font_size=8.3,
         )
-        self.add_heading("What Public Beta 2 includes", 2)
+        self.add_heading("What v5.5.2 includes", 2)
         self.add_table(
             ["Area", "Included capability", "Default / evidence boundary"],
             [
-                ("Windows", "Guided Setup, portable packages, x64 and Win32, light/dark UI and modeless Settings Center.", "Unsigned beta; full DPI, keyboard, High Contrast and physical-radio matrices remain open."),
+                ("Windows", "Guided Setup, portable packages, x64 and Win32, light/dark UI and modeless Settings Center.", "Full DPI, keyboard, High Contrast and physical-radio matrices require representative acceptance."),
                 ("Signal", "WinMM, exact-endpoint WASAPI, serial/slicer, RTL-TCP, RTL-SDR, WAV/SigMF record and replay.", "Named Adelaide profile is opt-in and hardware-unverified."),
-                ("Local tools", "Capcode Directory, optional SQLite history, CSV export, local dashboard and isolated extra receiver workers.", "History, dashboard and extra channels are off until enabled."),
+                ("Local tools", "Capcode Directory with CSV upsert, optional SQLite history, CSV export, local dashboard, Local Gateway Outbox and isolated extra receiver workers.", "History, dashboard, gateway outbox and extra channels are off until enabled."),
                 ("Routing", "Email, Apprise, FTPS/SFTP, publishing, MQTT, SQLite, MySQL/ODBC, Telnet and Windows notifications.", "Every network/output path is disabled by default and must fail independently from decoding."),
-                ("FLEX", "Optional bounded fragment reassembly adds a marked assembled copy while retaining original fragments.", "Disabled by default; recording-backed live acceptance remains open."),
+                ("FLEX", "Optional bounded fragment reassembly waits for a complete chain and emits one normal joined message.", "Disabled by default; recording-backed live acceptance remains open."),
             ],
             [1500, 4500, 3360],
             font_size=7.8,
@@ -1821,7 +1821,7 @@ class V551ManualBuilder(ManualBuilder):
         )
         self.add_callout(
             "Release status",
-            "Public Beta 2 passed automated x64/Win32 build, test, package, installer and Defender gates. It is intentionally unsigned, and physical SDR, SDR#, VB-CABLE, legacy receiver and complete UI acceptance remain incomplete. Do not describe it as signed, stable or fully hardware-validated.",
+            "PDW v5.5.2 is gated by automated x64/Win32 build, test, package, installer, Defender and trusted-publisher checks. Physical SDR, SDR#, VB-CABLE, legacy receiver and complete UI acceptance remain separate evidence and must not be inferred from automated results.",
             kind="warning",
         )
 
@@ -1843,7 +1843,7 @@ class V551ManualBuilder(ManualBuilder):
         self.add_callout("Architecture", "A 32-bit DLL cannot load into x64 PDW, and a 64-bit DLL cannot load into Win32 PDW. Decoder, filter and configuration behaviour are shared between the builds.", kind="note")
         self.add_heading("Guided Setup", 2)
         self.add_steps((
-            "Verify the downloaded Setup checksum against the value published with Public Beta 2.",
+            "Verify the downloaded Setup checksum against the value published with v5.5.2.",
             "Run Setup and choose the destination folder. The default is under the current user's Local Programs folder.",
             "On 64-bit Windows, choose x64 or Win32 compatibility. Setup selects Win32 automatically on 32-bit Windows.",
             "For a new settings file, choose Standard PDW settings or the optional SDR# + VB-Audio Cable (Adelaide FLEX) profile.",
@@ -1852,7 +1852,7 @@ class V551ManualBuilder(ManualBuilder):
         ))
         self.add_callout(
             "Unknown publisher",
-            "Public Beta 2 is intentionally unsigned. Windows or SmartScreen may identify an unknown publisher. Download only from the maintained release, verify the checksum, and do not bypass the warning for an unverified copy.",
+            "Download only from the maintained release, verify the checksum and confirm that Windows reports the expected trusted publisher. Do not bypass a warning for an unverified copy.",
             kind="warning",
         )
         self.add_heading("Upgrade and uninstall", 2)
@@ -1921,15 +1921,15 @@ class V551ManualBuilder(ManualBuilder):
             width=6.0,
         )
         self.add_body("Settings is modeless: monitoring continues while it is open. Draft changes are retained while moving between pages, and retained legacy editors return to the same page when closed. Opening Settings again focuses the existing window instead of creating a second copy.")
-        self.add_callout("Accessibility", "Use clear message fonts and only the columns you need. Confirm keyboard navigation, High Contrast and 125-200% scaling on the intended computer before relying on the beta in an accessibility-sensitive workflow.", kind="note")
-        self.add_heading("Development preview: consolidated Settings", 2)
+        self.add_callout("Accessibility", "Use clear message fonts and only the columns you need. Confirm keyboard navigation, High Contrast and 125-200% scaling on the intended computer before relying on PDW in an accessibility-sensitive workflow.", kind="note")
+        self.add_heading("Consolidated Settings", 2)
         self.add_figure(
             "03-settings-development-preview.png",
             "11 August 2026 development preview of consolidated Data outputs navigation.",
-            "Dark PDW v5.5.1 Settings development screen with nine navigation pages and Email, Push and Windows notifications, File transfer, Publish to web and Data outputs cards on one Data outputs page.",
+            "Dark PDW v5.5.2 Settings screen with nine navigation pages and Email, Push and Windows notifications, File transfer, Publish to web and Data outputs cards on one Data outputs page.",
             width=6.0,
         )
-        self.add_callout("Development preview", "The active source worktree consolidates duplicate Settings cards and groups email, push/Windows notifications, transfer, publishing and optional data outputs on one page. This screenshot is not a promise that the published Public Beta 2 menu count or wording has changed.", kind="warning")
+        self.add_callout("Current layout", "PDW v5.5.2 consolidates duplicate Settings cards and groups email, push/Windows notifications, transfer, publishing and optional data outputs on one page.", kind="note")
 
     def chapter_signal_source(self) -> None:
         self.add_chapter("4. Choose a signal source", "choose-a-signal-source")
@@ -1966,7 +1966,7 @@ class V551ManualBuilder(ManualBuilder):
         self.add_bullet("The documented profile uses 148.8125 MHz, NFM, Filter Audio off, unmuted audio, FLEX 1600 and the audited decoder/slicer values.")
         self.add_bullet("Existing/portable users may preview Apply Adelaide FLEX. The confirmation defaults to No and creates a verified PDW.INI backup before an approved change.")
         self.add_bullet("The profile does not create, replace or delete Capcode Directory rules, message history, receivers or WAV files.")
-        self.add_callout("Hardware-unverified", "Automated endpoint, fail-closed, profile and installer checks pass, but the exact physical SDR#/VB-CABLE workflow is not maintainer-validated for Public Beta 2. Describe it as configured or operator-reported until representative acceptance is recorded.", kind="warning")
+        self.add_callout("Physical validation", "Automated endpoint, fail-closed, profile and installer checks do not prove the exact physical SDR#/VB-CABLE workflow. Describe a setup as configured or operator-reported until representative acceptance is recorded.", kind="warning")
         self.add_heading("RTL-TCP and direct RTL-SDR", 2)
         self.add_figure(
             "04-radio-and-replay.png",
@@ -2001,17 +2001,17 @@ class V551ManualBuilder(ManualBuilder):
         self.add_body("Enhanced IQ filtering and resampling applies only to RTL input. It uses a 60 dB windowed-sinc channel filter and anti-alias resampling before the existing decoder boundary. It is disabled by default; with it off, the established one-pole/averaging path remains. Compare the same lawful diagnostic recording before retaining the option.")
         self.add_heading("Duplicate and message boundaries", 2)
         self.add_body("Duplicate blocking, reject rules and protocol-specific display rules remain ahead of external output delivery. Optional output adapters receive an immutable event copy and cannot change the decoder, display or original filter result.")
-        self.add_heading("Public Beta 2 FLEX fragment assistance", 2)
-        self.add_body("Public Beta 2 can optionally assemble a complete non-group FLEX alpha/secure fragment chain. The feature is disabled by default. Original fragments continue through the established path, and one additional compact message marked [Joined FLEX] is emitted only after a bounded valid chain completes. Missing, conflicting, timed-out or capacity-rejected observations do not create a guessed joined message. FLEX Group Mode remains on its legacy path.")
+        self.add_heading("Multipart assistance", 2)
+        self.add_body("When the option is enabled, PDW v5.5.2 holds valid non-group FLEX alpha/secure fragments and bounded explicit Part X of Y text until one complete message is available. The joined result enters the normal message path without a synthetic joined-message banner. Missing, conflicting, timed-out or capacity-rejected observations do not create a guessed joined message. FLEX Group Mode remains on its legacy path.")
         self.add_callout("Live evidence", "Automated fragment-order, replay, timeout, capacity and identity tests do not replace recording-backed live acceptance. Use only synthetic, redacted or licensed recordings.", kind="warning")
-        self.add_heading("Development preview: joined-only and Part X of Y", 2)
+        self.add_heading("Joined-only FLEX and Part X of Y", 2)
         self.add_figure(
             "05-screen-options-preview.png",
-            "Development preview of the joined-only FLEX screen option.",
+            "Joined-only FLEX screen option.",
             "Dark Screen Options dialog with seven column selectors, FLEX Group Mode controls and a Wait for complete split FLEX alpha or secure message option.",
             width=4.6,
         )
-        self.add_body("The 11 August 2026 worktree changes the enabled FLEX option to hold valid fragments until one joined event enters display, filtering, logging and routing. It also recognises bounded explicit text markers such as Part 1 of 2 and can join 2-32 parts for one visible identity. These changes are development preview, not Public Beta 2 behaviour, and remain subject to build, test, package and recording-backed acceptance.")
+        self.add_body("The enabled FLEX option holds valid fragments until one joined event enters display, filtering, logging and routing. It also recognises bounded explicit text markers such as Part 1 of 2 and can join 2-32 parts for one visible identity. Recording-backed acceptance remains open.")
 
     def chapter_messages(self) -> None:
         self.add_chapter("6. Understand decoded messages", "understand-decoded-messages")
@@ -2057,7 +2057,7 @@ class V551ManualBuilder(ManualBuilder):
             ["Decision", "Control", "Effect"],
             [
                 ("Display", "Display name, agency placement, colour", "Adds operator-maintained context while retaining the raw capcode."),
-                ("Pane", "Filter, Monitor Only or Reject", "Sends a match to the lower pane, keeps it in the upper pane, or suppresses it."),
+                ("Pane", "Filter, Monitor Only or Reject", "Sends a match to the lower pane, keeps it in the upper pane, or discards it completely."),
                 ("Delivery", "Send to enabled outputs plus named destinations", "Routes only to destinations that are also enabled/configured in Settings."),
             ],
             [1700, 3000, 4660],
@@ -2136,7 +2136,7 @@ class V551ManualBuilder(ManualBuilder):
             "Apprise dialog with Enable Apprise, masked API URL, username, password and destination fields; decoded text is not selected.",
             width=5.7,
         )
-        self.add_body("PDW connects to an operator-managed HTTPS Apprise API. Public Beta 2 sends only messages selected by the established filtered/output routing boundary. Monitor Only, rejected, duplicate and unselected messages are not pushed. Delivery uses a bounded background queue so an unavailable phone service does not block decoding.")
+        self.add_body("PDW connects to an operator-managed HTTPS Apprise API. PDW v5.5.2 sends only messages selected by the established filtered/output routing boundary. Monitor Only, rejected, duplicate and unselected messages are not pushed. Delivery uses a bounded background queue so an unavailable phone service does not block decoding.")
         self.add_bullet("Use HTTPS and authentication; do not expose an unauthenticated Apprise API to an untrusted network.")
         self.add_bullet("Keep decoded text off unless lock-screen exposure has been specifically approved.")
         self.add_bullet("Use Send test notification before Enable Apprise. Testing must use synthetic content.")
@@ -2207,7 +2207,7 @@ class V551ManualBuilder(ManualBuilder):
             width=6.0,
         )
         self.add_heading("Privacy-aware optional adapters", 2)
-        self.add_body("Optional adapters receive an immutable copy after PDW's established filtering and deduplication boundary. The output group and each adapter are disabled by default. Enabling the group requires an operator acknowledgement; filtered-only delivery, address masking and message omission are the privacy-safe defaults.")
+        self.add_body("Optional routed adapters receive an immutable copy after PDW's established filtering and deduplication boundary. The output group and each adapter are disabled by default. Enabling the group requires an operator acknowledgement; filtered-only delivery, address masking and message omission are the privacy-safe defaults.")
         self.add_table(
             ["Adapter", "Use", "Important boundary"],
             [
@@ -2224,6 +2224,14 @@ class V551ManualBuilder(ManualBuilder):
         self.add_body("A live message reaches an adapter only when the matching directory rule selects that destination and Settings has both the output group and adapter enabled/configured. Legacy non-directory-backed rules retain their documented compatibility behaviour. Configuration tests use synthetic events; SQLite/MySQL tests may deliberately write one identified test row.")
         self.add_heading("Queue and failure isolation", 2)
         self.add_body("Each adapter runs on a bounded worker queue of 500 events. An adapter error is recorded for health reporting and never blocks decoding or prevents another selected adapter from receiving its copy.")
+        self.add_heading("Local Gateway Outbox", 2)
+        self.add_body("Local Gateway Outbox is a separate one-way local handoff for an independently operated gateway. When explicitly enabled, an isolated bounded worker appends decoder-finalized canonical events to a versioned SQLite WAL database. It contains no Firebase, Google Cloud, webhook or other network client, and a queue, database, retention or disk failure never stops decoding.")
+        self.add_bullet("The authoritative feed is independent of per-Capcode destination routing. Filter, rejected, duplicate, group-call, fragment and reconstructed states are recorded as metadata.")
+        self.add_bullet("Each event has a stable event ID, strictly increasing receiver sequence, receiver ID, decoder-finalized UTC timestamp and method, frequency provenance, protocol metadata, content hash, PDW version and synthetic flag.")
+        self.add_bullet("A gateway reader opens the database read-only, follows receiver sequence order and stores its checkpoint separately. Cloud acknowledgement never controls PDW retention.")
+        self.add_bullet("The dialog reports sequence gaps/drops, write failures, queue high-water mark, last committed sequence, oldest retained record, size/retention state and disk warnings.")
+        self.add_bullet("Generate synthetic gateway event bypasses the decoder and writes only fixed invented POCSAG or FLEX values with synthetic=true. It cannot contact a network or invoke another output.")
+        self.add_callout("Two SQLite stores", "Message History and the routed SQLite output remain separate optional features. Enabling either one does not enable the Local Gateway Outbox, and enabling the outbox does not enable them.", kind="note")
         self.add_heading("Delivery Health", 2)
         self.add_body("Outputs > Delivery Health shows per-destination enabled state, successes, failures, drops, consecutive failures, last outcome and bounded recent operational history. Alerts may flash the taskbar or play a warning after a configured threshold without stealing focus.")
         self.add_callout("Content-free health", "Delivery Health stores destination names, timestamps, counters and sanitized summaries only. It never stores capcodes or decoded message text and cannot alter routing, retry, capture or decoding.", kind="success")
@@ -2264,7 +2272,7 @@ class V551ManualBuilder(ManualBuilder):
                 ("No external delivery", "Confirm both the rule destination and Settings destination/group are enabled, configured and passing a synthetic test."),
                 ("History CSV seems short", "Check Search, Protocol and Filtered controls; blank Message means text was not retained."),
                 ("Queue grows", "Pause exposure if needed, correct the destination, review Delivery Health/dead letter, then retest with synthetic data."),
-                ("Settings layout clips", "Record exact beta, architecture, Windows build, DPI, theme and content-free screenshot; do not attach operator configuration."),
+                ("Settings layout clips", "Record exact release, architecture, Windows build, DPI, theme and content-free screenshot; do not attach operator configuration."),
             ],
             [2500, 6860],
             font_size=7.8,
@@ -2276,7 +2284,7 @@ class V551ManualBuilder(ManualBuilder):
             "Exercise one known matching and one non-matching event through display, history and local outputs.",
             "Use disposable external test destinations and keep message text omitted.",
             "Confirm wrong TLS, authentication and SFTP host-key conditions fail closed.",
-            "Record the exact beta, architecture and Windows environment without endpoint IDs, credentials or private traffic.",
+            "Record the exact release, architecture and Windows environment without endpoint IDs, credentials or private traffic.",
             "Remove disposable credentials, exports and test rows after acceptance.",
         ))
 
@@ -2303,7 +2311,7 @@ class V551ManualBuilder(ManualBuilder):
                 ("Message history", "Disabled; storing message text separately disabled."),
                 ("Local dashboard", "Disabled; loopback-only when enabled."),
                 ("Guarded extra channels", "Disabled; each slot must be enabled and started."),
-                ("FLEX fragment assembly", "Disabled in Public Beta 2."),
+                ("FLEX fragment assembly", "Disabled by default in PDW v5.5.2."),
                 ("Enhanced RTL IQ filtering", "Disabled; established RTL signal path retained."),
                 ("Adelaide FLEX profile", "Standard settings remain the default; named profile is explicit and reversible."),
             ],
@@ -2314,7 +2322,7 @@ class V551ManualBuilder(ManualBuilder):
         self.add_table(
             ["Item", "Reference"],
             [
-                ("Executable", "PDW v5.5.1 2026 Release.exe"),
+                ("Executable", "PDW v5.5.2 2026 Release.exe"),
                 ("x64 role", "Current Windows and matching x64 libraries; RTL-TCP is architecture-neutral."),
                 ("Win32 role", "Bundled x86 RTL-SDR and legacy 32-bit integrations."),
                 ("Configuration", "PDW.INI beside the executable."),
@@ -2337,22 +2345,22 @@ class V551ManualBuilder(ManualBuilder):
                 ("SigMF", "Signal Metadata Format used here for real float32 diagnostic samples plus metadata."),
                 ("FTPS / SFTP", "TLS-protected FTP / SSH File Transfer Protocol; they use different verification models."),
                 ("Dead letter", "Repeatedly failed queued delivery retained for authorised operator review."),
-                ("Development preview", "Current source work that is not yet part of the published beta contract."),
+                ("Hardware-unverified", "Automated validation passes while representative physical-device acceptance remains open."),
             ],
             [2400, 6960],
             font_size=8.0,
         )
         self.add_heading("Credits and licence", 2)
         self.add_body("PDW retains credits to Jason Petty, Peter Hunt, the 2013 open-source release and later contributors, including the current modernization work credited by the application. The application and source identify GNU General Public License version 3 or later. Review the supplied License and THIRD_PARTY_NOTICES.md for complete terms and component notices.")
-        self.add_callout("Manual maintenance", "This edition targets the immutable v5.5.1 Public Beta 2 release and separately identifies 11 August 2026 development previews. Re-check version, menus, security guidance, third-party service requirements and hardware acceptance before packaging it with a later beta or stable release.", kind="note")
+        self.add_callout("Manual maintenance", "This edition targets the immutable v5.5.2 release. Re-check version, menus, security guidance, third-party service requirements and hardware acceptance before packaging a later release.", kind="note")
 
     def set_core_properties(self) -> None:
         properties = self.document.core_properties
-        properties.title = "PDW v5.5.1 2026 Release User Manual"
-        properties.subject = "Operator guide for PDW Paging Decoder for Windows - Public Beta 2"
+        properties.title = "PDW v5.5.2 2026 Release User Manual"
+        properties.subject = "Operator guide for PDW Paging Decoder for Windows - v5.5.2 2026 Release"
         properties.author = "PDW Community Project"
         properties.last_modified_by = "PDW Community Project"
-        edition_timestamp = datetime(2026, 8, 11, 13, 0, 0, tzinfo=timezone.utc)
+        edition_timestamp = datetime(2026, 8, 12, 13, 0, 0, tzinfo=timezone.utc)
         properties.created = edition_timestamp
         properties.modified = edition_timestamp
         properties.keywords = "PDW, POCSAG, FLEX, ACARS, MOBITEX, ERMES, RTL-SDR, Apprise, Capcode Directory"
@@ -2360,10 +2368,10 @@ class V551ManualBuilder(ManualBuilder):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build the PDW v5.5.1 illustrated user manual.")
+    parser = argparse.ArgumentParser(description="Build the PDW v5.5.2 illustrated user manual.")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    builder = V551ManualBuilder(args.output.resolve())
+    builder = V552ManualBuilder(args.output.resolve())
     builder.build()
     builder.save()
     print(f"Wrote {builder.output}")

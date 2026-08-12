@@ -1,6 +1,6 @@
 # Dependency and security review
 
-Reviewed: 11 August 2026
+Reviewed: 12 August 2026
 
 This record must be refreshed from official upstream release and security
 pages before each PDW release. A newer version is not adopted until it passes
@@ -12,8 +12,8 @@ the complete Win32 and x64 gates and preserves legacy support.
 | curl/libcurl | 8.21.0 | Current published curl release; the next release is listed as pending | Retain 8.21.0 and its verified source hash |
 | libssh2 | 1.11.1 | Newest archive on the official download index | Retain 1.11.1 and its verified source hash |
 | Windows SQLite | Operating-system component | Uses the supported Windows `winsqlite3` API; no bundled SQLite DLL | Retain the platform binding; require fully patched Windows and fail closed when archive connection protections are unavailable |
-| MySQL | Operator-installed ODBC driver | Current Connector/ODBC GA is 26.7.0 and the official Windows download is x64; PDW does not bundle a driver or server | Keep DSN-based integration; require a supported architecture-matched driver and separately validate x86 |
-| Inno Setup | 6.7.3 | Latest 6.x compiler; Inno Setup 7.0.2 is also available | Retain 6.7.3 for v5.5.1 so a compiler-major migration does not overlap the Capcode-routing and upgrade change; evaluate 7 separately through full dual installer gates |
+| MySQL | Operator-installed ODBC driver | Connector/ODBC 9.7 is the released line reviewed for this release; 26.7.0 is documented but not yet released; PDW does not bundle a driver or server | Keep DSN-based integration; require a supported, fully patched, architecture-matched driver and separately validate x86 |
+| Inno Setup | 6.7.3 | Latest 6.x compiler; Inno Setup 7.0.2 is also available | Retain 6.7.3 for v5.5.2 so a compiler-major migration does not overlap the message-handling and display-recovery change; evaluate 7 separately through full dual installer gates |
 | Visual Studio / MSVC | Visual Studio 2026 / v145 | Current maintained Windows release toolchain; v145 targets Windows 10/Server 2016 and newer | Build and test both architectures on the explicit VS 2026 runner; distribute only the reviewed architecture-matched app-local Microsoft Visual C++ runtime DLLs; record the exact compiler, generator and CMake version in each dependency lock |
 | SDR# | Production revision 1921 | External Windows SDR application used only by the named local-audio profile; the official x86/x64 revision 1922 downloads are labelled beta | Record 1921 as the reviewed stable integration target; operator installs, configures, updates, and supports it; PDW does not bundle or control it |
 | VB-CABLE | Package 45 | External VB-Audio virtual driver for Windows 32/64/Arm64; published October 2024 | Operator installs and licenses it directly; PDW does not bundle the driver and uses only the selected Windows recording endpoint |
@@ -23,11 +23,12 @@ Oracle's January 2026 Critical Patch Update lists CVE-2025-9230 for those
 versions. Operators must use an actively supported, matching-bitness driver
 and apply current Oracle CPU updates.
 
-Oracle's July 2026 Critical Patch Update also lists MySQL Connectors 9.7.0
-through 9.7.1 as affected. The official Connector/ODBC page currently
-recommends GA 26.7.0. PDW does not install an ODBC driver; operators must use a
-currently supported, fully patched, architecture-matched release and repeat
-the vendor-advisory review rather than relying on these historical ranges.
+Oracle's July 2026 Critical Patch Update also lists affected MySQL Connector
+versions in the 9.7 line. Connector/ODBC 26.7.0 appears in the official release
+notes as not yet released and must not be treated as an available GA update.
+PDW does not install an ODBC driver; operators must use a currently supported,
+fully patched, architecture-matched release and repeat the vendor-advisory
+review rather than relying on these historical ranges.
 
 Official review sources:
 
@@ -154,6 +155,20 @@ remain the external integration references. Capcode filtering, routing, label,
 and migration changes add no third-party native/runtime dependency and reuse
 existing Windows, SQLite, and project code. Repository pins and security
 decisions therefore remain unchanged for v5.5.1.
+
+The 12 August 2026 v5.5.2 release refresh again checked the official
+OpenSSL, curl, libssh2, Inno Setup, MySQL Connector/ODBC, SDR#, and VB-CABLE
+release and security pages. OpenSSL 3.5.7 remains the supported 3.5 LTS
+release through 8 April 2030; curl 8.21.0 remains the current published
+release with zero listed vulnerabilities; libssh2 1.11.1 remains the newest
+official archive; Inno Setup 6.7.3 remains the latest 6.x compiler while 7.0.2
+is a separate major-version migration; Connector/ODBC 9.7 is the released line
+reviewed while 26.7.0 remains unreleased; and the external profile references
+remain SDR# production revision 1921 and VB-CABLE Package 45. Rejected-message
+discarding, multipart presentation, pane repainting, Capcode CSV upsert, and
+the Local Gateway Outbox add no bundled third-party native or runtime
+dependency; the outbox uses the existing Windows `winsqlite3` binding.
+Repository pins and security decisions therefore remain unchanged for v5.5.2.
 
 The v5.5 distribution makes PDW's existing `/MD` compiler-runtime dependency
 explicit by placing the architecture-matched Microsoft Visual C++ runtime DLLs
