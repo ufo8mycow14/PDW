@@ -379,7 +379,8 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
         "PDW v5.2 2026 Release.exe",
         "PDW v5.3 2026 Release.exe",
         "PDW v5.4 2026 Release.exe",
-        "PDW v5.5 2026 Release.exe"
+        "PDW v5.5 2026 Release.exe",
+        "PDW v5.5.1 2026 Release.exe"
     ) | ForEach-Object { Join-Path $standardDirectory $_ }
     foreach ($predecessorExecutable in $predecessorExecutables) {
         Set-Content -LiteralPath $predecessorExecutable -Value "synthetic predecessor executable" -Encoding Ascii

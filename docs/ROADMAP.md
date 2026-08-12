@@ -1,6 +1,6 @@
 # PDW product roadmap
 
-Updated: 11 August 2026
+Updated: 12 August 2026
 
 This is the concise delivery roadmap. `MODERNIZATION.md` contains the detailed
 technical strategy, while the root `HANDOVER.md` records exact repository,
@@ -16,7 +16,7 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 
 | Area | Current state | Next gate |
 | --- | --- | --- |
-| Win32 build | Public Beta 2 passes the explicit Visual Studio 2026/MSVC v145 Win32 clean build, 31-test suite, device-smoke compilation, package/source-tamper gates and exact-head CI | Collect physical legacy receiver/slicer feedback without weakening Win32 compatibility |
+| Win32 build | v5.5.2 passes the explicit Visual Studio 2026/MSVC v145 Win32 clean build, 35-test suite, device-smoke compilation, package/source-tamper gates and exact-head CI | Collect physical legacy receiver/slicer feedback without weakening Win32 compatibility |
 | Windows interface | Approved 2026 command bar, live meter, modeless 9-page Settings Center, encrypted configuration backup/restore, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
 | Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
 | Windows audio | WinMM and WASAPI remain available; Public Beta 2 retains stable endpoint IDs and endpoint-specific WASAPI capture for an explicit SDR#/VB-CABLE profile, with automated fail-closed coverage | Physical device-loss, hot-plug and broader device-matrix beta acceptance |
@@ -30,14 +30,14 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Settings compatibility | Unknown INI keys, sections, comments, BOM, and line endings preserved at `98ff7ad` | Extend round-trip fixtures with future settings |
 | Pager fragments | Non-group FLEX K/F/C and explicit `Part X of Y` text reassembly are bounded, replay-safe, and emit one joined message; FLEX header joining remains opt-in and Group Mode remains legacy | Recording-backed live acceptance |
 | Repository hygiene | File-by-file x64/Win32 audit complete; obsolete VC6/VS2017 state, caches, duplicate archive, and unused code/assets removed; CMake is authoritative | Enforce `scripts/audit-release.ps1` and repeat the review when adding native dependencies or release-only assets |
-| Local operations | Capcode Directory, independent lower-panel filtering, explicit multi-output routing, optional bounded history, loopback-only dashboard, spectrum/waterfall, isolated multi-channel workers, and optional RTL conditioning are implemented | Complete signed-in operator UI and physical multi-receiver/output acceptance without changing decoder behavior |
+| Local operations | Capcode Directory with CSV upsert/deduplication, independent lower-panel filtering, explicit multi-output routing, optional bounded history, loopback-only dashboard, one-way Local Gateway Outbox, spectrum/waterfall, isolated multi-channel workers, and optional RTL conditioning are implemented | Complete operator UI and physical multi-receiver/output acceptance without changing decoder behavior |
 | Named local-input profile | Public Beta 2 retains the explicit clean-install Adelaide FLEX profile, stable exact endpoint identity, fail-closed capture, default-No verified-backup apply action and passing automated installer/profile smoke; SDR# and VB-CABLE remain external | Collect licensed physical-workflow and dual native-UI feedback without changing operator data |
-| Release packaging | One combined `PDW-v5.5.1-2026-Release-Setup.exe` passes provenance, profile selection, predecessor cleanup, Defender and the Win32/x64 install/upgrade/uninstall matrix | Publish as an explicitly unsigned GitHub prerelease; add trusted Authenticode signing and post-sign validation before stable |
-| x64 | Public Beta 2 passes the Visual Studio 2026 x64 clean build, 31-test suite, device-smoke compilation, package/source-tamper gates, combined Setup and exact-head CI | Collect physical receiver and broader Windows UI acceptance while keeping Win32 available |
+| Release packaging | One combined `PDW-v5.5.2-2026-Release-Setup.exe` is gated by provenance, profile selection, predecessor cleanup, Defender, trusted signing and the Win32/x64 install/upgrade/uninstall matrix | Publish the normal GitHub release only after every gate passes |
+| x64 | PDW v5.5.2 is gated by the Visual Studio 2026 x64 clean build, complete test suite, device-smoke compilation, package/source-tamper gates, combined Setup and exact-head CI | Collect physical receiver and broader Windows UI acceptance while keeping Win32 available |
 
 ## Safe integration sequence
 
-The v5.5.1 beta release state is maintained on fork `master`. The approved
+The v5.5.2 release state is maintained on fork `master`. The approved
 interface, defaults, and legacy behavior remain authoritative. The `spiral` remote is
 fetch-only; work is selectively adopted and independently tested rather than
 wholesale merged.
@@ -61,6 +61,7 @@ wholesale merged.
 | 15 | PDW v5.4 FLEX fragment joining and wide message layout | Extended from its original shadow path to wait for a valid complete chain, emit one joined event, and support bounded explicit `Part X of Y` sender text; recording-backed acceptance remains a gate |
 | 16 | PDW v5.5 explicit SDR# + VB-Audio Cable Adelaide FLEX profile and endpoint-specific WASAPI capture | Public Beta 1 approved: dual builds/tests, Setup/profile/upgrade/uninstall, packages, CI/CodeQL and Defender pass; trusted signing, full native UI and physical SDR#/VB-CABLE acceptance remain open and clearly labelled |
 | 17 | PDW v5.5.1 independent Capcode filtering and explicit multi-output routing | Public Beta 2 approved: legacy-safe migration, specific-first matching, dual builds/tests, native Capcode dialog smoke, packages, Setup/upgrade/uninstall, CI/CodeQL and Defender pass; trusted signing and physical output/device acceptance remain open and clearly labelled |
+| 18 | PDW v5.5.2 rejected-message discard, multipart presentation, idle-return repaint, Capcode CSV upsert, and Local Gateway Outbox | Feature work and focused dual-architecture regressions pass; exact release-candidate CI, packages, Setup/upgrade/uninstall, Defender, trusted signing and physical/UI acceptance remain publication gates |
 
 Delivery Health stores no pager addresses or decoded text and cannot alter a
 delivery result. FLEX shadow assembly cannot suppress a legacy fragment on
@@ -214,20 +215,15 @@ Priority: current release
 - Require Authenticode signing and a clean Microsoft Defender scan before the
   installer is promoted as the public stable release.
 
-Current evidence: Inno Setup builds the single v5.5.1 installer; isolated x64 and
+Current evidence: Inno Setup builds the single v5.5.2 installer; isolated x64 and
 Win32 install, settings co-location, upgrade-preservation and
 uninstall-preservation smoke pass. The application and installer scan clean
-with Microsoft Defender. The maintainer has approved an unsigned GitHub
-prerelease so community testers can complete physical acceptance; lack of a
-trusted publisher certificate still blocks stable promotion.
+with Microsoft Defender. Trusted signing and post-sign validation remain
+mandatory before publication.
 
 ## Release gates
 
-Every stable release requires all gates below. An explicitly maintainer-approved
-beta may publish while physical input, complete visual-matrix and Authenticode
-gates remain open only when it is marked prerelease, the omissions and
-unknown-publisher warning are prominent, a checksum is supplied, and safe
-community feedback is requested:
+Every release requires all gates below:
 
 1. Clean x64 and Win32 Release builds and all automated tests passing.
 2. Startup, shutdown, configuration round-trip, and Windows auto-start checks.

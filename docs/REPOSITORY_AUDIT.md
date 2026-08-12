@@ -103,7 +103,7 @@ x64/Win32 source, pinned dependencies, test targets, or executable name.
 ## Predecessor validation evidence
 
 The results below belong to the merged v5.4 baseline and earlier releases.
-They remain useful regression evidence but do not prove the v5.5.1 candidate:
+They remain useful regression evidence but do not prove the v5.5.2 candidate:
 
 - Fresh Visual Studio 2026 Build Tools 18.8.2, MSVC 19.51.36252/v145, and
   CMake Release builds completed from new build directories for Win32 and x64.
@@ -144,14 +144,18 @@ They remain useful regression evidence but do not prove the v5.5.1 candidate:
 - Trusted Authenticode signing remains mandatory before the installer is
   promoted as the public stable release.
 
-## PDW v5.5.1 validation state
+## PDW v5.5.2 validation state
 
-The v5.5.1 source identity is **PDW v5.5.1 2026 Release**, product version
-`5.5.1 2026 Release`, file/manifest version `5.5.1.0`, and maintained branch
-`master`. Public Beta 2 retains the explicit clean-install Adelaide FLEX
-profile and adds independent lower-panel filtering plus explicit per-Capcode
-multi-output routing with legacy-safe migration.
-The maintained v5.5.1 release build uses Visual Studio 2026/MSVC v145 on the
+The v5.5.2 source identity is **PDW v5.5.2 2026 Release**, product version
+`5.5.2 2026 Release`, file/manifest version `5.5.2.0`, and maintained branch
+`master`. The v5.5.2 release retains the Public Beta 2 Adelaide FLEX and Capcode
+Directory behavior while hard-discarding rejected messages, removing the
+synthetic joined-message banner, and repainting retained panes after idle
+return, display or DPI changes, and power resume. Capcode CSV import upserts by
+address and collapses duplicates. The optional Local Gateway Outbox is a
+disabled-by-default, one-way SQLite WAL handoff with no cloud/network client
+and an independently failing bounded writer.
+The maintained v5.5.2 release build uses Visual Studio 2026/MSVC v145 on the
 explicit `windows-2025-vs2026` runner for both x64 and Win32. Dependency locks
 bind the exact compiler, CMake generator/version, toolset and resolver recipe;
 Visual Studio 2022 remains a local rollback path only.
@@ -166,13 +170,10 @@ SDR# and VB-CABLE are external/operator-installed and are not repository or
 package dependencies. The profile does not create, import, replace, or modify
 Capcode Directory entries or `filters.ini`.
 
-The exact-head v5.5.1 automated release gate passes: clean Win32 and x64 builds,
-31 tests per architecture, optional device-smoke compilation,
+The exact-head v5.5.2 automated release gate requires clean Win32 and x64 builds,
+the complete tests per architecture, optional device-smoke compilation,
 stable-identity/endpoint-specific-WASAPI and explicit-apply regression tests,
 independent portable/source-tamper audits, guided
 installer/profile/upgrade/uninstall smoke, Defender, CI/CodeQL and clean-tree
-review. The maintainer explicitly approved Public Beta 2 without trusted
-Authenticode signing or physical SDR#/VB-CABLE/output acceptance. The GitHub release
-must therefore remain an unsigned prerelease with a checksum and hardware-
-unverified warning. Full native UI/device matrices, physical workflow evidence,
-trusted signing and post-signing validation remain required before stable.
+review. Normal GitHub release publication requires trusted Authenticode
+signing, post-sign validation and the required acceptance evidence.

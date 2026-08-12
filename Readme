@@ -6,8 +6,8 @@
 
 A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
-![Version](https://img.shields.io/badge/version-v5.5.1%202026%20Release-2E74B5)
-![Status](https://img.shields.io/badge/status-public%20beta%202%20%28unsigned%29-F0A000)
+![Version](https://img.shields.io/badge/version-v5.5.2%202026%20Release-2E74B5)
+![Status](https://img.shields.io/badge/status-release-2E8B57)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
 ![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20Win32-555555)
 ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
@@ -68,9 +68,9 @@ Configuration and decoder behaviour are shared between the builds. Native DLLs m
 
 ## Install on Windows
 
-**PDW v5.5.1 2026 Release - Public Beta 2** is available from
-[GitHub Releases](https://github.com/ufo8mycow14/PDW/releases/tag/v5.5.1-beta.2)
-as one **PDW-v5.5.1-2026-Release-Setup.exe**. The guided Setup contains both
+**PDW v5.5.2 2026 Release** is available from
+[GitHub Releases](https://github.com/ufo8mycow14/PDW/releases/tag/v5.5.2)
+as one **PDW-v5.5.2-2026-Release-Setup.exe**. The guided Setup contains both
 architectures, keeps the executable, `PDW.INI`, Capcode Directory database, any
 existing legacy `filters.ini` recovery file, receivers, WAV files and logs
 together in one PDW folder, creates normal Windows shortcuts, preserves
@@ -79,16 +79,15 @@ uninstall. Use **Settings > General
 > Backup / Restore** to move configuration from another PDW copy.
 
 > [!WARNING]
-> Public Beta 2 is intentionally unsigned. Windows or SmartScreen may identify
-> the publisher as unknown. Download it only from this repository, verify the
-> published SHA-256 checksum, and do not treat it as a signed stable release.
+> Download only from this repository, verify the published SHA-256 checksum,
+> and confirm that Windows reports the expected trusted publisher before use.
 
 > [!NOTE]
 > Automated x64/Win32 builds, tests, package checks, Defender scanning and the
 > complete installer matrix pass. Physical SDR, SDR# and VB-CABLE combinations
-> are not yet validated by the maintainer. Beta testers are invited to report
+> are not yet validated by the maintainer. Users are invited to report
 > content-free results through
-> [the beta feedback form](https://github.com/ufo8mycow14/PDW/issues/new?template=pdw-v5.5-beta-feedback.yml); never attach private
+> [the feedback form](https://github.com/ufo8mycow14/PDW/issues/new?template=pdw-v5.5.2-feedback.yml); never attach private
 > pager traffic, recordings, credentials, endpoint IDs or operator settings.
 
 Setup enforces Windows build 10586 as the technical API floor. Production use
@@ -97,7 +96,7 @@ servicing (including applicable ESU or LTSC servicing), or a serviced Windows
 Server 2016-or-newer release. The Visual Studio 2026/MSVC v145 build and Windows
 SQLite binding no longer support Windows 7/8/8.1.
 
-On a clean install, the beta Setup offers **Standard PDW
+On a clean install, Setup offers **Standard PDW
 settings** or the named
 **SDR# + VB-Audio Cable (Adelaide FLEX)** input profile. The profile resolves
 `CABLE Output (VB-Audio Virtual Cable)` to its stable Windows endpoint identity
@@ -270,13 +269,13 @@ Delivery Health never stores pager addresses or decoded message text.
 
 ### FLEX Fragment Reassembly
 
-PDW can optionally add one clearly marked assembled copy after receiving a complete FLEX alpha-fragment chain.
+PDW can optionally hold a bounded FLEX alpha-fragment chain until it can emit
+one complete message through the normal message path.
 
-- Original fragments are always processed first
+- A complete chain is displayed and routed once, without helper/banner text
 - The feature is disabled by default
-- Missing or out-of-order fragments produce no assembled copy
-- Timeouts cannot suppress original messages
-- Capacity limits cannot suppress original messages
+- Missing, conflicting, timed-out, or capacity-rejected chains do not create a
+  guessed joined message
 - FLEX Group Mode remains on its established legacy path
 
 ## Modernisation Principles
@@ -295,27 +294,27 @@ PDW is being modernised conservatively.
 
 ## Release History
 
-### Current beta
+### Current release
 
-**PDW v5.5.1 2026 Release - Public Beta 2** retains the explicit clean-install
-SDR# + VB-Audio Cable Adelaide FLEX profile and adds independent lower-panel
-filtering plus explicit per-Capcode delivery to multiple globally enabled
-outputs. Display-name/agency presentation and keyword matching are clarified,
-while dormant legacy rules and global legacy routing remain compatible. On
-11 August 2026, exact-head x64/Win32 CI, automated tests,
-package/source-tamper checks, CodeQL, Defender, and the combined Setup
-install/upgrade/uninstall matrix passed. Trusted
-Authenticode signing and maintainer physical SDR#/VB-CABLE acceptance remain
-open, so this distribution is explicitly an unsigned beta rather than stable.
+**PDW v5.5.2 2026 Release** retains the Public Beta 2 Capcode
+Directory and Adelaide FLEX profile while hard-discarding rejected messages,
+removing the synthetic joined-message banner, and repainting retained message
+panes after idle return, display changes, DPI changes, and power resume.
+Capcode CSV import now updates matching capcodes and collapses duplicates. An
+optional disabled-by-default Local Gateway Outbox provides an isolated,
+one-way SQLite WAL handoff with no cloud or network client. The
+exact-head x64/Win32 CI, package/source-tamper checks, CodeQL, Defender, signing,
+and the combined Setup install/upgrade/uninstall matrix gate publication.
 
 | Version | Status | Highlights |
 | --- | --- | --- |
-| **PDW v5.5.1 2026 Release** | **Public Beta 2 - 11 August 2026; unsigned; hardware feedback open** | Multiple explicit Capcode output routes, independent lower-panel filtering, unified Display name/agency labels, required-keyword matching, legacy-safe migration, and the retained Adelaide FLEX profile. |
+| **PDW v5.5.2 2026 Release** | **12 August 2026** | Hard-discarded rejected messages, normal joined-message presentation, idle-return pane repainting, Capcode CSV upsert/deduplication, optional local gateway outbox, and retained Public Beta 2 behavior. |
 
 ### Current Generation
 
 | Version | Release Date | Highlights |
 | --- | --- | --- |
+| **PDW v5.5.1 2026 Release** | **11 August 2026 - Public Beta 2, superseded by v5.5.2** | Multiple explicit Capcode output routes, independent lower-panel filtering, unified Display name/agency labels, required-keyword matching, legacy-safe migration, and the retained Adelaide FLEX profile. |
 | **PDW v5.5 2026 Release** | **11 August 2026 - Public Beta 1, superseded by Beta 2** | Clean-install Adelaide FLEX profile, stable fail-closed endpoint identity, endpoint-specific WASAPI capture, dual-architecture automated validation, and one guided Setup. |
 | **PDW v5.4 2026 Release** | **11 August 2026** | Optional compatibility-first FLEX alpha/secure fragment joining with original fragments retained, bounded wrap-aware reassembly, replay suppression, and improved compact-to-ultrawide message layout. |
 | **PDW v5.3 2026 Release** | **11 August 2026** | Capcode Directory becomes the live filter-rule source, preserves legacy rule actions and hit state, supports multiword `+` matches, and safely migrates existing `filters.ini` data once. |

@@ -1,5 +1,48 @@
 # Changelog
 
+## PDW v5.5.2 2026 Release
+
+**12 August 2026**
+
+A focused message-handling, local-handoff, and display-recovery update. This release retains
+the complete Public Beta 2 Capcode Directory, routing, profile, decoder, and
+legacy-hardware compatibility boundary.
+
+### Changed
+
+- Joined multipart messages now appear as one normal message without an
+  extra synthetic joined-message banner.
+- A Capcode Directory reject rule now discards the matching message from both
+  message panes and every downstream log, history, notification, and output.
+- Message panes are explicitly repainted after application reactivation,
+  display changes, DPI changes, or Windows power resume so retained text does
+  not remain black until the operator scrolls.
+- Capcode Directory CSV imports now upsert by capcode: matching records are
+  updated, new records are added, and duplicate rows are collapsed with the
+  last CSV row taking precedence.
+
+### Added
+
+- An optional Local Gateway Outbox provides a one-way, append-only SQLite WAL
+  handoff of decoder-finalized events to a separate local gateway. It is
+  disabled by default, contains no cloud or network client, uses a bounded
+  isolated writer, exposes sequence/write/retention health, and cannot stop
+  decoding when unavailable.
+- A synthetic gateway-event control writes only fixed invented POCSAG or FLEX
+  data to the local outbox without passing through the decoder or contacting a
+  network.
+
+### Compatibility and security
+
+- Reject evaluation remains specific-first and produces only a generic local
+  status; rejected pager content is not copied into diagnostics.
+- Multipart joining and pane repainting change presentation only and do not
+  alter protocol decoding, signal sources, legacy inputs, or output enablement.
+- Stable publication requires trusted Authenticode signing and the complete
+  release acceptance matrix.
+- The gateway feed is independent of per-capcode destination routing; filter,
+  reject, duplicate, group, fragment, and reconstruction states are metadata.
+
 ## PDW v5.5.1 2026 Release
 
 **Public Beta 2 - 11 August 2026**

@@ -1,6 +1,6 @@
 # Editable user manual source
 
-`PDW-v5.5.1-2026-Release-User-Manual.docx` is the editable source for the
+`PDW-v5.5.2-2026-Release-User-Manual.docx` is the editable source for the
 repository-root `pdw-manual.pdf`.
 
 The deterministic document builder is
@@ -24,7 +24,7 @@ From the repository root, regenerate the DOCX with:
 
 ```powershell
 python scripts/manual/build_pdw_manual.py `
-  --output docs/manual/PDW-v5.5.1-2026-Release-User-Manual.docx
+  --output docs/manual/PDW-v5.5.2-2026-Release-User-Manual.docx
 ```
 
 `scripts/manual/word_to_pdf.ps1` provides the Microsoft Word PDF conversion

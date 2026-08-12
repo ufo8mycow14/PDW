@@ -1,14 +1,15 @@
-PUBLIC BETA 2 - UNSIGNED / UNKNOWN PUBLISHER
+PDW v5.5.2 2026 RELEASE
 
-This 11 August 2026 prerelease passed automated x64 and Win32 builds, tests,
-package checks, Defender scanning, and the install/upgrade/uninstall matrix. It
-has not been Authenticode-signed and its physical SDR#/VB-CABLE combinations
-have not been maintainer-validated. Verify the published SHA-256 checksum and
-report only content-free results through the maintained GitHub Issues page.
+This release is gated by automated x64 and Win32 builds, tests, package checks,
+Defender scanning, trusted Authenticode signing, and the
+install/upgrade/uninstall matrix. Verify the published SHA-256 checksum and
+confirm the expected trusted publisher before use. Physical SDR#/VB-CABLE
+combinations remain operator-specific and require representative validation.
+Report only content-free results through the maintained GitHub Issues page.
 Do not include pager traffic, recordings, credentials, endpoint IDs, PDW.INI,
 logs, or operator settings in a public report.
 
-PDW v5.5.1 2026 Release keeps all established decoder, receiver, slicer, audio,
+PDW v5.5.2 2026 Release keeps all established decoder, receiver, slicer, audio,
 serial, filter and output paths. This Setup installs the same PDW application
 that remains available in portable form.
 
@@ -38,11 +39,17 @@ one. The profile changes only local audio and decoder settings. It does not
 create, replace, import, or modify Capcode Directory entries or filters.ini.
 Existing PDW.INI and operator data always take precedence during upgrade.
 
-Public Beta 2 separates lower-panel filtering from explicit per-Capcode output
+PDW v5.5.2 retains lower-panel filtering and explicit per-Capcode output
 routing. A rule can select multiple destinations, but every destination must
 also be enabled and configured in Settings. Existing disabled rules remain
 dormant, and legacy global routing remains until a rule is deliberately saved
 with explicit destinations.
+
+A Reject rule discards its matching message from both panes and all downstream
+logs, history, notifications and outputs. Joined multipart messages appear as
+one normal message without an extra synthetic banner. PDW also repaints retained
+message panes after application reactivation, display or DPI changes, and power
+resume; real sleep, lock and display-off acceptance remains open.
 
 Win32 compatibility should be selected when an existing receiver requires an
 x86-only DLL. x64 should be selected only with x64-compatible receiver DLLs;
