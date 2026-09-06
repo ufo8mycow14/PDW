@@ -6,6 +6,7 @@
 
 #include "headers/pdw.h"
 #include "pocsag_test_environment.h"
+#include "utils/decoder_audio_adapter.h"
 
 #include <cctype>
 #include <cstdlib>
@@ -150,6 +151,35 @@ namespace
 		// frame() owns legacy static sync/framing state. Reset at both fixture
 		// boundaries so one batch cannot influence the next case.
 		decoder.frame(-1);
+		// Sample the same synthetic codewords at every supported reference case.
+		// This exercises the production FIR and POCSAG frame decoder; acquisition
+		// timing in the application remains a separate native integration gate.
+		for (const unsigned rate : {8000u, 44100u, 48000u, 96000u, 192000u})
+		{
+			std::vector<float> audio((bits.size() * static_cast<std::uint64_t>(rate) + 1199) / 1200);
+			for (std::size_t i = 0; i < audio.size(); ++i)
+				audio[i] = bits[(std::min)(bits.size() - 1, static_cast<std::size_t>(i * 1200ULL / rate))] ? 0.75f : -0.75f;
+			pdw::signal::DecoderAudioAdapter adapter;
+			std::vector<float> reference, part;
+			bool reset = false;
+			for (std::size_t i = 0; i < audio.size(); i += 113)
+			{
+				Expect(adapter.Process(audio.data() + i, (std::min)(std::size_t(113), audio.size() - i), rate, false, part, reset), "synthetic rate accepted");
+				reference.insert(reference.end(), part.begin(), part.end());
+			}
+			adapter.Flush(part); reference.insert(reference.end(), part.begin(), part.end());
+			pdw_test::ResetPocsagEnvironment(); decoder.frame(-1);
+			for (std::size_t i = 0; i < bits.size(); ++i)
+			{
+				const std::size_t centre = static_cast<std::size_t>((i + 0.5) * 44100 / 1200);
+				Expect(centre < reference.size(), "finite audio includes final codeword");
+				decoder.frame(reference[centre] > 0 ? 1 : 0);
+			}
+			const auto& adapted = pdw_test::CapturedPocsagMessages();
+			Expect(adapted.size() == 1 && adapted[0].payload == expected.payload && adapted[0].address == expected.address,
+				"rate-adapted synthetic recording retains exact decoded identity and text");
+			decoder.frame(-1);
+		}
 	}
 }
 

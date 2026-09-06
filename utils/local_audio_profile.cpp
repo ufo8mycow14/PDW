@@ -1,3 +1,4 @@
+#include "profile_snapshot.h"
 #include "local_audio_profile.h"
 
 #include <windows.h>
@@ -248,13 +249,13 @@ namespace
 			std::strcmp(Profile.audioDeviceName, resolution.friendlyName.c_str()) == 0 &&
 			(resolution.winmmIndex < 0 || Profile.audioDevice == resolution.winmmIndex)) return true;
 
-		const PROFILE previous = Profile;
+		const PROFILE previous = SnapshotProfile(Profile);
 		if (resolution.winmmIndex >= 0) Profile.audioDevice = resolution.winmmIndex;
 		CopyProfileField(Profile.audioDeviceEndpointId, resolution.endpointId);
 		CopyProfileField(Profile.audioDeviceName, resolution.friendlyName);
 		Profile.audioDeviceIdentityInvalid = 0;
 		if (TryWriteSettings()) return true;
-		Profile = previous;
+		RestoreProfile(Profile, previous);
 		return false;
 	}
 }

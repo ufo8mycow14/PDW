@@ -2,6 +2,7 @@
 #define PDW_GATEWAY_OUTBOX_CORE_H
 
 #include <string>
+#include <functional>
 
 struct sqlite3;
 
@@ -88,6 +89,8 @@ public:
 	bool Append(const GatewayEvent& event, std::string& error);
 	bool RecordHighestAssignedSequence(long long sequence, std::string& error);
 	bool GetHighestAssignedSequence(long long& sequence, std::string& error);
+	bool AppendSequenced(GatewayEvent event, long long& committedSequence, std::string& error);
+	void SetCancellation(const std::function<bool()>& cancelled);
 	bool EnforceRetention(const RetentionPolicy& policy, int& removed,
 		std::string& error);
 	bool GetStatistics(StoreStatistics& statistics, std::string& error);
@@ -105,6 +108,9 @@ private:
 
 	sqlite3* database_;
 	std::string path_;
+	std::function<bool()> cancelled_;
+	unsigned long long operationStarted_ = 0;
+	static int __stdcall Progress(void* context);
 };
 
 // Readers own their checkpoints outside PDW. This verifies the documented

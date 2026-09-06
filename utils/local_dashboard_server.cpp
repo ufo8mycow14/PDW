@@ -320,7 +320,7 @@ bool LocalDashboardServer::Start(unsigned short port, std::string& error)
 	endpoint.sin_family = AF_INET;
 	endpoint.sin_port = htons(port);
 	inet_pton(AF_INET, "127.0.0.1", &endpoint.sin_addr);
-	if (bind(state_->listener, reinterpret_cast<sockaddr*>(&endpoint), sizeof(endpoint)) == SOCKET_ERROR ||
+	if (::bind(state_->listener, reinterpret_cast<sockaddr*>(&endpoint), sizeof(endpoint)) == SOCKET_ERROR ||
 		listen(state_->listener, SOMAXCONN) == SOCKET_ERROR)
 	{
 		error = "The local dashboard could not bind 127.0.0.1 on the selected port.";

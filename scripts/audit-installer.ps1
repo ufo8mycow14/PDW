@@ -54,6 +54,6 @@ if ($ScanWithDefender) {
     Version = $version.ProductName.Trim()
     SHA256 = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash
     Signature = $signature.Status
-    PublicReleaseReady = $signature.Status -eq [System.Management.Automation.SignatureStatus]::Valid
+    SetupSignatureValid = $signature.Status -eq [System.Management.Automation.SignatureStatus]::Valid
     DefenderScanned = [bool]$ScanWithDefender
 }

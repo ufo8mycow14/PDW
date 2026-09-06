@@ -4,6 +4,7 @@ set( PDW_INCLUDES
   ${PDW_INCLUDES}
   ${CMAKE_CURRENT_SOURCE_DIR}/audio_capture_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/audio_signal_core.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/bounded_audio_decode_worker.h
 	${CMAKE_CURRENT_SOURCE_DIR}/assembled_message_visibility_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/OSTYPE.H
   ${CMAKE_CURRENT_SOURCE_DIR}/binary.h
@@ -21,6 +22,7 @@ set( PDW_INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/local_dashboard_server.h
   ${CMAKE_CURRENT_SOURCE_DIR}/local_audio_profile.h
   ${CMAKE_CURRENT_SOURCE_DIR}/local_audio_profile_core.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/legacy_message_safety.h
   ${CMAKE_CURRENT_SOURCE_DIR}/message_archive.h
   ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/multi_channel_manager.h
@@ -36,6 +38,10 @@ set( PDW_INCLUDES
 	${CMAKE_CURRENT_SOURCE_DIR}/rtl_signal_conditioner.h
   ${CMAKE_CURRENT_SOURCE_DIR}/rtl_tcp_source.h
   ${CMAKE_CURRENT_SOURCE_DIR}/signal_diagnostics.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/decoder_audio_adapter.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/sigmf_metadata.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/profile_snapshot.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/restore_temporary_file.h
   ${CMAKE_CURRENT_SOURCE_DIR}/signal_recording_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/smtp.h
   ${CMAKE_CURRENT_SOURCE_DIR}/smtp_int.h
@@ -51,12 +57,14 @@ set( PDW_INCLUDES
 set( PDW_SRCS
   ${PDW_SRCS}
   ${CMAKE_CURRENT_SOURCE_DIR}/audio_signal_core.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/bounded_audio_decode_worker.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/assembled_message_visibility_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/config_backup.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/config_backup_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/curl_runtime.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/data_output_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/data_outputs.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/decoder_state_lock.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/decoded_event.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/decoder_candidate_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/flex_fragment_reassembly_core.cpp
@@ -74,6 +82,7 @@ set( PDW_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/local_dashboard_server.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/local_audio_profile.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/local_audio_profile_core.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/legacy_message_safety.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/message_archive.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/message_archive_manager.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/message_centre.cpp

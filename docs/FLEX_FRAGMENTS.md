@@ -1,20 +1,19 @@
 # Optional FLEX fragment assembly
 
-PDW can wait for a complete standard FLEX alpha or secure fragment chain and
-then emit one assembled message. Introduced in PDW v5.4 2026 Release as an
-additive compatibility mode, the enabled option now avoids displaying and
-routing each valid fragment before the joined result. It remains disabled by
-default.
+PDW can assemble a complete standard FLEX alpha or secure fragment chain and
+emit one joined message. Received parts remain visible while the chain is
+incomplete, so a missing final part cannot hide the received text. This
+additive compatibility mode remains disabled by default.
 
 Enable it under **Settings > Display and behavior > Screen and columns** with
-**Wait for complete split FLEX alpha/secure message (show joined only)**.
+**Join split FLEX alpha/secure messages (keep received parts visible)**.
 
 ## Compatibility guarantee
 
-When the option is enabled, a valid fragment start or continuation is held in
-the bounded reassembler instead of entering PDW's display, filter, logging,
-email, notification, publishing, or data-output path. When the chain completes,
-one ordinary message enters that established path without a joined-message
+When the option is enabled, a valid fragment start or continuation is copied
+into the bounded reassembler and also enters PDW's normal display, filter,
+logging and enabled output paths. When the chain completes, one joined
+message enters that established path without a joined-message
 status label. That event is marked `assembled=true` for structured outputs.
 Standalone FLEX messages and invalid, conflicting, or capacity-rejected
 observations retain the established direct path so PDW never guesses a join.
@@ -58,7 +57,9 @@ PDW also recognises explicit message text such as **Part 1 of 2** (case
 insensitive, with optional `#` and brackets). It buffers 2-32 parts for the
 same capcode, protocol, message type, and advertised total, accepts reordered
 parts, removes the markers, and emits one ordinary message when every part is
-present. Neither assembly path adds a multipart status label to panes or logs.
+present. Received parts also follow the normal display, filtering and archive
+path while waiting; the completing part is represented by the joined result.
+Neither assembly path adds a multipart status label to panes or logs.
 If an identical message and type was already accepted during the preceding two
 minutes, a reconstructed repeat is discarded even when it arrived on another
 capcode. Ordinary repeated traffic is unaffected. This applies to paging
@@ -70,7 +71,8 @@ allows only one active chain for the same visible identity. Identical repeats
 are ignored, a changed Part 1 starts a new chain, and conflicting later parts
 are not combined. Chains are bounded to 64 active messages, 32 parts, the
 existing message-size limit, and ten minutes. Incomplete expired chains are
-discarded rather than being presented as a complete message.
+discarded from the transient assembly cache; their already-routed originals
+remain available subject to normal filters and retention settings.
 
 ## FLEX Group Mode
 

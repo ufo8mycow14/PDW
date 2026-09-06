@@ -13,6 +13,7 @@
 #define STRICT 1
 #endif
 
+#include "utils/profile_snapshot.h"
 #include <windows.h>
 #include <commdlg.h>
 #include <shellapi.h>
@@ -23,12 +24,16 @@
 #include "headers\initapp.h"
 #include "headers\sigind.h"
 #include "headers\decode.h"
+#include "headers/misc.h"
 #include "headers\sound_in.h"
 #include "headers\acars.h"
 #include "headers\mobitex.h"
 #include "headers\ermes.h"		// PH: new
+#include "headers\live_signal_meter.h"
 #include "headers\ui_theme.h"
 #include "utils\audio_signal_core.h"
+#include "utils/decoder_audio_adapter.h"
+#include "utils\bounded_audio_decode_worker.h"
 #include "utils\signal_recording_core.h"
 #include "utils\signal_diagnostics.h"
 #include "utils\local_audio_profile.h"
@@ -39,7 +44,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <deque>
 #include <string>
 #include <vector>
 
@@ -108,6 +112,9 @@ int skipped_sc = 0;
 // pocsag globals
 extern POCSAG pocsag;
 extern int pocsag_baud_rate, pocbit;
+extern bool bMode_IDLE;
+extern bool bPauseFlag;
+extern int nDriverLoaded;
 
 // ACARS globals
 int process_acars_bit = 0;
@@ -117,75 +124,25 @@ int audio_buffer_cnt = 0;
 
 namespace
 {
-	struct WasapiQueuedBlock
-	{
-		std::vector<float> samples;
-		std::uint32_t sampleRate;
-		bool discontinuity;
-	};
+	volatile LONG g_acceptedDecodeRows = 0;
+	volatile LONG g_lastAcceptedDecodeTick = 0;
+}
 
-	class WasapiFallbackSink : public pdw::signal::WasapiCaptureSink
-	{
-	public:
-		WasapiFallbackSink() : dropped_(false) { InitializeCriticalSection(&lock_); }
-		~WasapiFallbackSink() { DeleteCriticalSection(&lock_); }
+void SignalDiagnosticsRecordAcceptedDecodeRow(void)
+{
+	InterlockedIncrement(&g_acceptedDecodeRows);
+	InterlockedExchange(&g_lastAcceptedDecodeTick, static_cast<LONG>(GetTickCount()));
+}
 
-		void OnAudioSamples(const float* samples, std::size_t sampleCount,
-			std::uint32_t sampleRate, bool discontinuity)
-		{
-			if (!samples || !sampleCount) return;
-			WasapiQueuedBlock block;
-			block.samples.assign(samples, samples + sampleCount);
-			block.sampleRate = sampleRate;
-			block.discontinuity = discontinuity;
-			EnterCriticalSection(&lock_);
-			if (blocks_.size() >= 32)
-			{
-				blocks_.pop_front();
-				dropped_ = true;
-			}
-			if (dropped_)
-			{
-				block.discontinuity = true;
-				dropped_ = false;
-			}
-			blocks_.push_back(block);
-			LeaveCriticalSection(&lock_);
-		}
-
-		bool Pop(WasapiQueuedBlock& block)
-		{
-			EnterCriticalSection(&lock_);
-			const bool available = !blocks_.empty();
-			if (available)
-			{
-				block = blocks_.front();
-				blocks_.pop_front();
-			}
-			LeaveCriticalSection(&lock_);
-			return available;
-		}
-
-		void Clear()
-		{
-			EnterCriticalSection(&lock_);
-			blocks_.clear();
-			dropped_ = false;
-			LeaveCriticalSection(&lock_);
-		}
-
-	private:
-		CRITICAL_SECTION lock_;
-		std::deque<WasapiQueuedBlock> blocks_;
-		bool dropped_;
-	};
-
-	WasapiFallbackSink g_wasapiFallbackSink;
+namespace
+{
 	pdw::signal::WasapiCaptureSource g_wasapiFallbackSource;
 	pdw::signal::RtlTcpSource g_rtlTcpSource;
 	pdw::signal::RtlSdrSource g_rtlSdrSource;
 	pdw::signal::AdaptiveSlicer g_enhancedAudioSlicer;
 	pdw::signal::SignalDiagnostics g_signalDiagnostics;
+	std::vector<char> g_pcm8Scratch(
+		pdw::signal::BoundedAudioDecodeWorker::DEFAULT_SAMPLES_PER_BLOCK);
 	std::uint32_t g_activeAudioSampleRate = 44100;
 	int g_modernCaptureKind = 0; // 0=none, 1=WASAPI fallback, 2=rtl_tcp, 3=RTL-SDR
 	bool g_wasapiUsesConfiguredEndpoint = false;
@@ -259,46 +216,141 @@ namespace
 		if (appendCount != sampleCount) g_diagnosticRecordingTruncated = true;
 	}
 
-	void FeedNormalizedSamples(const float* samples, std::size_t sampleCount)
+	thread_local bool g_referenceRateInput = false;
+	pdw::signal::DecoderAudioAdapter g_decoderAudioAdapter;
+	std::vector<float> g_referenceAudio;
+
+	void FeedNormalizedSamples(const float* samples, std::size_t sampleCount, bool discontinuity = false,
+		bool endOfStream = false)
 	{
 		if (!samples || sampleCount == 0) return;
+		PdwSignalDecoderStateGuard decoderGuard;
 		g_signalDiagnostics.Observe(samples, sampleCount);
-		std::vector<char> pcm8(sampleCount);
+		struct ReferenceRateScope
+		{
+			bool previous;
+			ReferenceRateScope() : previous(g_referenceRateInput) { g_referenceRateInput = true; }
+			~ReferenceRateScope() { g_referenceRateInput = previous; }
+		} referenceRate;
+		bool reset = false;
+		if (!g_decoderAudioAdapter.Process(samples, sampleCount, g_activeAudioSampleRate,
+			discontinuity, g_referenceAudio, reset)) return;
+		if (endOfStream)
+		{
+			std::vector<float> tail;
+			g_decoderAudioAdapter.Flush(tail);
+			g_referenceAudio.insert(g_referenceAudio.end(), tail.begin(), tail.end());
+		}
+		if (reset)
+		{
+			// Reset the stream, not just its sample clock: no pre-gap frame may
+			// consume post-gap samples or emit a stale partial message.
+			pd_reset_all();
+			pocbit = 0;
+			SuppressCurrentMessage();
+			Reset_ATB();
+		}
+		if (g_referenceAudio.empty()) return;
+		samples = g_referenceAudio.data();
+		sampleCount = g_referenceAudio.size();
+		g_pcm8Scratch.resize(sampleCount);
 		for (std::size_t index = 0; index < sampleCount; ++index)
 		{
 			int value = static_cast<int>(samples[index] * 128.0f + 128.0f);
 			if (value < 0) value = 0;
 			if (value > 255) value = 255;
-			pcm8[index] = static_cast<char>(static_cast<unsigned char>(value));
+			g_pcm8Scratch[index] = static_cast<char>(static_cast<unsigned char>(value));
 		}
 		if (Profile.monitor_paging)
-			Audio_To_Bits(&pcm8[0], static_cast<long>(pcm8.size()));
+			Audio_To_Bits(&g_pcm8Scratch[0], static_cast<long>(g_pcm8Scratch.size()));
 		else if (Profile.monitor_acars)
-			ACARS_To_Bits(&pcm8[0], static_cast<long>(pcm8.size()));
+			ACARS_To_Bits(&g_pcm8Scratch[0], static_cast<long>(g_pcm8Scratch.size()));
 		else if (Profile.monitor_mobitex)
-			MOBITEX_To_Bits(&pcm8[0], static_cast<long>(pcm8.size()));
+			MOBITEX_To_Bits(&g_pcm8Scratch[0], static_cast<long>(g_pcm8Scratch.size()));
 	}
 
 	std::uint32_t ActiveAudioSampleRate()
 	{
+		if (g_referenceRateInput) return pdw::signal::DecoderAudioAdapter::ReferenceRate;
 		return g_activeAudioSampleRate ? g_activeAudioSampleRate : 44100;
 	}
 
-	void ProcessWasapiFallbackBlocks()
+	void ServiceDecoderProtocolTimers()
 	{
-		WasapiQueuedBlock block;
-		int processedBlocks = 0;
-		while (processedBlocks < 8 && g_wasapiFallbackSink.Pop(block))
+		if (flex_timer)
 		{
-			if (block.sampleRate != g_activeAudioSampleRate || block.discontinuity)
+			bMode_IDLE = false;
+			flex_timer--;
+			if (flex_timer == 0)
 			{
-				g_activeAudioSampleRate = block.sampleRate;
-				Reset_ATB();
+				bMode_IDLE = true;
+				if (!pocbit)
+				{
+					BaudRate = 1600;
+					config_index = INDEX1600;
+					display_showmo(MODE_IDLE);
+				}
 			}
-			AppendDiagnosticSamples(&block.samples[0], block.samples.size(), block.sampleRate);
-			FeedNormalizedSamples(&block.samples[0], block.samples.size());
-			processedBlocks++;
 		}
+		else if (mb.timer)
+		{
+			mb.timer--;
+			if (mb.timer == 0) display_showmo(MODE_IDLE);
+		}
+	}
+
+	class PdwModernDecodeConsumer : public pdw::signal::AudioDecodeConsumer
+	{
+	public:
+		PdwModernDecodeConsumer() : paused_(false) {}
+
+		void OnDecodeAudioBlock(const float* samples, std::size_t sampleCount,
+			std::uint32_t sampleRate, bool discontinuity)
+		{
+			PdwSignalDecoderStateGuard decoderGuard;
+			if (bPauseFlag)
+			{
+				paused_ = true;
+				return;
+			}
+			if (paused_)
+			{
+				discontinuity = true;
+				paused_ = false;
+			}
+			if (sampleRate != g_activeAudioSampleRate || discontinuity)
+			{
+				g_activeAudioSampleRate = sampleRate;
+			}
+			AppendDiagnosticSamples(samples, sampleCount, sampleRate);
+			FeedNormalizedSamples(samples, sampleCount, discontinuity);
+		}
+
+		void OnDecodeServiceTick()
+		{
+			PdwSignalDecoderStateGuard decoderGuard;
+			if (bPauseFlag) return;
+			ServiceDecoderProtocolTimers();
+			check_save_data();
+		}
+
+	private:
+		bool paused_;
+	};
+
+	PdwModernDecodeConsumer g_modernDecodeConsumer;
+	pdw::signal::BoundedAudioDecodeWorker g_modernDecodeWorker;
+
+	bool StartModernDecodeWorker(std::string& error)
+	{
+		if (g_modernDecodeWorker.Start(&g_modernDecodeConsumer)) return true;
+		error = "PDW could not start its bounded audio decoder worker.";
+		return false;
+	}
+
+	bool StopModernDecodeWorker(bool drain)
+	{
+		return g_modernDecodeWorker.Stop(drain);
 	}
 
 	bool StopDiagnosticReplayInternal(bool resumeInput)
@@ -330,7 +382,6 @@ namespace
 				"A previous WinMM input still owns audio resources; WASAPI fallback was blocked.";
 			return false;
 		}
-		g_wasapiFallbackSink.Clear();
 		g_wasapiStartError.clear();
 		const bool useConfiguredEndpoint = configuredEndpointId != NULL;
 		if (useConfiguredEndpoint && configuredEndpointId->empty())
@@ -339,9 +390,12 @@ namespace
 				"PDW could not obtain a stable Windows endpoint identifier for this device.";
 			return false;
 		}
+		g_activeAudioSampleRate = static_cast<std::uint32_t>(Profile.audioSampleRate);
+		Reset_ATB();
+		if (!StartModernDecodeWorker(g_wasapiStartError)) return false;
 		const bool started = useConfiguredEndpoint ?
-			g_wasapiFallbackSource.StartEndpoint(*configuredEndpointId, &g_wasapiFallbackSink) :
-			g_wasapiFallbackSource.StartDefault(&g_wasapiFallbackSink);
+			g_wasapiFallbackSource.StartEndpoint(*configuredEndpointId, &g_modernDecodeWorker) :
+			g_wasapiFallbackSource.StartDefault(&g_modernDecodeWorker);
 		if (!started)
 		{
 			g_wasapiStartError = g_wasapiFallbackSource.lastError();
@@ -358,6 +412,13 @@ namespace
 				g_modernCaptureKind = 1;
 				bCapturing = true;
 			}
+			else if (!StopModernDecodeWorker(false))
+			{
+				g_modernCaptureQuarantined = true;
+				bUsingWasapiFallback = true;
+				g_modernCaptureKind = 1;
+				bCapturing = true;
+			}
 			return false;
 		}
 		g_modernCaptureQuarantined = false;
@@ -367,7 +428,6 @@ namespace
 		bUsingWasapiFallback = true;
 		g_modernCaptureKind = 1;
 		bCapturing = true;
-		Reset_ATB();
 		return true;
 	}
 
@@ -441,6 +501,7 @@ namespace
 
 	bool TryStartRtlTcp()
 	{
+		g_receiverStartError.clear();
 		pdw::signal::RtlTcpConfig config;
 		config.host = Profile.rtlTcpHost;
 		config.port = static_cast<std::uint16_t>(Profile.rtlTcpPort);
@@ -452,8 +513,10 @@ namespace
 		config.nfmBandwidthHz = static_cast<std::uint32_t>(Profile.rtlBandwidthHz);
 		config.automaticGain = Profile.rtlAutomaticGain != 0;
 		config.signalConditionerEnabled = Profile.rtlSignalConditionerEnabled != 0;
-		g_wasapiFallbackSink.Clear();
-		if (!g_rtlTcpSource.Start(config, &g_wasapiFallbackSink))
+		g_activeAudioSampleRate = config.audioSampleRate;
+		Reset_ATB();
+		if (!StartModernDecodeWorker(g_receiverStartError)) return false;
+		if (!g_rtlTcpSource.Start(config, &g_modernDecodeWorker))
 		{
 			if (!g_rtlTcpSource.Stop())
 			{
@@ -462,15 +525,19 @@ namespace
 				g_modernCaptureKind = 2;
 				bCapturing = true;
 			}
-			else g_wasapiFallbackSink.Clear();
+			else if (!StopModernDecodeWorker(false))
+			{
+				g_modernCaptureQuarantined = true;
+				bUsingWasapiFallback = true;
+				g_modernCaptureKind = 2;
+				bCapturing = true;
+			}
 			return false;
 		}
 		g_modernCaptureQuarantined = false;
 		bUsingWasapiFallback = true;
 		g_modernCaptureKind = 2;
 		bCapturing = true;
-		g_activeAudioSampleRate = config.audioSampleRate;
-		Reset_ATB();
 		return true;
 	}
 
@@ -493,9 +560,11 @@ namespace
 		config.nfmBandwidthHz = static_cast<std::uint32_t>(Profile.rtlBandwidthHz);
 		config.automaticGain = Profile.rtlAutomaticGain != 0;
 		config.signalConditionerEnabled = Profile.rtlSignalConditionerEnabled != 0;
-		g_wasapiFallbackSink.Clear();
+		g_activeAudioSampleRate = config.audioSampleRate;
+		Reset_ATB();
+		if (!StartModernDecodeWorker(g_receiverStartError)) return false;
 		if (!g_rtlSdrSource.Start(config, static_cast<unsigned int>(Profile.rtlDeviceIndex),
-			&g_wasapiFallbackSink))
+			&g_modernDecodeWorker))
 		{
 			if (!g_rtlSdrSource.Stop())
 			{
@@ -504,15 +573,19 @@ namespace
 				g_modernCaptureKind = 3;
 				bCapturing = true;
 			}
-			else g_wasapiFallbackSink.Clear();
+			else if (!StopModernDecodeWorker(false))
+			{
+				g_modernCaptureQuarantined = true;
+				bUsingWasapiFallback = true;
+				g_modernCaptureKind = 3;
+				bCapturing = true;
+			}
 			return false;
 		}
 		g_modernCaptureQuarantined = false;
 		bUsingWasapiFallback = true;
 		g_modernCaptureKind = 3;
 		bCapturing = true;
-		g_activeAudioSampleRate = config.audioSampleRate;
-		Reset_ATB();
 		return true;
 	}
 
@@ -545,8 +618,30 @@ namespace
 	{
 		if (Profile.audioSource == AUDIO_SOURCE_RTL_SDR)
 			return g_receiverStartError.empty() ? g_rtlSdrSource.lastError() : g_receiverStartError;
-		if (Profile.audioSource == AUDIO_SOURCE_RTL_TCP) return g_rtlTcpSource.lastError();
+		if (Profile.audioSource == AUDIO_SOURCE_RTL_TCP)
+			return g_receiverStartError.empty() ? g_rtlTcpSource.lastError() : g_receiverStartError;
 		return std::string();
+	}
+
+	void TraceModernDecodeHealth()
+	{
+		static std::uint64_t lastDrops = 0;
+		static std::uint64_t lastMaximumLag = 0;
+		const pdw::signal::AudioDecodeWorkerMetrics metrics = g_modernDecodeWorker.Snapshot();
+		if (metrics.droppedBlocks == lastDrops &&
+			metrics.maximumDecoderLagMs <= lastMaximumLag + 250) return;
+		lastDrops = metrics.droppedBlocks;
+		lastMaximumLag = metrics.maximumDecoderLagMs;
+		char detail[384];
+		snprintf(detail, sizeof(detail),
+			"PDW decoder health: queue=%zu/%zu high-water=%zu drops=%llu dropped-samples=%llu lag-ms=%llu max-lag-ms=%llu worker=%s handles=%u\r\n",
+			metrics.queueDepth, metrics.queueCapacity, metrics.queueHighWater,
+			static_cast<unsigned long long>(metrics.droppedBlocks),
+			static_cast<unsigned long long>(metrics.droppedSamples),
+			static_cast<unsigned long long>(metrics.currentDecoderLagMs),
+			static_cast<unsigned long long>(metrics.maximumDecoderLagMs),
+			metrics.running ? "running" : "stopped", metrics.currentOwnedHandles);
+		OutputDebugStringA(detail);
 	}
 }
 
@@ -557,9 +652,6 @@ void Debug_MSG(char *msg);
 BOOL Test_Sync(int next_bit);
 void Debug_BIT_MSG(char *msg_bit);
 #endif
-
-extern bool bMode_IDLE;
-extern int nDriverLoaded;
 
 bool SignalDiagnosticsGetLiveSnapshot(PdwLiveSignalSnapshot* snapshot)
 {
@@ -579,6 +671,50 @@ bool SignalDiagnosticsGetLiveSnapshot(PdwLiveSignalSnapshot* snapshot)
 	snapshot->receiverState = static_cast<int>(ConfiguredReceiverState());
 	snapshot->captureActive = bCapturing ? 1 : 0;
 	const DWORD now = GetTickCount();
+	const pdw::signal::AudioDecodeWorkerMetrics decoder = g_modernDecodeWorker.Snapshot();
+	snapshot->decodeQueueDepth = static_cast<unsigned int>(decoder.queueDepth);
+	snapshot->decodeQueueCapacity = static_cast<unsigned int>(decoder.queueCapacity);
+	snapshot->decodeQueueHighWater = static_cast<unsigned int>(decoder.queueHighWater);
+	snapshot->decodeQueueDrops = static_cast<unsigned long long>(decoder.droppedBlocks);
+	snapshot->decodeDroppedSamples = static_cast<unsigned long long>(decoder.droppedSamples);
+	snapshot->decodeResetDiscardedBlocks = static_cast<unsigned long long>(
+		decoder.resetDiscardedBlocks);
+	snapshot->decodeResetDiscardedSamples = static_cast<unsigned long long>(
+		decoder.resetDiscardedSamples);
+	snapshot->decodeQueuePreallocatedBytes = static_cast<unsigned long long>(
+		decoder.preallocatedBytes);
+	snapshot->decodedAudioSamples = static_cast<unsigned long long>(decoder.decodedSamples);
+	snapshot->decoderLagMs = static_cast<unsigned long long>(decoder.currentDecoderLagMs);
+	snapshot->maximumDecoderLagMs = static_cast<unsigned long long>(decoder.maximumDecoderLagMs);
+	snapshot->decoderThreadStarts = static_cast<unsigned long long>(decoder.threadStarts);
+	snapshot->decoderThreadStops = static_cast<unsigned long long>(decoder.threadStops);
+	snapshot->decoderHandlesCreated = static_cast<unsigned long long>(decoder.handlesCreated);
+	snapshot->decoderHandlesClosed = static_cast<unsigned long long>(decoder.handlesClosed);
+	snapshot->decoderStopTimeouts = static_cast<unsigned long long>(decoder.stopTimeouts);
+	snapshot->decoderOwnedHandles = decoder.currentOwnedHandles;
+	snapshot->decoderWorkerRunning = decoder.running ? 1 : 0;
+	snapshot->decoderPriorityElevated = decoder.priorityElevated ? 1 : 0;
+	snapshot->decoderQuarantined = decoder.quarantined ? 1 : 0;
+	snapshot->acceptedDecodeRows = static_cast<unsigned long>(InterlockedCompareExchange(
+		&g_acceptedDecodeRows, 0, 0));
+	snapshot->lastAcceptedDecodeTick = static_cast<unsigned long>(InterlockedCompareExchange(
+		&g_lastAcceptedDecodeTick, 0, 0));
+	if (snapshot->lastAcceptedDecodeTick)
+		snapshot->lastAcceptedDecodeAgeMs = now - snapshot->lastAcceptedDecodeTick;
+	DWORD processHandles = 0;
+	if (GetProcessHandleCount(GetCurrentProcess(), &processHandles))
+		snapshot->processHandleCount = processHandles;
+	snapshot->processGdiObjectCount = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+	snapshot->processUserObjectCount = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
+	PdwLiveSignalMeterTelemetry meterTelemetry = {};
+	LiveSignalMeterGetTelemetry(&meterTelemetry);
+	snapshot->meterPaintCount = meterTelemetry.paintCount;
+	snapshot->meterSkippedUpdateCount = meterTelemetry.skippedUpdateCount;
+	snapshot->meterSuspendedUpdateCount = meterTelemetry.suspendedUpdateCount;
+	snapshot->meterTooltipUpdateCount = meterTelemetry.tooltipUpdateCount;
+	snapshot->meterBackbufferCreateCount = meterTelemetry.backbufferCreateCount;
+	snapshot->meterBackbufferDeleteCount = meterTelemetry.backbufferDeleteCount;
+	snapshot->meterActiveBackbufferObjects = meterTelemetry.activeBackbufferObjects;
 	if (Profile.audioSource == AUDIO_SOURCE_RTL_SDR)
 	{
 		snapshot->lastIqCallbackTick = g_rtlSdrSource.lastIqCallbackTick();
@@ -693,7 +829,8 @@ BOOL Start_Capturing(void)
 			TraceReceiverStartup(true, std::string());
 			return(TRUE);
 		}
-		g_lastReceiverError = g_rtlTcpSource.lastError();
+		g_lastReceiverError = g_receiverStartError.empty() ?
+			g_rtlTcpSource.lastError() : g_receiverStartError;
 		g_receiverStatus = "RTL-TCP start failed; retry scheduled";
 		TraceReceiverStartup(false, g_lastReceiverError);
 		if (!g_suppressCaptureError)
@@ -938,6 +1075,7 @@ void SignalSourceService(void)
 		g_diagnosticReplayActive) return;
 
 	const pdw::signal::RtlTcpState receiverState = ConfiguredReceiverState();
+	TraceModernDecodeHealth();
 	const bool configuredCaptureActive = bUsingWasapiFallback &&
 		((Profile.audioSource == AUDIO_SOURCE_RTL_SDR && g_modernCaptureKind == 3) ||
 		 (Profile.audioSource == AUDIO_SOURCE_RTL_TCP && g_modernCaptureKind == 2));
@@ -985,9 +1123,13 @@ BOOL Stop_Capturing(void)
 			g_modernCaptureQuarantined = true;
 			return(FALSE);
 		}
+		if (!StopModernDecodeWorker(true))
+		{
+			g_modernCaptureQuarantined = true;
+			return(FALSE);
+		}
 		g_modernCaptureQuarantined = false;
 		bCapturing = false;
-		g_wasapiFallbackSink.Clear();
 		bUsingWasapiFallback = false;
 		g_modernCaptureKind = 0;
 		g_wasapiUsesConfiguredEndpoint = false;
@@ -1025,11 +1167,11 @@ bool FinalizeCaptureForShutdown(void)
 	const bool wasapiFinalized = g_wasapiFallbackSource.FinalizeForShutdown();
 	g_rtlTcpSource.FinalizeForShutdown();
 	g_rtlSdrSource.FinalizeForShutdown();
+	g_modernDecodeWorker.FinalizeForShutdown();
 	const bool winmmFinalized = ReleaseWinmmResourcesFailClosed();
 	if (!wasapiFinalized || !winmmFinalized)
 		return false;
 
-	g_wasapiFallbackSink.Clear();
 	g_modernCaptureQuarantined = false;
 	bUsingWasapiFallback = false;
 	g_modernCaptureKind = 0;
@@ -1067,29 +1209,12 @@ void Process_ReadyBuffers(HWND hwnd)
 {
 	int old_buffs_ready;
 
-	if (flex_timer)	// If dropping out of FLEX mode reset and start over
+	if (!bUsingWasapiFallback)
 	{
-		bMode_IDLE = false;
-		flex_timer--;
-
-		if (flex_timer == 0)
-		{
-			bMode_IDLE = true;
-			if (!pocbit)	// Don't reset if POCSAG signal found immediately after flex signal.
-			{
-				BaudRate = 1600;
-				config_index=INDEX1600;
-				display_showmo(MODE_IDLE);
-			}
-		}
+		PdwSignalDecoderStateGuard decoderGuard;
+		ServiceDecoderProtocolTimers();
+		check_save_data();      // Log messages/status info.
 	}
-	else if (mb.timer)	// Check if dropped out of mobitex mode.
-	{
-		mb.timer--;
-		if (mb.timer == 0) display_showmo(MODE_IDLE);
-	}
-
-	check_save_data();      // Log messages/status info.
 	if (g_diagnosticReplayActive)
 	{
 		const std::size_t remaining = g_diagnosticReplay.samples.size() -
@@ -1101,7 +1226,7 @@ void Process_ReadyBuffers(HWND hwnd)
 		{
 			const float* samples = &g_diagnosticReplay.samples[g_diagnosticReplayPosition];
 			AppendDiagnosticSamples(samples, chunk, g_diagnosticReplay.sampleRate);
-			FeedNormalizedSamples(samples, chunk);
+			FeedNormalizedSamples(samples, chunk, g_diagnosticReplayPosition == 0, chunk == remaining);
 			g_diagnosticReplayPosition += chunk;
 		}
 		if (g_diagnosticReplayPosition >= g_diagnosticReplay.samples.size() &&
@@ -1126,13 +1251,13 @@ void Process_ReadyBuffers(HWND hwnd)
 			if (now - lastRestartAttempt >= 2000)
 			{
 				lastRestartAttempt = now;
-				g_wasapiFallbackSink.Clear();
+				g_modernDecodeWorker.ResetQueueForDiscontinuity();
 				bool restarted = false;
 				if (g_wasapiUsesConfiguredEndpoint)
 					restarted = g_wasapiFallbackSource.StartEndpoint(g_wasapiConfiguredEndpointId,
-						&g_wasapiFallbackSink);
-				else restarted = g_wasapiFallbackSource.StartDefault(&g_wasapiFallbackSink);
-				if (restarted) Reset_ATB();
+						&g_modernDecodeWorker);
+				else restarted = g_wasapiFallbackSource.StartDefault(&g_modernDecodeWorker);
+				if (restarted) g_modernDecodeWorker.ResetQueueForDiscontinuity();
 				else
 				{
 					g_wasapiStartError = g_wasapiFallbackSource.lastError();
@@ -1149,7 +1274,6 @@ void Process_ReadyBuffers(HWND hwnd)
 				}
 			}
 		}
-		ProcessWasapiFallbackBlocks();
 		return;
 	}
 	if (g_winmmCaptureQuarantined) return;
@@ -1231,6 +1355,7 @@ void Process_ReadyBuffers(HWND hwnd)
 
 bool SignalDiagnosticStartRecording(const char *path, char *error, size_t errorSize)
 {
+	PdwSignalDecoderStateGuard decoderGuard;
 	CopyDiagnosticError(error, errorSize, "");
 	if (g_diagnosticRecordingActive)
 	{
@@ -1259,26 +1384,36 @@ bool SignalDiagnosticStartRecording(const char *path, char *error, size_t errorS
 bool SignalDiagnosticStopRecording(char *error, size_t errorSize)
 {
 	CopyDiagnosticError(error, errorSize, "");
-	if (!g_diagnosticRecordingActive)
+	pdw::signal::SignalRecording recording;
+	std::string recordingPath;
+	bool recordingTruncated = false;
 	{
-		CopyDiagnosticError(error, errorSize, "No diagnostic recording is active.");
-		return false;
+		PdwSignalDecoderStateGuard decoderGuard;
+		if (!g_diagnosticRecordingActive)
+		{
+			CopyDiagnosticError(error, errorSize, "No diagnostic recording is active.");
+			return false;
+		}
+		g_diagnosticRecordingActive = false;
+		recording.sampleRate = g_diagnosticRecording.sampleRate;
+		recording.samples.swap(g_diagnosticRecording.samples);
+		recordingPath.swap(g_diagnosticRecordingPath);
+		recordingTruncated = g_diagnosticRecordingTruncated;
+		g_diagnosticRecordingTruncated = false;
 	}
-	g_diagnosticRecordingActive = false;
+
 	std::string writeError;
-	const std::string lowered = LowercasePath(g_diagnosticRecordingPath);
+	const std::string lowered = LowercasePath(recordingPath);
 	bool written = false;
 	if (EndsWith(lowered, ".wav"))
-		written = pdw::signal::WriteWav16Mono(g_diagnosticRecordingPath,
-			g_diagnosticRecording, writeError);
+		written = pdw::signal::WriteWav16Mono(recordingPath,
+			recording, writeError);
 	else
-		written = pdw::signal::WriteSigMfReal32(SigMfBasePath(g_diagnosticRecordingPath),
-			g_diagnosticRecording, writeError);
-	if (written && g_diagnosticRecordingTruncated)
+		written = pdw::signal::WriteSigMfReal32(SigMfBasePath(recordingPath),
+			recording, writeError);
+	if (written && recordingTruncated)
 		writeError = "Recording saved, but capture stopped at the 25-million-sample safety limit.";
 	CopyDiagnosticError(error, errorSize, writeError);
-	g_diagnosticRecording.samples.clear();
-	g_diagnosticRecordingPath.clear();
 	return written;
 }
 
@@ -1310,6 +1445,11 @@ bool SignalDiagnosticStartReplay(const char *path, char *error, size_t errorSize
 	if (!loaded)
 	{
 		CopyDiagnosticError(error, errorSize, readError);
+		return false;
+	}
+	if (!pdw::signal::DecoderAudioAdapter::SupportsRate(recording.sampleRate))
+	{
+		CopyDiagnosticError(error, errorSize, "Replay supports sample rates from 8000 to 192000 Hz.");
 		return false;
 	}
 
@@ -1389,6 +1529,7 @@ void CALLBACK Callback_Function(HWAVEIN hwi, UINT uMsg, DWORD dwInstance, DWORD 
 // this resets all required variables for Audio_To_Bits().
 void Reset_ATB(void)
 {
+	PdwSignalDecoderStateGuard decoderGuard;
 	memset(preamble_count, 0, sizeof(preamble_count));
 	nSamples = 0;
 	flex_cnt_1600 = 0;
@@ -2382,9 +2523,15 @@ namespace
 					receiver.lastReceiverError[0] ? "; last error: " : "",
 					receiver.lastReceiverError);
 		}
-		char text[1024];
+		char acceptedDetail[96];
+		if (receiver.lastAcceptedDecodeTick)
+			snprintf(acceptedDetail, sizeof(acceptedDetail), "%lu ms ago",
+				receiver.lastAcceptedDecodeAgeMs);
+		else lstrcpyA(acceptedDetail, "none since startup");
+		char text[1536];
 		snprintf(text, sizeof(text),
-			"Level %.0f%%  Noise %.0f%%  Clip %.2f%%  Eye %.0f%%  Signal %.0f%%  Errors %llu/%llu  FLEX A:%llu B:%llu C:%llu D:%llu%s",
+			"Level %.0f%%  Noise %.0f%%  Clip %.2f%%  Eye %.0f%%  Signal %.0f%%  Errors %llu/%llu  FLEX A:%llu B:%llu C:%llu D:%llu%s\r\n"
+			"Decoder queue %u/%u (high-water %u; %llu bytes fixed), drops %llu blocks/%llu samples, reset-discard %llu/%llu, lag %llu ms (max %llu), decoded %llu samples, worker %s/%s%s, stop timeouts %llu. Threads %llu started/%llu stopped; worker handles %llu created/%llu closed/%u owned. Accepted rows %lu; latest %s. Process handles %lu, GDI %lu, USER %lu. Meter paints %lu, skipped %lu, suspended %lu, tooltips %lu, backbuffer objects %lu (%lu created/%lu deleted).",
 			metrics.rmsLevel * 100.0f, metrics.noiseLevel * 100.0f,
 			metrics.clippingPercent, metrics.eyeOpening, metrics.signalQuality,
 			static_cast<unsigned long long>(metrics.correctedErrors),
@@ -2392,7 +2539,27 @@ namespace
 			static_cast<unsigned long long>(metrics.phaseErrors[0]),
 			static_cast<unsigned long long>(metrics.phaseErrors[1]),
 			static_cast<unsigned long long>(metrics.phaseErrors[2]),
-			static_cast<unsigned long long>(metrics.phaseErrors[3]), receiverDetail);
+			static_cast<unsigned long long>(metrics.phaseErrors[3]), receiverDetail,
+			receiver.decodeQueueDepth, receiver.decodeQueueCapacity,
+			receiver.decodeQueueHighWater, receiver.decodeQueuePreallocatedBytes,
+			receiver.decodeQueueDrops, receiver.decodeDroppedSamples,
+			receiver.decodeResetDiscardedBlocks, receiver.decodeResetDiscardedSamples,
+			receiver.decoderLagMs,
+			receiver.maximumDecoderLagMs, receiver.decodedAudioSamples,
+			receiver.decoderWorkerRunning ? "running" : "stopped",
+			receiver.decoderPriorityElevated ? "above-normal" : "normal",
+			receiver.decoderQuarantined ? "/quarantined" : "",
+			receiver.decoderStopTimeouts,
+			receiver.decoderThreadStarts, receiver.decoderThreadStops,
+			receiver.decoderHandlesCreated, receiver.decoderHandlesClosed,
+			receiver.decoderOwnedHandles,
+			receiver.acceptedDecodeRows, acceptedDetail,
+			receiver.processHandleCount, receiver.processGdiObjectCount,
+			receiver.processUserObjectCount, receiver.meterPaintCount,
+			receiver.meterSkippedUpdateCount, receiver.meterSuspendedUpdateCount,
+			receiver.meterTooltipUpdateCount,
+			receiver.meterActiveBackbufferObjects,
+			receiver.meterBackbufferCreateCount, receiver.meterBackbufferDeleteCount);
 		SetDlgItemText(dialog, IDC_SIGNAL_METRICS, text);
 		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_WAVEFORM), NULL, FALSE);
 		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_QUALITY_HISTORY), NULL, FALSE);
@@ -2506,7 +2673,7 @@ namespace
 			result.clippingDetected ? "\nClipping was detected; reduce receiver gain or Windows input level." : "");
 		if (MessageBox(dialog, message, "PDW Signal Calibration",
 			MB_ICONINFORMATION | MB_YESNO | MB_DEFBUTTON2) != IDYES) return true;
-		const PROFILE previousProfile = Profile;
+		const PROFILE previousProfile = SnapshotProfile(Profile);
 		for (int index = 0; index < AUDIO_CUSTOM_RATE_COUNT; ++index)
 		{
 			Profile.audioThreshold[index] = result.thresholdIndex;
@@ -2517,7 +2684,7 @@ namespace
 		SetAudioConfig(Profile.audioConfig);
 		if (!TryWriteSettings())
 		{
-			Profile = previousProfile;
+			RestoreProfile(Profile, previousProfile);
 			SetAudioConfig(Profile.audioConfig);
 			SetDlgItemText(dialog, IDC_SIGNAL_DIAGNOSTIC_STATUS,
 				"Calibration was not applied because PDW.INI could not be saved; the previous audio configuration remains active.");
@@ -2557,7 +2724,7 @@ namespace
 		if (MessageBoxA(dialog, preview.c_str(), "PDW Adelaide FLEX profile",
 			MB_ICONQUESTION | MB_YESNO | MB_DEFBUTTON2) != IDYES) return true;
 
-		const PROFILE previousProfile = Profile;
+		const PROFILE previousProfile = SnapshotProfile(Profile);
 		const int previousBitSync = mb.bitsync;
 		const int previousBitSyncReverse = mb.bitsync_rev;
 		const int previousMinimumMessageLength = mb.min_msg_len;
@@ -2566,7 +2733,7 @@ namespace
 
 		auto restorePreviousInput = [&]() -> bool
 		{
-			Profile = previousProfile;
+			RestoreProfile(Profile, previousProfile);
 			mb.bitsync = previousBitSync;
 			mb.bitsync_rev = previousBitSyncReverse;
 			mb.min_msg_len = previousMinimumMessageLength;
@@ -2896,7 +3063,7 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 					int deviceIndex = Profile.rtlDeviceIndex;
 					if (source != AUDIO_SOURCE_LOCAL && !ReadRtlDialog(hDlg, config, deviceIndex)) return TRUE;
 
-					const PROFILE previousProfile = Profile;
+					const PROFILE previousProfile = SnapshotProfile(Profile);
 					const bool previousCaptureWasRunning = bCapturing;
 					const bool previousSerialWasRunning = nDriverLoaded != 0;
 					if (bCapturing && !Stop_Capturing())
@@ -2966,7 +3133,7 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 								"PDW Signal Source", MB_ICONERROR);
 							return TRUE;
 						}
-						Profile = previousProfile;
+						RestoreProfile(Profile, previousProfile);
 						SetAudioConfig(Profile.audioConfig);
 						bool previousInputRestored = !bCapturing &&
 							(nDriverLoaded == 0 || previousSerialWasRunning);

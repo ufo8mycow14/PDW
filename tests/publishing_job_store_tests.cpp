@@ -72,8 +72,17 @@ namespace
 	}
 }
 
-int main()
+int main(int argc, char** argv)
 {
+	if (argc == 4 && std::string(argv[1]) == "--synthetic-static-job")
+	{
+		auto job = MakeJob();
+		job.targets = pdw::publishing::PUBLISH_JOB_TARGET_STATIC;
+		job.completed = job.failed = job.staticAttempts = job.webhookAttempts = job.attempts = 0;
+		job.staticOutputPath = argv[3];
+		std::string error;
+		return pdw::publishing::SavePublishJobFileAtomic(argv[2], job, error) ? 0 : 1;
+	}
 	using namespace pdw::publishing;
 	std::string error;
 	PublishJobRecord source = MakeJob();

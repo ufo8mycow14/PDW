@@ -11,6 +11,7 @@
 #include <ostream>
 #include <string>
 #include <vector>
+#include <functional>
 
 #include "../Headers/output_routes.h"
 #include "publishing_core.h"
@@ -96,6 +97,8 @@ struct HistoryRow
 bool IsValidCapcode(const std::string& address);
 bool IsValidProtocolName(const std::string& protocol);
 std::string CsvEscape(const std::string& value);
+// Spreadsheet-facing message logs; directory CSV retains raw round-trip escaping.
+std::string SpreadsheetCsvEscape(const std::string& value);
 bool ParseCsvLine(const std::string& line, std::vector<std::string>& fields);
 enum CsvRecordReadResult
 {
@@ -120,7 +123,7 @@ public:
 	MessageArchive();
 	~MessageArchive();
 
-	bool Open(const std::string& utf8Path, std::string& error);
+	bool Open(const std::string& utf8Path, std::string& error, bool transactionalRestore = false);
 	void Close();
 	bool IsOpen() const;
 
@@ -128,6 +131,11 @@ public:
 		bool includeMessage, std::string& error);
 	bool UpsertCapcode(const CapcodeEntry& entry, std::string& error);
 	bool ReplaceCapcodes(const std::vector<CapcodeEntry>& entries, std::string& error);
+	// A dedicated restore connection can keep directory changes uncommitted
+	// until related configuration writes succeed. Failure rolls back exact rows.
+	bool ReplaceCapcodesAtomically(const std::vector<CapcodeEntry>& entries,
+		const std::function<bool(std::string&)>& beforeCommit, std::string& error,
+		bool* rollbackSucceeded = nullptr);
 	bool UpdateCapcodeRuntimeState(long long id, unsigned int hitCounter,
 		const std::string& lastHitDate, const std::string& lastHitTime,
 		std::string& error);

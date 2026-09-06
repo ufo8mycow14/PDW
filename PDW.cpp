@@ -285,6 +285,8 @@
 #endif
 
 
+#include "utils/profile_snapshot.h"
+#include "utils/legacy_message_safety.h"
 #include <windows.h>
 #include <commctrl.h>
 #include <mmsystem.h>
@@ -415,6 +417,46 @@ char szWindowText[6][1000];			// [0] = PDW version
 									// [3] = FLEX/ERMES cycle/frame(/batch)
 									// [4] = FLEX - Groupcall
 									// [5] = Rejected/Blocked messages
+
+namespace
+{
+	INIT_ONCE g_windowTitleLockOnce = INIT_ONCE_STATIC_INIT;
+	CRITICAL_SECTION g_windowTitleLock;
+	char g_pendingWindowTitle[MAX_STR_LEN] = {};
+	volatile LONG g_windowTitlePending = 0;
+
+	BOOL CALLBACK InitializeWindowTitleLock(PINIT_ONCE, PVOID, PVOID*)
+	{
+		InitializeCriticalSection(&g_windowTitleLock);
+		return TRUE;
+	}
+
+	void EnsureWindowTitleLock()
+	{
+		InitOnceExecuteOnce(&g_windowTitleLockOnce, InitializeWindowTitleLock, NULL, NULL);
+	}
+
+	void QueueDeferredWindowTitle(const char* title)
+	{
+		EnsureWindowTitleLock();
+		EnterCriticalSection(&g_windowTitleLock);
+		lstrcpynA(g_pendingWindowTitle, title ? title : "", _countof(g_pendingWindowTitle));
+		LeaveCriticalSection(&g_windowTitleLock);
+		if (InterlockedExchange(&g_windowTitlePending, 1) == 0 && ghWnd)
+			PostMessage(ghWnd, PDW_DEFERRED_WINDOW_TITLE_MESSAGE, 0, 0);
+	}
+
+	void ApplyDeferredWindowTitle()
+	{
+		char title[MAX_STR_LEN] = {};
+		EnsureWindowTitleLock();
+		EnterCriticalSection(&g_windowTitleLock);
+		lstrcpynA(title, g_pendingWindowTitle, _countof(title));
+		InterlockedExchange(&g_windowTitlePending, 0);
+		LeaveCriticalSection(&g_windowTitleLock);
+		if (ghWnd) SetWindowTextA(ghWnd, title);
+	}
+}
 
 // Text editing globals
 unsigned int iSelectionStartCol, iSelectionStartRow, iSelectionEndCol, iSelectionEndRow;
@@ -565,7 +607,7 @@ bool MigrateLegacyFiltersToDirectory()
 		MessageBoxA(ghWnd, error.c_str(), "PDW Capcode Directory", MB_OK | MB_ICONERROR);
 		return false;
 	}
-	PROFILE legacy = Profile;
+	PROFILE legacy = SnapshotProfile(Profile);
 	legacy.filters.clear();
 	char migrationCopy[MAX_PATH] = {};
 	if (!GetTempFileNameA(szPath, "PDF", 0, migrationCopy) ||
@@ -1024,11 +1066,15 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 	bool pane1=false;
 
-	extern unsigned long int aMessages[1000][3];		// PH: Array used for blocking messages
+	extern pdw::legacy::DuplicateCache duplicateCache;		// PH: Array used for blocking messages
 	int BlockTimer = (Profile.BlockDuplicate >> 4) * 60;
 
 	switch (uMsg)
 	{
+		case PDW_DEFERRED_WINDOW_TITLE_MESSAGE:
+			ApplyDeferredWindowTitle();
+			return 0;
+
 		case WM_TIMER: // Decode POCSAG/FLEX with comport or sound card.
 		if (wParam == SECOND_TIMER) FtpSchedulerTick();
 		if (wParam == PDW_TIMER) SignalSourceService();
@@ -1050,11 +1096,8 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 				if (BlockTimer)
 				{
-					while (aMessages[0][0] && (iSecondsElapsed > (aMessages[0][1] + BlockTimer)))	// First entry Overdue?
-					{
-						memmove(aMessages[0], aMessages[1], sizeof(aMessages));	// Move entries
-						nCount_BlockBuffer[0]--;
-					}
+                    duplicateCache.Expire(iSecondsElapsed, BlockTimer);
+                    nCount_BlockBuffer[0] = static_cast<int>(duplicateCache.Count());
 				}
 				if (hDebugDlg) SendMessage(hDebugDlg, WM_WININICHANGE, 0, 0L);
 
@@ -1598,14 +1641,14 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					// start that exact input, persist it, or restore the prior live input
 					// and in-memory profile. This prevents a failed endpoint bind or a
 					// read-only PDW.INI from being reported as a successful change.
-					const PROFILE previousProfile = Profile;
+					const PROFILE previousProfile = SnapshotProfile(Profile);
 					const bool previousCaptureWasRunning = bCapturing;
 					const bool previousSerialWasRunning = nDriverLoaded != DRIVER_NOT_LOADED;
 					const INT_PTR accepted = GoModalDialogBoxParam(ghInstance,
 						MAKEINTRESOURCE(SETUPDLGBOX), hWnd, (DLGPROC) SetupDlgProc, 0L);
 					if (accepted != TRUE)
 					{
-						Profile = previousProfile;
+						RestoreProfile(Profile, previousProfile);
 						SetAudioConfig(Profile.audioConfig);
 						break;
 					}
@@ -1615,7 +1658,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					if (bCapturing) previousCaptureStopped = Stop_Capturing() != FALSE;
 					if (!previousCaptureStopped || bCapturing)
 					{
-						Profile = previousProfile;
+						RestoreProfile(Profile, previousProfile);
 						SetAudioConfig(Profile.audioConfig);
 						if (previousCaptureWasRunning || previousSerialWasRunning)
 							SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL);
@@ -1627,7 +1670,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					if (nDriverLoaded) UnloadDriver();
 					if (nDriverLoaded != DRIVER_NOT_LOADED)
 					{
-						Profile = previousProfile;
+						RestoreProfile(Profile, previousProfile);
 						SetAudioConfig(Profile.audioConfig);
 						if (previousCaptureWasRunning || previousSerialWasRunning)
 							SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL);
@@ -1678,7 +1721,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 							"PDW Interface Setup", MB_ICONERROR);
 						break;
 					}
-					Profile = previousProfile;
+					RestoreProfile(Profile, previousProfile);
 					SetAudioConfig(Profile.audioConfig);
 
 					bool previousInputRestored = !bCapturing &&
@@ -2063,6 +2106,8 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			break;
 		}
 
+		break; // Tray notifications never carry a MINMAXINFO pointer.
+
 		case WM_GETMINMAXINFO:
 
 		if (bTrayed || !lParam) break; // Don't handle tracking limits while trayed
@@ -2262,7 +2307,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				std::string channelStopStatus;
 				pdw::multichannel::StopAllChannels(channelStopStatus);
 			}
-			if (!ConfigurationRestoreCompleted() && !pdw::multichannel::WorkerActive() && bUpdateFilters)
+			if (!ConfigurationRestoreCompleted() && !ConfigurationRestoreNeedsRecovery() && !pdw::multichannel::WorkerActive() && bUpdateFilters)
 			{
 				std::string filterError;
 				MessageArchivePersistRuntimeFilterState(filterError);
@@ -2291,7 +2336,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 					Profile.ySize = 442;
 				}
 			}
-			if (!ConfigurationRestoreCompleted() && !pdw::multichannel::WorkerActive()) WriteSettings();
+			if (!ConfigurationRestoreCompleted() && !ConfigurationRestoreNeedsRecovery() && !pdw::multichannel::WorkerActive()) WriteSettings();
 
 			if (Profile.SystemTray) SystemTrayIcon(true);	// Remove PDW-icon from systemtray
 			PdwThemeShutdown();
@@ -2324,7 +2369,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		case WM_CLOSE:
 
-		if (Profile.confirmExit && !ConfigurationRestoreCompleted())
+		if (Profile.confirmExit && !ConfigurationRestoreCompleted() && !ConfigurationRestoreNeedsRecovery())
 		{
 			if (MessageBox(ghWnd, "Exit PDW - Sure?", "PDW Exit",
 				           MB_ICONQUESTION | MB_OKCANCEL) == IDCANCEL) break;
@@ -2341,6 +2386,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 void ChangeDataMode(HWND hWnd, int mode)
 {
+	PdwSignalDecoderStateGuard decoderGuard;
 	Profile.monitor_paging  = false;
 	Profile.monitor_acars   = false;
 	Profile.monitor_mobitex = false;
@@ -2385,13 +2431,13 @@ void ClearPanes(bool bPane1, bool bPane2)
 	if (bPane1)
 	{
 		InitializePane(&Pane1);
-		InvalidateRect(Pane1.hWnd, NULL, TRUE);
 	}
 	if (bPane2)
 	{
 		InitializePane(&Pane2);
-		InvalidateRect(Pane2.hWnd, NULL, TRUE);
 	}
+	if (bPane1) InvalidateRect(Pane1.hWnd, NULL, TRUE);
+	if (bPane2) InvalidateRect(Pane2.hWnd, NULL, TRUE);
 	SetNewWindowText("");
 }
 
@@ -2457,6 +2503,10 @@ LRESULT FAR PASCAL Pane1WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
 	switch (uMsg)
 	{
+		case PDW_DEFERRED_PANE_REFRESH_MESSAGE:
+			PdwHandleDeferredPaneRefresh(&Pane1);
+			return 0;
+
 		case WM_CREATE:
 		break;
 
@@ -2664,6 +2714,10 @@ LRESULT FAR PASCAL Pane2WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
 	switch (uMsg)
 	{
+		case PDW_DEFERRED_PANE_REFRESH_MESSAGE:
+			PdwHandleDeferredPaneRefresh(&Pane2);
+			return 0;
+
 		case WM_CREATE:
 		break;
 
@@ -2942,16 +2996,19 @@ void CopyToClipboard(PaneStruct *pane, UINT min_col, UINT max_col, UINT min_row,
 
 	if (max_col > (UINT)LINE_SIZE) max_col = (UINT)LINE_SIZE;
 	if (min_col > max_col) min_col = max_col;
+	PdwPaneDataEnter();
 	const UINT rowsAvailable = pane->buff_lines > (UINT)pane->iVscrollPos ?
 		pane->buff_lines - (UINT)pane->iVscrollPos : 0;
 	if (rowsAvailable == 0)
 	{
+		PdwPaneDataLeave();
 		CloseClipboard();
 		return;
 	}
 	if (max_row >= rowsAvailable) max_row = rowsAvailable - 1;
 	if (min_row > max_row) min_row = max_row;
 	num_lines = (max_row - min_row + 1);
+	PdwPaneDataLeave();
 
 	if (!(hClipBuffer = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE,
 		num_lines * (LINE_SIZE+3) + 1)))
@@ -2971,7 +3028,21 @@ void CopyToClipboard(PaneStruct *pane, UINT min_col, UINT max_col, UINT min_row,
 	}
 
 	*lpClipBuffer = '\0';
+	PdwPaneDataEnter();
 	pchar = pane->buff_char;
+	const UINT currentRowsAvailable = pane->buff_lines > (UINT)pane->iVscrollPos ?
+		pane->buff_lines - (UINT)pane->iVscrollPos : 0;
+	if (!pchar || currentRowsAvailable == 0)
+	{
+		PdwPaneDataLeave();
+		GlobalUnlock(hClipBuffer);
+		GlobalFree(hClipBuffer);
+		CloseClipboard();
+		return;
+	}
+	if (max_row >= currentRowsAvailable) max_row = currentRowsAvailable - 1;
+	if (min_row > max_row) min_row = max_row;
+	if ((max_row - min_row + 1) > num_lines) max_row = min_row + num_lines - 1;
 
 	for (index = min_row; index <= max_row; index++)
 	{
@@ -2987,6 +3058,7 @@ void CopyToClipboard(PaneStruct *pane, UINT min_col, UINT max_col, UINT min_row,
 		*lpClipBuffer++ = '\r';
 		*lpClipBuffer++ = '\n';
 	}
+	PdwPaneDataLeave();
 
 	*lpClipBuffer = '\0';
 
@@ -3013,8 +3085,8 @@ void PanePaint(PaneStruct *pane)
 	POINT		lpPoint;
 	int			x, y, iPaintBeg, iPaintEnd;
 	int			len, pos, size, num_lines;
-	char		*pchar;
-	BYTE		*pcolor;
+	char		lineChars[LINE_SIZE + 1];
+	BYTE		lineColors[LINE_SIZE + 1];
 	BYTE		color = COLOR_UNUSED;
 
 	if (select_on && selected && (pane == select_pane)) InvertSelection();
@@ -3024,8 +3096,18 @@ void PanePaint(PaneStruct *pane)
 
 	num_lines = ps.rcPaint.top / cyChar;
 
-	iPaintBeg = max(0, pane->iVscrollPos + num_lines);
-	iPaintEnd = min(pane->Bottom, pane->iVscrollPos + ps.rcPaint.bottom / cyChar);
+	int verticalPosition = 0;
+	int horizontalPosition = 0;
+	PdwPaneDataEnter();
+	verticalPosition = pane->iVscrollPos;
+	horizontalPosition = pane->iHscrollPos;
+	iPaintBeg = max(0, verticalPosition + num_lines);
+	// The line at Bottom is still being assembled by the decoder. Paint only
+	// rows committed by display_line so a UI refresh can never expose a partial
+	// worker-owned row.
+	iPaintEnd = min(pane->Bottom - 1,
+		verticalPosition + ps.rcPaint.bottom / cyChar);
+	PdwPaneDataLeave();
 
 	SetBkMode(hDC, OPAQUE);
 	SetBkColor(hDC, Profile.color_background);
@@ -3033,35 +3115,45 @@ void PanePaint(PaneStruct *pane)
 	// let Windows handle aligning the characters as TextOut goes along
 	SetTextAlign(hDC, TA_UPDATECP);
 
-	pchar  = pane->buff_char;
-	pcolor = pane->buff_color;
-
 	for (int i=iPaintBeg; i<=iPaintEnd; i++)
 	{
-		x = cxChar * (1 - pane->iHscrollPos) - cxChar;
-		y = cyChar * (1 - pane->iVscrollPos + i) - cyChar;
+		bool lineAvailable = false;
+		PdwPaneDataEnter();
+		if (i >= 0 && i < static_cast<int>(pane->buff_lines) &&
+			pane->buff_char && pane->buff_color)
+		{
+			memcpy(lineChars, &pane->buff_char[i*(LINE_SIZE+1)], sizeof(lineChars));
+			memcpy(lineColors, &pane->buff_color[i*(LINE_SIZE+1)], sizeof(lineColors));
+			lineAvailable = true;
+		}
+		PdwPaneDataLeave();
+		if (!lineAvailable) break;
+		lineChars[LINE_SIZE] = '\0';
+
+		x = cxChar * (1 - horizontalPosition) - cxChar;
+		y = cyChar * (1 - verticalPosition + i) - cyChar;
 
 		// set the current text position
 		MoveToEx(hDC, x, y, &lpPoint);
 
-		len = strlen(&pchar[i*(LINE_SIZE+1)]);
+		len = static_cast<int>(strlen(lineChars));
 		pos = 0;
 
 		// output a line of text
 		while (pos < len)
 		{
 			// check if color has changed
-			if (pcolor[i*(LINE_SIZE+1) + pos] != color)
+			if (lineColors[pos] != color)
 			{
-				color = pcolor[i*(LINE_SIZE+1) + pos];
+				color = lineColors[pos];
 				SetTextColor(hDC, GetColorRGB(color));	// now set the text color
 			}
 			// calculate how many characters are this color
 			size = 0;
-			while ((pcolor[i*(LINE_SIZE+1) + pos + size] == color) && (pos+size < len)) size++;
+			while ((lineColors[pos + size] == color) && (pos+size < len)) size++;
 
 			// print out the characters in the current color
-			TextOut(hDC, 0, 0, &pchar[i*(LINE_SIZE+1) + pos], size);
+			TextOut(hDC, 0, 0, &lineChars[pos], size);
 
 			// update the position in the current line
 			pos += size;
@@ -3880,7 +3972,7 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		case WM_INITDIALOG:
 
 		if (!CenterWindow(hDlg)) return (FALSE);
-		dialogOriginalProfile = Profile;
+		dialogOriginalProfile = SnapshotProfile(Profile);
 		audioDeviceSelectionChanged = false;
 
 		if (bWin9x && !Profile.comPortRS232)
@@ -4210,7 +4302,7 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 			case IDOK:
 			{
-			const PROFILE attemptOriginalProfile = Profile;
+			const PROFILE attemptOriginalProfile = SnapshotProfile(Profile);
 
 			// Set audio configuration.
 			Profile.audioConfig = SendDlgItemMessage(hDlg, IDC_AUDIOCONFIG, CB_GETCURSEL, 0, 0L);
@@ -4250,7 +4342,7 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 					if (GetDlgItemText(hDlg, IDC_COMADDR,(LPSTR) temp, 6) == 0)
 					{
-						Profile = attemptOriginalProfile;
+						RestoreProfile(Profile, attemptOriginalProfile);
 						SetAudioConfig(Profile.audioConfig);
 						MessageBox(hDlg,"You must provide an I/O Address!","PDW Setup",MB_ICONERROR);
 						SetFocus(GetDlgItem(hDlg, IDC_COMADDR));
@@ -4259,7 +4351,7 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 					if (SendDlgItemMessage(hDlg, IDC_COMIRQ, CB_GETCURSEL, 0, 0L) == CB_ERR)
 					{
-						Profile = attemptOriginalProfile;
+						RestoreProfile(Profile, attemptOriginalProfile);
 						SetAudioConfig(Profile.audioConfig);
 						MessageBox(hDlg,"You must select an IRQ vector!","PDW Setup",MB_ICONERROR);
 						SetFocus(GetDlgItem(hDlg, IDC_COMIRQ));
@@ -4325,7 +4417,7 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			if (Profile.audioEnabled && audioSaveDecision ==
 				pdw::audio_profile::CAPTURE_SAVE_REJECT_UNAVAILABLE_STABLE_IDENTITY)
 			{
-				Profile = attemptOriginalProfile;
+				RestoreProfile(Profile, attemptOriginalProfile);
 				SetAudioConfig(Profile.audioConfig);
 				MessageBoxA(hDlg, resolutionError.empty() ?
 					"The saved audio input is unavailable. Select the intended input explicitly before saving." :
@@ -4340,7 +4432,7 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					CB_GETCURSEL, 0, 0L);
 				if (selectedItem == CB_ERR)
 				{
-					Profile = attemptOriginalProfile;
+					RestoreProfile(Profile, attemptOriginalProfile);
 					SetAudioConfig(Profile.audioConfig);
 					MessageBoxA(hDlg, "Choose an available audio input before saving.",
 						"PDW Soundcard", MB_ICONERROR);
@@ -4350,7 +4442,7 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					CB_GETITEMDATA, static_cast<WPARAM>(selectedItem), 0L);
 				if (selectedDevice == CB_ERR || selectedDevice < 0)
 				{
-					Profile = attemptOriginalProfile;
+					RestoreProfile(Profile, attemptOriginalProfile);
 					SetAudioConfig(Profile.audioConfig);
 					MessageBoxA(hDlg, "PDW could not identify the selected audio input.",
 						"PDW Soundcard", MB_ICONERROR);
@@ -4361,7 +4453,7 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			if (bindSelectedAudioDevice &&
 				!pdw::audio_profile::RememberWinmmCaptureDevice(Profile.audioDevice))
 			{
-				Profile = attemptOriginalProfile;
+				RestoreProfile(Profile, attemptOriginalProfile);
 				SetAudioConfig(Profile.audioConfig);
 				MessageBoxA(hDlg, "PDW could not save a stable identity for the selected audio input.",
 					"PDW Soundcard", MB_ICONERROR);
@@ -4376,7 +4468,7 @@ BOOL FAR PASCAL SetupDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			}
 
 			case IDCANCEL:
-			Profile = dialogOriginalProfile;
+			RestoreProfile(Profile, dialogOriginalProfile);
 			SetAudioConfig(Profile.audioConfig);
 			EndDialog(hDlg, FALSE);
 			return (TRUE);
@@ -4468,9 +4560,6 @@ BOOL NEAR SelectFont(HWND hDlg)
 
 		GetWindowRect(Pane2.hWnd, &rect);
 		SendMessage(Pane2.hWnd, WM_SIZE, SIZENORMAL, (LPARAM) MAKELONG(rect.right - rect.left, rect.bottom - rect.top));
-
-		InitializePane(&Pane1);
-		InitializePane(&Pane2);
 
 		DrawTitleBarGfx(ghWnd);		// Redraw pane1/pane2 title bars
 
@@ -6759,6 +6848,67 @@ BOOL FAR PASCAL ScreenOptionsDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 } // end of ScreenOptionsDlgProc
 
 
+static bool AllocatePaneStorage(int lines, char **characters, BYTE **colors)
+{
+	if (!characters || !colors || lines <= 0) return false;
+	*characters = NULL;
+	*colors = NULL;
+	const size_t bytes = (static_cast<size_t>(lines) + 1u) * (LINE_SIZE + 1u);
+	*characters = static_cast<char *>(malloc(bytes));
+	*colors = static_cast<BYTE *>(malloc(bytes));
+	if (*characters && *colors) return true;
+	if (*characters) free(*characters);
+	if (*colors) free(*colors);
+	*characters = NULL;
+	*colors = NULL;
+	return false;
+}
+
+static bool ReplacePaneStorage(PaneStruct *pane, int requestedLines, int fallbackLines,
+	int *installedLines, bool *usedFallback)
+{
+	if (!pane || !installedLines || !usedFallback) return false;
+	char *newCharacters = NULL;
+	BYTE *newColors = NULL;
+	int lines = requestedLines;
+	*usedFallback = false;
+	if (!AllocatePaneStorage(lines, &newCharacters, &newColors))
+	{
+		lines = fallbackLines;
+		*usedFallback = true;
+		if (!AllocatePaneStorage(lines, &newCharacters, &newColors)) return false;
+	}
+
+	char *oldCharacters = NULL;
+	BYTE *oldColors = NULL;
+	PdwPaneDataEnter();
+	oldCharacters = pane->buff_char;
+	oldColors = pane->buff_color;
+	pane->buff_char = newCharacters;
+	pane->buff_color = newColors;
+	pane->buff_lines = static_cast<unsigned int>(lines);
+	pane->Bottom = 0;
+	for (int index = 0; index < lines; ++index)
+	{
+		newCharacters[index * (LINE_SIZE + 1)] = 0;
+		newColors[index * (LINE_SIZE + 1)] = COLOR_UNUSED;
+	}
+	pane->currentPos = 0;
+	pane->currentColor = COLOR_UNUSED;
+	pane->iVscrollPos = 0;
+	pane->iVscrollMax = 0;
+	pane->iHscrollPos = 0;
+	pane->iHscrollMax = 0;
+	PdwPaneDataLeave();
+
+	if (oldCharacters) free(oldCharacters);
+	if (oldColors) free(oldColors);
+	SetScrollRange(pane->hWnd, SB_VERT, 0, 0, TRUE);
+	SetScrollRange(pane->hWnd, SB_HORZ, 0, 0, TRUE);
+	*installedLines = lines;
+	return true;
+}
+
 BOOL FAR PASCAL ScrollDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	int pane1_size = Profile.pane1_size;
@@ -6768,7 +6918,6 @@ BOOL FAR PASCAL ScrollDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 	int value;
 
 	BOOL	  errTrans;
-	size_t	  mem_size;
 	char tbuf[128]="";	// PH
 
 	switch (uMsg)
@@ -6839,29 +6988,16 @@ BOOL FAR PASCAL ScrollDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 			if (value != pane1_size)  // did it change?
 			{
-				if (Pane1.buff_char != NULL)	free(Pane1.buff_char);
-				if (Pane1.buff_color != NULL)	free(Pane1.buff_color);
-
-				mem_size = (value+1) * (LINE_SIZE+1);
-				Pane1.buff_char = (char *) malloc(mem_size);
-				Pane1.buff_color = (BYTE *)malloc(mem_size);
-
-				if ((Pane1.buff_char == NULL) || (Pane1.buff_color == NULL))
+				bool usedFallback = false;
+				if (!ReplacePaneStorage(&Pane1, value, PANE1_SIZE, &value, &usedFallback))
 				{
-					if (Pane1.buff_char != NULL)	free(Pane1.buff_char);
-					if (Pane1.buff_color != NULL)	free(Pane1.buff_color);
-
-					value = PANE1_SIZE;
-					mem_size = (value+1) * (LINE_SIZE+1);
-					Pane1.buff_char = (char *) malloc(mem_size);
-					Pane1.buff_color = (BYTE *)malloc(mem_size);
-
-					MessageBox(hDlg,"Error Allocating Memory!","PDW Scrollback",MB_ICONWARNING);
+					MessageBox(hDlg, "PDW could not allocate replacement scrollback memory. The existing pane was preserved.",
+						"PDW Scrollback", MB_ICONERROR);
+					return FALSE;
 				}
+				if (usedFallback)
+					MessageBox(hDlg,"Error Allocating Memory!","PDW Scrollback",MB_ICONWARNING);
 				Profile.pane1_size = value;
-				Pane1.buff_lines = Profile.pane1_size;
-
-				InitializePane(&Pane1);
 				InvalidateRect(Pane1.hWnd, NULL, TRUE);
 			}
 			value = GetDlgItemInt(hDlg, IDC_SCROLLPANE2, &errTrans, FALSE);
@@ -6877,29 +7013,16 @@ BOOL FAR PASCAL ScrollDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 			if (value != pane2_size)  // did it change?
 			{
-				if (Pane2.buff_char != NULL)	free(Pane2.buff_char);
-				if (Pane2.buff_color != NULL)	free(Pane2.buff_color);
-
-				mem_size = (value+1) * (LINE_SIZE+1);
-				Pane2.buff_char = (char *)malloc(mem_size);
-				Pane2.buff_color = (BYTE *)malloc(mem_size);
-
-				if ((Pane2.buff_char == NULL) || (Pane2.buff_color == NULL))
+				bool usedFallback = false;
+				if (!ReplacePaneStorage(&Pane2, value, PANE2_SIZE, &value, &usedFallback))
 				{
-					if (Pane2.buff_char != NULL)	free(Pane2.buff_char);
-					if (Pane2.buff_color != NULL)	free(Pane2.buff_color);
-
-					value = PANE2_SIZE;
-					mem_size = (value+1) * (LINE_SIZE+1);
-					Pane2.buff_char = (char *)malloc(mem_size);
-					Pane2.buff_color = (BYTE *)malloc(mem_size);
-
-					MessageBox(hDlg,"Error Allocating Memory!","PDW Scrollback",MB_ICONWARNING);
+					MessageBox(hDlg, "PDW could not allocate replacement scrollback memory. The existing pane was preserved.",
+						"PDW Scrollback", MB_ICONERROR);
+					return FALSE;
 				}
+				if (usedFallback)
+					MessageBox(hDlg,"Error Allocating Memory!","PDW Scrollback",MB_ICONWARNING);
 				Profile.pane2_size = value;
-				Pane2.buff_lines = Profile.pane2_size;
-
-				InitializePane(&Pane2);
 				InvalidateRect(Pane2.hWnd, NULL, TRUE);
 			}
 			value = GetDlgItemInt(hDlg, IDC_PERCENTPANE1, NULL, FALSE);
@@ -6947,8 +7070,9 @@ BOOL FAR PASCAL ScrollDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 } // end of ScrollDlgProc
 
 
-void Copy_Filter_Fields(FILTER *out_filter, FILTER in_filter)
+void Copy_Filter_Fields(FILTER *out_filter, const FILTER& in_filter)
 {
+	PdwSignalDecoderStateGuard filterSnapshot;
 	out_filter->directory_id = in_filter.directory_id;
 	out_filter->type = in_filter.type;
 
@@ -6989,8 +7113,9 @@ void Copy_Filter_Fields(FILTER *out_filter, FILTER in_filter)
 } // end of Copy_Filter_Fields()
 
 
-void BuildFilterString(char *temp_str, FILTER filter)
+void BuildFilterString(char *temp_str, const FILTER& filter)
 {
+	PdwSignalDecoderStateGuard filterSnapshot;
 	char *filter_types[7] = {"UNUSED", "FLEX","POCSAG","TEXT","ERMES ","ACARS ", "MOBITX"};
 	char *wave_names[11]  = {"Default","Sound-0","Sound-1","Sound-2","Sound-3","Sound-4",
 									   "Sound-5","Sound-6","Sound-7","Sound-8","Sound-9"};
@@ -7559,7 +7684,7 @@ BOOL FAR PASCAL FilterDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 					while (index != CB_ERR)
 					{
-						Profile.filters.erase(Profile.filters.begin()+index);
+						{ PdwSignalDecoderStateGuard guard; Profile.filters.erase(Profile.filters.begin()+index); }
 						ListView_DeleteItem(hListView, index) ;
 						index = ListView_GetNextItem(hListView, index-1, LVNI_SELECTED) ;
 						pumpMessages();	// Process messages
@@ -8384,7 +8509,7 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 					if (Profile.filters[index].sep_filterfile_en != filter.sep_filterfile_en) sep_en=1;
 					if (Profile.filters[index].sep_filterfiles > sep_filterfiles) sep_filterfiles = Profile.filters[index].sep_filterfiles;
 
-					iHits += Profile.filters[index].hitcounter;
+					{ PdwSignalDecoderStateGuard counterSnapshot; iHits += Profile.filters[index].hitcounter; }
 				}
 
 				if (monitor_only) SendDlgItemMessage(hDlg, IDC_FILTER_MONITOR_ONLY, BM_SETSTYLE, BS_AUTO3STATE, TRUE);
@@ -9079,6 +9204,7 @@ BOOL FAR PASCAL FilterEditDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 
 			while (((index = ListView_GetNextItem(hListView, index, LVNI_SELECTED)) != CB_ERR) || !Profile.filters.size())
 			{
+				PdwSignalDecoderStateGuard filterMutation;
 				if (!bEditFilter)	// If we are adding a new filter
 				{
 					ListView_SetItemState(hListView, index++, 0, LVIS_SELECTED | LVIS_FOCUSED); // Deselect current
@@ -11921,6 +12047,8 @@ void OnLButtonUp(UINT nFlags, int x, int y)
 		// Insert the main item
 		iRet = ListView_InsertItem(hListView, &lvi);
 
+		{
+		PdwSignalDecoderStateGuard filterMutation;
 		Copy_Filter_Fields(&filter, Profile.filters[iPos]);
 		Profile.filters.insert(Profile.filters.begin() + lvhti.iItem, filter);
 
@@ -11929,6 +12057,7 @@ void OnLButtonUp(UINT nFlags, int x, int y)
 		// Delete from original position
 		ListView_DeleteItem(hListView, iPos);
 		Profile.filters.erase(Profile.filters.begin() + iPos);
+		}
 		iPos = ListView_GetNextItem(hListView, -1, LVNI_SELECTED);
 		nCopyStart = nCopyEnd = -1 ;
 	}
@@ -12073,11 +12202,13 @@ void SortFilter(HWND hDlg, bool bAddress)
 
 			ListView_EnsureVisible(hListView, index, TRUE);
 
-			Copy_Filter_Fields(&filter, Profile.filters[index]);
-			BuildFilterString(szTEMP, Profile.filters[index]);
-
-			Profile.filters.erase (Profile.filters.begin() + index);
-			Profile.filters.insert(Profile.filters.begin() + i, filter);
+			{
+				PdwSignalDecoderStateGuard filterMutation;
+				Copy_Filter_Fields(&filter, Profile.filters[index]);
+				BuildFilterString(szTEMP, Profile.filters[index]);
+				Profile.filters.erase (Profile.filters.begin() + index);
+				Profile.filters.insert(Profile.filters.begin() + i, filter);
+			}
 			ListView_DeleteItem(hListView, index);
 			InsertListViewItem(szTEMP, i);
 
@@ -12162,9 +12293,12 @@ void PasteFilter(void)
 
 		for (i = item = nCopyStart; i <= nCopyEnd; i++)
 		{
- 			Copy_Filter_Fields(&filter, Profile.filters[item]);
-			BuildFilterString(szTEMP, filter);
-			Profile.filters.insert(Profile.filters.begin() + nIndex, filter);
+			{
+				PdwSignalDecoderStateGuard filterMutation;
+				Copy_Filter_Fields(&filter, Profile.filters[item]);
+				BuildFilterString(szTEMP, filter);
+				Profile.filters.insert(Profile.filters.begin() + nIndex, filter);
+			}
 
 			if (nIndex <= nCopyStart)
 			{
@@ -12194,6 +12328,7 @@ void ResetHitcounters(bool bAll)
 	{
 		for (int index=0; index<Profile.filters.size(); index++)
 		{
+			PdwSignalDecoderStateGuard counterMutation;
 			Profile.filters[index].hitcounter = 0 ;
 			Profile.filters[index].lasthit_date[0] = '\0' ;
 			Profile.filters[index].lasthit_time[0] = '\0' ;
@@ -12208,6 +12343,7 @@ void ResetHitcounters(bool bAll)
 	{
 		while((index = ListView_GetNextItem(hListView, index, LVNI_SELECTED)) != CB_ERR)
 		{
+			PdwSignalDecoderStateGuard counterMutation;
 			Profile.filters[index].hitcounter = 0 ;
 			Profile.filters[index].lasthit_date[0] = '\0' ;
 			Profile.filters[index].lasthit_time[0] = '\0' ;
@@ -12342,7 +12478,7 @@ void SetNewWindowText(char *text)
 {
 //	extern bool bMode_IDLE;			// Set if no signal
 
-	szTEMP[0] = '\0';
+	char title[MAX_STR_LEN] = {};
 	auto appendWindowText = [](char* destination, size_t destinationSize, const char* value)
 	{
 		if (!value || !value[0]) return;
@@ -12350,22 +12486,28 @@ void SetNewWindowText(char *text)
 		if (used < destinationSize-1)
 			strncat(destination, value, destinationSize-1-used);
 	};
-	appendWindowText(szTEMP, sizeof(szTEMP), szWindowText[0]);
+	appendWindowText(title, sizeof(title), szWindowText[0]);
 
-	if (text && text[0]) appendWindowText(szTEMP, sizeof(szTEMP), text);
+	if (text && text[0]) appendWindowText(title, sizeof(title), text);
 	else
 	{
 		for (int i=1; i<6; i++)
 		{
 			if (szWindowText[i][0])
 			{
-				appendWindowText(szTEMP, sizeof(szTEMP), " - ");
-				appendWindowText(szTEMP, sizeof(szTEMP), szWindowText[i]);
+				appendWindowText(title, sizeof(title), " - ");
+				appendWindowText(title, sizeof(title), szWindowText[i]);
 			}
 		}
 		strcpy(szWindowText[5], "");
 	}
-	SetWindowText(ghWnd, (LPSTR) szTEMP);
+	if (ghWnd && GetWindowThreadProcessId(ghWnd, NULL) != GetCurrentThreadId())
+	{
+		QueueDeferredWindowTitle(title);
+		return;
+	}
+	lstrcpynA(szTEMP, title, _countof(szTEMP));
+	SetWindowText(ghWnd, (LPSTR) title);
 }
 
 
@@ -12468,19 +12610,17 @@ void ShowContextMenu(int menu, HWND hWindow)
 
 void SelectByDoubleClick(HWND hWnd, PaneStruct *pane, int iPosition, int StartRow)
 {
-	int line_no = pane->iVscrollPos + iSelectionStartRow;
-	int offset  = line_no * (LINE_SIZE+1);
-	int min_col=0, max_col=0;
 	static LONG LastSelection=0;
 	static int iLastRow=0;
+	bool selectWord = false;
 
-	char *pchar;
-	
-	pchar = pane->buff_char;
-	if (!pchar || iPosition < 0 || iPosition >= LINE_SIZE) return;
-	if (line_no < 0 || line_no >= (int)pane->buff_lines) return;
-
-	if (pchar[offset + iPosition] > 32)	// If user clicked on a character bigger than ASCII(32)
+	PdwPaneDataEnter();
+	const int line_no = pane->iVscrollPos + iSelectionStartRow;
+	const int offset = line_no * (LINE_SIZE + 1);
+	char *pchar = pane->buff_char;
+	if (pchar && iPosition >= 0 && iPosition < LINE_SIZE &&
+		line_no >= 0 && line_no < static_cast<int>(pane->buff_lines) &&
+		pchar[offset + iPosition] > 32)	// If user clicked on a character bigger than ASCII(32)
 	{
 		if ((GetKeyState(VK_SHIFT) & 0x80) && (StartRow == iLastRow))
 		{
@@ -12503,27 +12643,36 @@ void SelectByDoubleClick(HWND hWnd, PaneStruct *pane, int iPosition, int StartRo
 		iSelectionStartRow = StartRow;
 		iSelectionEndRow   = StartRow;
 		iLastRow           = StartRow;
-
-		InvertSelection();					// Invert selection
-
-		SetCapture(hWnd);
-		select_pane = pane;
-		selected=1;
+		selectWord = true;
 	}
+	PdwPaneDataLeave();
+	if (!selectWord) return;
+
+	InvertSelection();					// Invert selection
+	SetCapture(hWnd);
+	select_pane = pane;
+	selected=1;
 }
 
 void GoogleMaps(int iPosition)
 {
 	char szTMP[1024];
 	char szString[32];
-	char *pchar;
+	char line[LINE_SIZE + 1];
 
 	int i, j, xx;
 
-	int line_no = Pane1.iVscrollPos + iSelectionStartRow;
-	int offset  = line_no * (LINE_SIZE+1);
-	pchar = Pane1.buff_char;
-	if (!pchar || line_no < 0 || line_no >= (int)Pane1.buff_lines) return;
+	bool lineAvailable = false;
+	PdwPaneDataEnter();
+	const int line_no = Pane1.iVscrollPos + iSelectionStartRow;
+	if (Pane1.buff_char && line_no >= 0 && line_no < static_cast<int>(Pane1.buff_lines))
+	{
+		memcpy(line, &Pane1.buff_char[line_no * (LINE_SIZE + 1)], LINE_SIZE);
+		line[LINE_SIZE] = '\0';
+		lineAvailable = true;
+	}
+	PdwPaneDataLeave();
+	if (!lineAvailable) return;
 	if (iSelectionStartCol < 0 || iSelectionStartCol >= LINE_SIZE) return;
 
 	if (Profile.monitor_mobitex && iPosition == iItemPositions[MSG_MESSAGE])
@@ -12531,7 +12680,7 @@ void GoogleMaps(int iPosition)
 		for (i=0, xx = iSelectionStartCol;
 			xx <= (iSelectionStartCol+18) && xx < LINE_SIZE; i++, xx++)
 		{
-			if (pchar[offset + xx]) szTMP[i] = pchar[offset + xx];
+			if (line[xx]) szTMP[i] = line[xx];
 			else break;
 		}
 		szTMP[i] = '\0';
@@ -12562,14 +12711,14 @@ void GoogleMaps(int iPosition)
 		{
 			if (i < 4)
 			{
-				if (!isdigit(pchar[offset + xx])) return;
+				if (!isdigit(line[xx])) return;
 			}
 			else if (i < 6)
 			{
-				if (isdigit(pchar[offset + xx])) return;
+				if (isdigit(line[xx])) return;
 			}
 
-			if (pchar[offset + xx]) szString[i] = pchar[offset + xx];
+			if (line[xx]) szString[i] = line[xx];
 			else break;
 		}
 		szString[i] = '\0';

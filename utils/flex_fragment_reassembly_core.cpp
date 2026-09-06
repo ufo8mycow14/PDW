@@ -27,10 +27,9 @@ FragmentResult::FragmentResult()
 
 bool ShouldHoldOriginalFragment(FragmentStatus status)
 {
-	return status == FRAGMENT_BUFFERED_START ||
-		status == FRAGMENT_BUFFERED_CONTINUATION ||
-		status == FRAGMENT_BUFFERED_OUT_OF_ORDER ||
-		status == FRAGMENT_DUPLICATE ||
+	// Keep received parts visible until completion is guaranteed. Expiry,
+	// conflict or capacity eviction must not erase the only copy of a message.
+	return status == FRAGMENT_DUPLICATE ||
 		status == FRAGMENT_ASSEMBLED;
 }
 

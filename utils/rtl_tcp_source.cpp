@@ -121,6 +121,8 @@ void RtlFmDemodulator::Reset()
 	accumulator_ = 0.0f;
 	accumulatorCount_ = 0;
 	havePrevious_ = false;
+	havePendingI_ = false;
+	pendingI_ = 0;
 	lowPassState_ = 0.0f;
 	signalConditioner_.Reset();
 }
@@ -136,12 +138,15 @@ void RtlFmDemodulator::ProcessUnsignedIq(const unsigned char* iqBytes,
 	}
 
 	audio.clear();
-	if (!iqBytes || byteCount < 2) return;
+	if (!iqBytes || !byteCount) return;
 	audio.reserve((byteCount / 2) * audioSampleRate_ / iqSampleRate_ + 2);
-	for (std::size_t byte = 0; byte + 1 < byteCount; byte += 2)
+	for (std::size_t byte = 0; byte < byteCount;)
 	{
-		const float currentI = (static_cast<int>(iqBytes[byte]) - 127.5f) / 128.0f;
-		const float currentQ = (static_cast<int>(iqBytes[byte + 1]) - 127.5f) / 128.0f;
+		if (!havePendingI_) { pendingI_ = iqBytes[byte++]; havePendingI_ = true; }
+		if (byte == byteCount) break;
+		const float currentI = (static_cast<int>(pendingI_) - 127.5f) / 128.0f;
+		const float currentQ = (static_cast<int>(iqBytes[byte++]) - 127.5f) / 128.0f;
+		havePendingI_ = false;
 		if (havePrevious_)
 		{
 			const float cross = previousI_ * currentQ - previousQ_ * currentI;
@@ -323,6 +328,9 @@ DWORD WINAPI RtlTcpSource::ThreadEntry(LPVOID context)
 
 DWORD RtlTcpSource::NetworkThread()
 {
+	// Above-normal is deliberately below time-critical priorities: capture must
+	// survive desktop rendering bursts without starving Windows or UI threads.
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 	WSADATA winsock = {};
 	if (WSAStartup(MAKEWORD(2, 2), &winsock) != 0)
 	{
@@ -497,6 +505,9 @@ bool RtlSdrSource::Start(const RtlTcpConfig& config, unsigned int deviceIndex, A
 	InterlockedExchange(&lastIqCallbackTick_, 0);
 	demodulator_.Configure(config.sampleRate, config.audioSampleRate,
 		config.nfmBandwidthHz, config.signalConditionerEnabled);
+	callbackAudio_.clear();
+	callbackAudio_.reserve((32768u / 2u) * config.audioSampleRate /
+		config.sampleRate + 2u);
 	stopEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	readyEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (!stopEvent_ || !readyEvent_)
@@ -626,14 +637,15 @@ void __cdecl RtlSdrSource::ReadCallback(unsigned char* buffer, std::uint32_t len
 	RtlSdrSource* source = static_cast<RtlSdrSource*>(context);
 	if (!source || StopRequested(source->stopEvent_)) return;
 	InterlockedExchange(&source->lastIqCallbackTick_, static_cast<LONG>(GetTickCount()));
-	std::vector<float> audio;
-	source->demodulator_.ProcessUnsignedIq(buffer, length, audio);
-	if (source->sink_ && !audio.empty())
-		source->sink_->OnAudioSamples(&audio[0], audio.size(), source->config_.audioSampleRate, false);
+	source->demodulator_.ProcessUnsignedIq(buffer, length, source->callbackAudio_);
+	if (source->sink_ && !source->callbackAudio_.empty())
+		source->sink_->OnAudioSamples(&source->callbackAudio_[0],
+			source->callbackAudio_.size(), source->config_.audioSampleRate, false);
 }
 
 DWORD RtlSdrSource::DeviceThread()
 {
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 	library_ = LoadRtlLibrary(config_.receiverLibraryPath);
 	if (!library_)
 	{

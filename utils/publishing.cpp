@@ -27,6 +27,7 @@
 #include "publishing_job_store.h"
 #include "curl_runtime.h"
 #include "decoded_event.h"
+#include "multi_channel_manager.h"
 
 namespace
 {
@@ -1067,6 +1068,9 @@ namespace
 
 void PublishingManagerInitialize(void)
 {
+	// The main process owns PublishQueue. A disabled channel must not load
+	// stale jobs and write them back after the main publisher completes them.
+	if (pdw::multichannel::WorkerActive()) return;
 	if (g_initialized) return;
 	InitializeCriticalSection(&g_lock);
 	g_initialized = true;

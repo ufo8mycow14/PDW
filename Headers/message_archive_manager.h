@@ -32,6 +32,8 @@ bool MessageArchiveReplaceCapcodesCsv(const std::string& csv, int& rejected,
 	std::string& error);
 bool MessageArchiveReplaceLegacyFilters(const FILTERLIST& filters,
 	std::string& error);
+void MessageArchiveConvertLegacyFilters(const FILTERLIST& filters,
+	std::vector<pdw::archive::CapcodeEntry>& entries);
 bool MessageArchiveMergeLegacyFilters(const FILTERLIST& filters,
 	std::string& error);
 bool MessageArchiveQueryHistory(const pdw::archive::HistoryQuery& query,
@@ -50,7 +52,8 @@ std::string MessageArchiveStatusText(void);
 enum MessageArchiveManagerTestHookStage
 {
 	MESSAGE_ARCHIVE_TEST_BEFORE_OPERATION_LOCK = 1,
-	MESSAGE_ARCHIVE_TEST_AFTER_ARCHIVE_OPEN = 2
+	MESSAGE_ARCHIVE_TEST_AFTER_ARCHIVE_OPEN = 2,
+	MESSAGE_ARCHIVE_TEST_BEFORE_FILTER_PUBLICATION = 3
 };
 
 typedef void (*MessageArchiveManagerTestHook)(MessageArchiveManagerTestHookStage stage,

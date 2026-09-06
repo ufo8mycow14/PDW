@@ -62,6 +62,8 @@ private:
 	float accumulator_;
 	unsigned int accumulatorCount_;
 	bool havePrevious_;
+	bool havePendingI_;
+	unsigned char pendingI_;
 	std::uint32_t nfmBandwidthHz_;
 	float lowPassAlpha_;
 	float lowPassState_;
@@ -163,6 +165,7 @@ private:
 	unsigned int deviceIndex_;
 	AudioSampleSink* sink_;
 	RtlFmDemodulator demodulator_;
+	std::vector<float> callbackAudio_;
 	RtlTcpState state_;
 	std::string lastError_;
 	volatile LONG lastIqCallbackTick_;

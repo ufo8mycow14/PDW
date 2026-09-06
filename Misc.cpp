@@ -26,6 +26,7 @@
 #include "utils\multipart_message_reassembly_core.h"
 
 #include <sstream>
+#include "utils/legacy_message_safety.h"
 
 #define FILTER_PARAM_LEN	500
 #define MAXIMUM_GROUPSIZE	1000
@@ -95,9 +96,9 @@ char Previous_MSG[2][9][MAX_STR_LEN];		// PH: Buffer for previous message items
 											// PH: [8]=last filtered messagetext
 
 unsigned long int iSecondsElapsed=0;
-unsigned long int aMessages[1000][3] = {0};	// PH: Array used for blocking messages
+pdw::legacy::DuplicateCache duplicateCache;	// PH: Array used for blocking messages
 
-char szLogFileLine[MAX_STR_LEN+64];			// PH: Current Logfile line
+std::string szLogFileLine;			// PH: Current Logfile line
 char szSepfilenames[MAX_SEPFILES][MAX_PATH];// PH: Buffer for current separate filename and the sepfiles in current groupcall
 FILE* pSepFilterFiles[MAX_SEPFILES];
 extern char szWindowText[6][1000];
@@ -128,6 +129,87 @@ static bool g_showingAssembledFlexCopy = false;
 static pdw::multipart::MultipartReassembler g_multipartMessageReassembler(
 	64, 600000, MAX_STR_LEN - 1, 32);
 static pdw::assembled::VisibilityGuard g_assembledMessageVisibility(64, 120000);
+
+namespace
+{
+	INIT_ONCE g_paneDataLockOnce = INIT_ONCE_STATIC_INIT;
+	CRITICAL_SECTION g_paneDataLock;
+	volatile LONG g_pane1RefreshPending = 0;
+	volatile LONG g_pane2RefreshPending = 0;
+
+	BOOL CALLBACK InitializePaneDataLock(PINIT_ONCE, PVOID, PVOID*)
+	{
+		InitializeCriticalSection(&g_paneDataLock);
+		return TRUE;
+	}
+
+	void EnsurePaneDataLock()
+	{
+		InitOnceExecuteOnce(&g_paneDataLockOnce, InitializePaneDataLock, NULL, NULL);
+	}
+
+	class PaneDataGuard
+	{
+	public:
+		PaneDataGuard() { PdwPaneDataEnter(); }
+		~PaneDataGuard() { PdwPaneDataLeave(); }
+	private:
+		PaneDataGuard(const PaneDataGuard&);
+		PaneDataGuard& operator=(const PaneDataGuard&);
+	};
+
+	bool IsPaneOwnerThread(const PaneStruct* pane)
+	{
+		return pane && pane->hWnd &&
+			GetWindowThreadProcessId(pane->hWnd, NULL) == GetCurrentThreadId();
+	}
+
+	void QueuePaneRefresh(PaneStruct* pane)
+	{
+		if (!pane || !pane->hWnd) return;
+		volatile LONG* pending = pane == &Pane1 ?
+			&g_pane1RefreshPending : &g_pane2RefreshPending;
+		if (InterlockedExchange(pending, 1) == 0)
+			PostMessage(pane->hWnd, PDW_DEFERRED_PANE_REFRESH_MESSAGE, 0, 0);
+	}
+
+	int PaneCurrentPosition(PaneStruct* pane)
+	{
+		PaneDataGuard guard;
+		return pane ? pane->currentPos : 0;
+	}
+}
+
+void PdwPaneDataEnter(void)
+{
+	EnsurePaneDataLock();
+	EnterCriticalSection(&g_paneDataLock);
+}
+
+void PdwPaneDataLeave(void)
+{
+	LeaveCriticalSection(&g_paneDataLock);
+}
+
+void PdwHandleDeferredPaneRefresh(PaneStruct *pane)
+{
+	if (!pane || !pane->hWnd) return;
+	volatile LONG* pending = pane == &Pane1 ?
+		&g_pane1RefreshPending : &g_pane2RefreshPending;
+	InterlockedExchange(pending, 0);
+	int maximum = 0;
+	int position = 0;
+	{
+		PaneDataGuard guard;
+		pane->iVscrollMax = max(0, pane->Bottom - pane->cyLines);
+		pane->iVscrollPos = min(pane->iVscrollPos, pane->iVscrollMax);
+		maximum = pane->iVscrollMax;
+		position = pane->iVscrollPos;
+	}
+	SetScrollRange(pane->hWnd, SB_VERT, 0, maximum, FALSE);
+	SetScrollPos(pane->hWnd, SB_VERT, position, TRUE);
+	InvalidateRect(pane->hWnd, NULL, TRUE);
+}
 
 static std::uint64_t MultipartMessageNowMs()
 {
@@ -258,7 +340,10 @@ void display_show_char(PaneStruct *pane, char cin)
 		}
 		message_buffer[iMessageIndex] = cin;
 	}
-	message_color[iMessageIndex] = pane->currentColor;
+	{
+		PaneDataGuard guard;
+		message_color[iMessageIndex] = pane->currentColor;
+	}
 
 	if (iMessageIndex < MAX_STR_LEN-1) iMessageIndex++;
 
@@ -296,6 +381,7 @@ static void PrepareContinuationLine(PaneStruct *pane, bool automaticWrap)
 
 void build_show_line(PaneStruct *pane, char cin, int option)
 {
+	PaneDataGuard guard;
 	if (option == BUILDSHOWLINE_LINEFEED)
 	{
 		display_line(pane); // terminate/display line/start new line.
@@ -331,6 +417,7 @@ void build_show_line(PaneStruct *pane, char cin, int option)
 // Display the current line.
 void display_line(PaneStruct *pane)
 {
+	PaneDataGuard guard;
 	RECT	rect;
 	unsigned int xx;
 	int	scroll_amt, iVscrollInc;
@@ -363,6 +450,17 @@ void display_line(PaneStruct *pane)
 		pane->iVscrollPos--;
 	}
 	pane->iVscrollMax = max(0,pane->Bottom - pane->cyLines);
+	if (!IsPaneOwnerThread(pane))
+	{
+		// Decoder workers update only the bounded backing store. Window scrolling,
+		// invalidation and painting are coalesced onto the owning UI thread.
+		const bool wasAtBottom = pane->Bottom <=
+			(pane->iVscrollPos + pane->cyLines + 1);
+		if (wasAtBottom) pane->iVscrollPos = pane->iVscrollMax;
+		iPanePos = 0;
+		QueuePaneRefresh(pane);
+		return;
+	}
 
 	// check if we need to scroll the display (i.e. are we at bottom?)
 	if (pane->Bottom == (pane->iVscrollPos + (pane->cyLines) + 1))
@@ -464,7 +562,7 @@ void ConvertGroupcall(int groupbit, char *vtype, int capcode)
 				{
 					if (Profile.show_rejectblocked)
 					{
-						sprintf(szWindowText[5], "Blocked Duplicate GroupMessage : %i %s", 2029568+groupbit, message_buffer);
+						strcpy_s(szWindowText[5], pdw::legacy::DuplicateStatus(true));
 					}
 
 					if (Profile.BlockDuplicate & BLOCK_LOGFILE)
@@ -670,6 +768,7 @@ void ShowMessage()
 	bool bAssembledTextMessage = false;
 	bool bShowMessage=true, bFragment=false, bGroupcode;
 	bool bNumeric=false;
+	bool acceptedRowDisplayed=false;
 	bool bNewFile, bNewLine;					// PH: To indicate if the logfile is new / already exists
 	bool bSeparator[2] = { true, true };		// PH: Set if a separator is needed
 	bool bCombine = false;						// PH: Used for grouping not-group messages
@@ -714,8 +813,9 @@ void ShowMessage()
 		observation.length = strlen(reinterpret_cast<const char*>(message_buffer));
 		const pdw::multipart::MultipartResult multipart =
 			g_multipartMessageReassembler.Observe(observation);
-		if (multipart.status == pdw::multipart::MULTIPART_BUFFERED ||
-			multipart.status == pdw::multipart::MULTIPART_DUPLICATE)
+		// Buffered originals continue through normal filtering/display/archive.
+		// A later timeout or conflict cannot silently discard received content.
+		if (multipart.status == pdw::multipart::MULTIPART_DUPLICATE)
 		{
 			const bool fragmentGroup = iConvertingGroupcall != 0 ||
 				memcmp(Current_MSG[MSG_CAPCODE], "20295", 5) == 0;
@@ -915,7 +1015,7 @@ void ShowMessage()
 				GatewayOutboxPublishDecodedMessage(blockedEvent);
 				if (Profile.show_rejectblocked)			// Show in title bar?
 				{
-					sprintf(szWindowText[5], "Blocked Duplicate Message : %s %s", Current_MSG[MSG_CAPCODE], (Profile.monitor_mobitex && !Current_MSG[MSG_MESSAGE][0]) ? Current_MSG[MSG_TYPE] : Current_MSG[MSG_MESSAGE]);
+					strcpy_s(szWindowText[5], pdw::legacy::DuplicateStatus(false));
 				}
 
 				if (Profile.BlockDuplicate & BLOCK_LOGFILE)
@@ -1187,11 +1287,10 @@ void ShowMessage()
 
 							if (Profile.FlexGroupMode & FLEXGROUPMODE_LOGGING)
 							{
-								sprintf(szLogFileLine, "%s %s  %s  %s\n",
-															Current_MSG[MSG_TIME],
-															Current_MSG[MSG_DATE],
-															iConvertingGroupcall? temp : Current_MSG[MSG_TYPE],
-															Current_MSG[MSG_MESSAGE]);
+								szLogFileLine = std::string(Current_MSG[MSG_TIME]) + " " +
+                                    Current_MSG[MSG_DATE] + "  " +
+                                    (iConvertingGroupcall ? temp : Current_MSG[MSG_TYPE]) +
+                                    "  " + Current_MSG[MSG_MESSAGE] + "\n";
 							}
 							continue;
 						}
@@ -1223,6 +1322,7 @@ void ShowMessage()
 				display_line(pPane);		// Separate grouped num+alpha message
 			}
 			bShown[pane]=true;
+			acceptedRowDisplayed=true;
 		}
 		iMessageIndex = 0;					// reset to beginning of filter buffer
 
@@ -1283,15 +1383,16 @@ void ShowMessage()
 
 			if (bMONITOR && (bMONITOR_ONLY || Profile.LabelLog))
 			{
-				if (Pane1.currentPos > iItemPositions[MSG_MESSAGE]) display_line(&Pane1);
+				if (PaneCurrentPosition(&Pane1) > iItemPositions[MSG_MESSAGE]) display_line(&Pane1);
 			}
 			if (bFILTERED)
 			{
-				if (Pane2.currentPos > iItemPositions[MSG_MESSAGE]) display_line(&Pane2);
+				if (PaneCurrentPosition(&Pane2) > iItemPositions[MSG_MESSAGE]) display_line(&Pane2);
 			}
 
 			memset(szLabelspacing, 0, sizeof(szLabelspacing));
-			memset(szLabelspacing, ' ', iItemPositions[MSG_MESSAGE]-iPanePos);
+			memset(szLabelspacing, ' ', (std::min)(sizeof(szLabelspacing) - 1,
+                static_cast<std::size_t>((std::max)(0, iItemPositions[MSG_MESSAGE] - iPanePos))));
 
 			sprintf(szCurrentLabel[1], "- %s -", szCurrentLabel[0]);	// Create "- label -" for logfiles
 
@@ -1352,9 +1453,9 @@ void ShowMessage()
 
 			if (Profile.FlexGroupMode & FLEXGROUPMODE_LOGGING)
 			{
-				if (isdigit(szLogFileLine[0]) && !bLogged[MONITOR] && !bCombine)
+				if ((!szLogFileLine.empty() && isdigit(static_cast<unsigned char>(szLogFileLine[0]))) && !bLogged[MONITOR] && !bCombine)
 				{
-					fprintf(pLogFile, "%s%s", bNewLine ? "\n" : "", szLogFileLine);
+					fprintf(pLogFile, "%s%s", bNewLine ? "\n" : "", szLogFileLine.c_str());
 				}
 				fprintf(pLogFile, "%s    %s  %s\n", bFragment ? szFragment : "               ", Current_MSG[MSG_CAPCODE], szCurrentLabel[0]);
 
@@ -1367,21 +1468,11 @@ void ShowMessage()
 			{
 				CollectLogfileLine(Profile.ColLogfile, false);
 
-				if (szCurrentLabel[1][0] && Profile.LabelLog) // PH: Add labels also in logfile
-				{
-					if (Profile.LabelNewline)
-					{
-						strcat(szLogFileLine, "\n");
-						memset(szLabelspacing,  0, sizeof(szLabelspacing));
-						memset(szLabelspacing, 32, iLabelspace_Logfile[MONITOR]+1);
-						strcat(szLogFileLine, szLabelspacing);
-					}
-					else strcat(szLogFileLine, " ");
-					strcat(szLogFileLine, szCurrentLabel[1]);
-				}
-				strcat(szLogFileLine, "\n");
+				pdw::legacy::AppendLogLabel(szLogFileLine,
+                    Profile.LabelLog ? szCurrentLabel[1] : "", Profile.LabelNewline != 0,
+                    static_cast<std::size_t>(iLabelspace_Logfile[MONITOR]));
 
-				fprintf(pLogFile, "%s%s", bNewLine ? "\n" : "", szLogFileLine);
+				fprintf(pLogFile, "%s%s", bNewLine ? "\n" : "", szLogFileLine.c_str());
 			}
 		}
 
@@ -1442,6 +1533,7 @@ void ShowMessage()
 				if (PlayWaveFile(bMONITOR_ONLY, bFILTERED, false)) bPlayWaveFile=true;
 			}
 		}
+		if (acceptedRowDisplayed) SignalDiagnosticsRecordAcceptedDecodeRow();
 	} // if (bShowMessage)
 
 	const bool eventFragmented = bFragment;
@@ -1552,115 +1644,30 @@ void ShowAssembledFlexCopy(const pdw::flex::FragmentResult& result)
 
 bool BlockChecker(char *address, int fnu, char *message, bool reject)
 {
-	extern int nCount_BlockBuffer[2];
-
-	bool bBlock=false;
-
-	int i, j, sum=0;
-	int BlockTimer   = (Profile.BlockDuplicate >> 4) * 60;
-	int BlockOnlyMsg =((Profile.BlockDuplicate & BLOCK_OPTION) == BLOCK_ONLYMSG);
-
-	char temp[10];
-
-	unsigned long int lChecksum=0, lAddress=0;
-
-	if (!iConvertingGroupcall && (Profile.BlockDuplicate & BLOCK_OPTION) != BLOCK_TIMER)	// Not using the timer, only check last message
-	{
-		if (CompareMessage(MSG_CAPCODE, MONITOR) ||		// Compare capcodes/addresses
-			(BlockOnlyMsg))								// or ignore if only comparing message
-		{
-			if (CompareMessage(MSG_MESSAGE, MONITOR) &&	// Compare messages
-				CompareMessage(MSG_TYPE, MONITOR))		// Compare types (mostly for Mobitex)
-			{
-				bBlock=true;
-			}
-		}
-	}
-	else if (BlockTimer)
-	{
-		for (i=0, j=0; i<strlen(message); i++)
-		{
-			if ((i < 10) && isdigit(message[i]))	// Treat strings of numbers as one big number
-			{
-				j=i;
-				while (isdigit(message[i]) && (i <= 10)) i++;
-				strncpy(temp, &message[j], i-j);
-				temp[i-j] = '\0';
-				sum += atoi(temp);
-				i--;
-				continue;
-			}
-			sum += (message[i] - 31);		// Sum up ASCII-values
-		}
-		lChecksum = MAKELONG(sum, strlen(message));	// Checksum is combination of ASCII-sum and number of characters
-
-		if (reject)							// At this point, we don't want to show a FLEX-groupcode,
-		{									// but we didn't show any capcodes either,
-			for (i=0; i<1000; i++)			// so let's assume that all capcodes are rejected
-			{								// and current groupcall can be removed from array
-				if (aMessages[i+1][BLOCK_ADDRESS] == 0)
-				{
-					if (aMessages[i][BLOCK_CHECKSUM] == lChecksum)	// Message the same?
-					{
-						memset(aMessages[i], 0, sizeof(aMessages[i]));
-						break;
-					}
-				}
-			}
-		}
-		else
-		{
-			sprintf(temp, "%i%s", fnu, address);
-
-			lAddress = atoi(temp);
-
-			for (i=0; i<1000; i++)
-			{
-				if (aMessages[i][BLOCK_ADDRESS])
-				{
-					if (aMessages[i][BLOCK_ADDRESS] == lAddress)		// Address the same?
-					{
-						if ((aMessages[i][BLOCK_TIME]+BlockTimer) > iSecondsElapsed)	// Less then blocktimer?
-						{
-							if (aMessages[i][BLOCK_CHECKSUM] == lChecksum)	// Message the same?
-							{
-								bBlock=true;						// Block this message
-								break;
-							}
-						}
-					}
-				}
-			}
-			if (!bBlock)	// If block-timer && not blocking current message && no groupcall, put current message in array aMessages
-			{
-				if (aMessages[999][BLOCK_ADDRESS])	// Array full?
-				{
-					memmove(aMessages[0], aMessages[1], sizeof(aMessages));
-				}
-				for (i=0; i<1000; i++)
-				{
-					if (aMessages[i][BLOCK_ADDRESS] == 0)
-					{
-						memset(aMessages[i], 0, sizeof(aMessages));
-
-						aMessages[i][BLOCK_ADDRESS]  = lAddress;
-						aMessages[i][BLOCK_TIME]     = iSecondsElapsed;
-						aMessages[i][BLOCK_CHECKSUM] = lChecksum;
-
-						break;
-					}
-				}
-			}
-		}
-	}
-
-	for (i=0; aMessages[i][BLOCK_ADDRESS]; i++);
-
-	nCount_BlockBuffer[0] = i;
-
-	if (nCount_BlockBuffer[0] > nCount_BlockBuffer[1]) nCount_BlockBuffer[1]=nCount_BlockBuffer[0];
-
-	return (bBlock);
+    extern int nCount_BlockBuffer[2];
+    bool blocked = false;
+    const unsigned long duration = (Profile.BlockDuplicate >> 4) * 60;
+    if (!iConvertingGroupcall && (Profile.BlockDuplicate & BLOCK_OPTION) != BLOCK_TIMER)
+    {
+        if (CompareMessage(MSG_CAPCODE, MONITOR) ||
+            (Profile.BlockDuplicate & BLOCK_OPTION) == BLOCK_ONLYMSG)
+            blocked = CompareMessage(MSG_MESSAGE, MONITOR) && CompareMessage(MSG_TYPE, MONITOR);
+    }
+    else if (duration)
+    {
+        const std::uint32_t checksum = pdw::legacy::DuplicateChecksum(message);
+        if (reject) duplicateCache.RejectLast(checksum);
+        else
+        {
+            const std::uint32_t key = pdw::legacy::DuplicateAddress(fnu, address);
+            blocked = duplicateCache.Contains(key, checksum, iSecondsElapsed, duration);
+            if (!blocked) duplicateCache.Append(key, checksum, iSecondsElapsed);
+        }
+    }
+    nCount_BlockBuffer[0] = static_cast<int>(duplicateCache.Count());
+    if (nCount_BlockBuffer[0] > nCount_BlockBuffer[1])
+        nCount_BlockBuffer[1] = nCount_BlockBuffer[0];
+    return blocked;
 }
 
 
@@ -2164,241 +2171,49 @@ int Check_4_Filtermatch()
 }
 
 
+static pdw::legacy::MessageFields CurrentMessageFields()
+{
+    pdw::legacy::MessageFields fields;
+    for (std::size_t i = 1; i < fields.size(); ++i) fields[i] = Current_MSG[i];
+    return fields;
+}
+
 void ActivateCommandFile()
 {
-//	int  arg_pos=0, arg, tmp_index;		// Command file / argument stuff
-	int  arg_pos=0, arg;
-	int  pos, i=0;
-//	char param_str[MAX_STR_LEN], tmp_fname[MAX_PATH], tmp_pagername[100], tmp[10];
-	char param_str[MAX_STR_LEN], tmp_pagername[100], tmp[10];
-	char szCommandFile[MAX_STR_LEN];	// was MAX_PATH
-	char szLabel[FILTER_LABEL_LEN+50];
-//	char ch;							// Buffer for current character
-
-	tmp_pagername[0] = 0;
-
-	while (Profile.filter_cmd_args[i] != 0)
-	{
-		if ((i > 254) || (arg_pos > FILTER_PARAM_LEN)) break;
-
-		if (Profile.filter_cmd_args[i] == '%')
-		{
-			arg=atoi(&Profile.filter_cmd_args[i+1]);
-
-			if (arg>0 && arg<8)
-			{
-				for (pos=0; Current_MSG[arg][pos] != 0; pos++, arg_pos++)
-				{
-					if (Profile.monitor_mobitex && (arg==7) && (Current_MSG[7][pos] == '"' || Current_MSG[7][pos] == '\''))
-					{
-						param_str[arg_pos] = ' ';
-					}
-					else param_str[arg_pos] = Current_MSG[arg][pos];
-				}
-				i+=2;
-			}
-			else if (Profile.filter_cmd_args[i+1] == '8')
-			{
-				MakeFilterLabel(Profile.filters[iMatch].label, Current_MSG[MSG_CAPCODE], szLabel);
-				pos = 0;
-				while (szLabel[pos] != 0)
-				{
-					param_str[arg_pos++] = szLabel[pos++];
-				}
-				i+=2;
-			}
-			else if ((Profile.filter_cmd_args[i+1] == 'c') ||
-					 (Profile.filter_cmd_args[i+1] == 'C'))
-			{
-				sprintf(tmp, "%02i", iCurrentCycle);
-				pos = 0;
-				while (tmp[pos] != 0)
-				{
-					param_str[arg_pos++] = tmp[pos++];
-				}
-				i+=2;
-			}
-			else if ((Profile.filter_cmd_args[i+1] == 'r') ||
-					 (Profile.filter_cmd_args[i+1] == 'R'))
-			{
-				sprintf(tmp, "%03i", iCurrentFrame);
-				pos = 0;
-				while (tmp[pos] != 0)
-				{
-					param_str[arg_pos++] = tmp[pos++];
-				}
-				i+=2;
-			}
-/*			else if ((Profile.filter_cmd_args[i+1] == 'f') ||
-					 (Profile.filter_cmd_args[i+1] == 'F'))
-			{
-				i+=3;
-				tmp_index=0;
-				tmp_fname[0] = 0;
-
-				// get temp filename
-				while ((Profile.filter_cmd_args[i] != '>') &&
-					   (Profile.filter_cmd_args[i] != 0))
-				{
-					tmp_fname[tmp_index++] = Profile.filter_cmd_args[i++]; 
-				}
-
-				if (Profile.filter_cmd_args[i] == '>') i++;
-
-				tmp_fname[tmp_index] = 0;
-
-				if (tmp_fname[0])
-				{
-					FILE *tmp_fp = NULL;
-
-					if ((tmp_fp = fopen(tmp_fname,"w+")) != NULL)
-					{
-						// save message to temp file.
-						if (tmp_pagername[0])	// Need to add name of
-						{						// person to be paged?
-							pos = 0;
-
-							while (tmp_pagername[pos] != 0) 
-							{
-								ch = tmp_pagername[pos++];
-								fwrite((char *)&ch, 1, 1, tmp_fp);
-							}
-						}
-						pos = 0;
-						while (message_buffer[pos] != 0)
-						{
-							ch = message_buffer[pos++];
-							fwrite((char *)&ch, 1, 1, tmp_fp);
-						}
-						fclose(tmp_fp);
-						tmp_fp = NULL;
-					}
-				}
-			}
-*/
-			else
-			{
-				param_str[arg_pos++] = Profile.filter_cmd_args[i];
-				i++;
-			}
-		}
-		else
-		{
-			param_str[arg_pos++] = Profile.filter_cmd_args[i];
-			i++;
-		}
-	}
-
-	param_str[arg_pos] = 0;
-
-	PROCESS_INFORMATION pif;	//Gives info on the thread and..
-								//..process for the new process
-	STARTUPINFO si;				//Defines how to start the program
-
-	ZeroMemory(&si,sizeof(si));	//Zero the STARTUPINFO struct
-	si.cb = sizeof(si);			//Must set size of structure
-
-	strcpy(szCommandFile, Profile.filter_cmd);
-
-	if (param_str[0])
-	{
-		strcat(szCommandFile, " ");
-		strcat(szCommandFile, param_str);
-	}
-	if (strlen(szCommandFile) > MAX_STR_LEN) szCommandFile[MAX_STR_LEN] = 0;
-
-	CreateProcess(NULL, szCommandFile, NULL, NULL, FALSE, NULL, 0, NULL, &si, &pif);
-
-	// Close process and thread handles.
-	CloseHandle(pif.hProcess);
-	CloseHandle(pif.hThread);
-
-//	MessageBox(ghWnd, szCommandFile, "PDW Commandfile", MB_ICONINFORMATION);
+    char label[FILTER_LABEL_LEN + 50] = {};
+    MakeFilterLabel(Profile.filters[iMatch].label, Current_MSG[MSG_CAPCODE], label);
+    std::string command;
+    if (!pdw::legacy::CommandLine(Profile.filter_cmd, Profile.filter_cmd_args,
+        CurrentMessageFields(), label, iCurrentCycle, iCurrentFrame,
+        Profile.monitor_mobitex != 0, MAX_STR_LEN, command))
+    {
+        strcpy_s(szWindowText[5], "Command action skipped: expanded command exceeds limit");
+        return;
+    }
+    PROCESS_INFORMATION process = {};
+    STARTUPINFO startup = {};
+    startup.cb = sizeof(startup);
+    // CreateProcess requires a mutable, NUL-terminated command line.
+    std::vector<char> buffer(command.begin(), command.end());
+    buffer.push_back('\0');
+    if (CreateProcess(NULL, buffer.data(), NULL, NULL, FALSE, 0, NULL, NULL, &startup, &process))
+    {
+        CloseHandle(process.hProcess);
+        CloseHandle(process.hThread);
+    }
+    else strcpy_s(szWindowText[5], "Command action failed to start");
 }
 
-
-void CollectLogfileLine(char *string, bool bFilter)
+void CollectLogfileLine(char *columns, bool filter)
 {
-	extern int FLEX_9;
-	int spacing=0;
-
-	szLogFileLine[0] = '\0';
-	
-	for (int col=1; col<8; col++)
-	{
-		if (col == 7)
-		{
-			iLabelspace_Logfile[bFilter ? FILTER : MONITOR] = strlen(szLogFileLine);
-			spacing = strlen(szLogFileLine);
-			strcat(szLogFileLine, " ");
-		}
-
-		if (strchr(string, '0'+col))
-		{
-			if (col == 7)
-			{
-				if (Profile.monitor_acars)
-				{
-					for (int pos=0; Current_MSG[MSG_MESSAGE][pos]!=0; pos++)
-					{
-						if (Current_MSG[MSG_MESSAGE][pos] == char(23))
-						{
-							strcat(szLogFileLine, "\n");
-							for (int i=0; i<spacing+1; i++) strcat(szLogFileLine, " ");
-						}
-						else strncat(szLogFileLine, (char*)&Current_MSG[MSG_MESSAGE][pos], 1);
-					}
-				}
-				else if (Profile.monitor_mobitex)
-				{
-					if (Current_MSG[MSG_MOBITEX][0] && bFilter)
-					{
-						for (int pos=0; Current_MSG[MSG_MOBITEX][pos]!=0; pos++)
-						{
-							if (Current_MSG[MSG_MOBITEX][pos] == '»')
-							{
-								strcat(szLogFileLine, "\n");
-								for (int i=0; i<spacing+1; i++) strcat(szLogFileLine, " ");
-							}
-							else strncat(szLogFileLine, (char*)&Current_MSG[MSG_MOBITEX][pos], 1);
-						}
-					}
-					else
-					{
-						strcat(szLogFileLine, Current_MSG[MSG_MESSAGE]);
-					}
-				}
-				else if ((strstr(Current_MSG[MSG_MESSAGE], "»") != 0) && Profile.Linefeed)
-				{
-					for (int pos=0; Current_MSG[MSG_MESSAGE][pos]!=0; pos++)
-					{
-						if (Current_MSG[MSG_MESSAGE][pos] == '»')
-						{
-							strcat(szLogFileLine, "\n");
-							for (int i=0; i<spacing+1; i++) strcat(szLogFileLine, " ");
-						}
-						else
-						{
-							strncat(szLogFileLine, (char*)&Current_MSG[MSG_MESSAGE][pos], 1);
-						}
-					}
-				}
-				else strcat(szLogFileLine, Current_MSG[MSG_MESSAGE]);
-			}
-			else strcat(szLogFileLine, Current_MSG[col]);
-			
-			if (col < 7) strcat(szLogFileLine, " ");
-
-			if (col == 1 && Profile.monitor_paging && FLEX_9 > 25)
-			{
-				if (strlen(Current_MSG[MSG_CAPCODE]) == 7)
-				{
-					strcat(szLogFileLine, "  ");
-				}
-			}
-		}
-	}
+    extern int FLEX_9;
+    std::size_t spacing = 0;
+    szLogFileLine = pdw::legacy::LogLine(CurrentMessageFields(), columns,
+        Profile.monitor_acars != 0, Profile.monitor_mobitex != 0,
+        Profile.Linefeed != 0, filter, Profile.monitor_paging && FLEX_9 > 25, spacing);
+    iLabelspace_Logfile[filter ? FILTER : MONITOR] = static_cast<int>(spacing);
 }
+
 
 static std::string FilterCsvColumns(const char* columns, bool header)
 {
@@ -2417,7 +2232,7 @@ static std::string FilterCsvColumns(const char* columns, bool header)
 		{
 			const char* value = column == 7 && Profile.monitor_mobitex && Current_MSG[MSG_MOBITEX][0]
 				? Current_MSG[MSG_MOBITEX] : Current_MSG[column];
-			output << pdw::archive::CsvEscape(pdw::events::PdwTextToUtf8(value));
+			output << pdw::archive::SpreadsheetCsvEscape(pdw::events::PdwTextToUtf8(value));
 		}
 	}
 	output << "\r\n";
@@ -2434,6 +2249,7 @@ static void WriteFilterCsvHeader(FILE* file, const char* columns)
 
 void display_color(PaneStruct *pane, BYTE ct)
 {
+	PaneDataGuard guard;
 	pane->currentColor = ct;
 	return;
 } // end of display_color

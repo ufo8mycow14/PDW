@@ -9,6 +9,8 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <thread>
+#include "headers/sound_in.h"
 
 #include "headers\message_archive_manager.h"
 #include "headers\pdw.h"
@@ -63,6 +65,10 @@ namespace
 		if (condition) return;
 		std::cerr << "FAILED: " << message << '\n';
 		std::exit(1);
+	}
+	void PublicationHook(MessageArchiveManagerTestHookStage stage, const char*, void* event)
+	{
+		if (stage == MESSAGE_ARCHIVE_TEST_BEFORE_FILTER_PUBLICATION) SetEvent(static_cast<HANDLE>(event));
 	}
 
 	std::string TemporaryFolder()
@@ -446,6 +452,24 @@ int main()
 		Profile.filters[0].output_routing_configured == 0 && Profile.filters[0].smtp == 1,
 		"configuration restore preserves legacy routing while reloading directory rules immediately");
 
+	// A decoder retaining a filter reference must exclude even an empty reload.
+	Expect(MessageArchiveDeleteCapcode(Profile.filters[0].directory_id, error), "remove final directory rule");
+	HANDLE publication = CreateEvent(NULL, TRUE, FALSE, NULL);
+	HANDLE completed = CreateEvent(NULL, TRUE, FALSE, NULL);
+	MessageArchiveManagerSetTestHook(PublicationHook, publication);
+	bool reloaded = false;
+	SignalDecoderStateEnter();
+	const FILTER* retained = &Profile.filters[0];
+	std::thread reload([&] { std::string reloadError; reloaded = MessageArchiveReloadRuntimeFilters(reloadError); SetEvent(completed); });
+	Expect(WaitForSingleObject(publication, 5000) == WAIT_OBJECT_0, "reload reaches publication boundary");
+	Expect(WaitForSingleObject(completed, 100) == WAIT_TIMEOUT && retained == &Profile.filters[0] && retained->hitcounter == 9,
+		"decoder reference stays valid while publication waits");
+	SignalDecoderStateLeave();
+	Expect(WaitForSingleObject(completed, 5000) == WAIT_OBJECT_0, "publication completes after decoder releases state");
+	reload.join();
+	Expect(reloaded && Profile.filters.empty(), "empty vector safely replaces old filter allocation");
+	MessageArchiveManagerSetTestHook(NULL, NULL);
+	CloseHandle(publication); CloseHandle(completed);
 	MessageArchiveManagerShutdown();
 	const std::string database = folder + "\\manager-test.sqlite3";
 	const std::string otherDatabase = folder + "\\manager-other.sqlite3";

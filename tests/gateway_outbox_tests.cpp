@@ -11,6 +11,8 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <thread>
+#include <atomic>
 
 #include "Headers/gateway_outbox.h"
 #include "Headers/pdw.h"
@@ -101,6 +103,88 @@ namespace
 		if (statement) sqlite3_finalize(statement);
 		sqlite3_close_v2(database);
 		return value;
+	}
+
+	int WriteProcessEvents(const char* path, int writer)
+	{
+		pdw::gateway::GatewayOutboxStore store;
+		std::string error;
+		if (!store.Open(path, error)) return 2;
+		for (int i = 1; i <= 2100; ++i)
+		{
+			long long sequence = 0;
+			const auto event = SyntheticEvent(writer * 10000 + i, "FLEX", "SYNTHETIC MULTIPROCESS EVENT");
+			const ULONGLONG deadline = GetTickCount64() + 5000;
+			while (!store.AppendSequenced(event, sequence, error))
+			{
+				if (GetTickCount64() >= deadline) return 3;
+				Sleep(1);
+			}
+		}
+		return 0;
+	}
+
+	void TestConcurrentProcesses()
+	{
+		const std::string path = TempPath("processes");
+		pdw::gateway::GatewayOutboxStore store;
+		std::string error;
+		Expect(store.Open(path, error), "multiprocess database initialises"); store.Close();
+		char executable[MAX_PATH] = {};
+		GetModuleFileNameA(NULL, executable, MAX_PATH);
+		PROCESS_INFORMATION processes[2] = {};
+		for (int i = 0; i < 2; ++i)
+		{
+			std::string command = std::string("\"") + executable + "\" --writer \"" + path + "\" " + std::to_string(i + 1);
+			STARTUPINFOA startup = {}; startup.cb = sizeof(startup);
+			Expect(CreateProcessA(executable, &command[0], NULL, NULL, FALSE, CREATE_NO_WINDOW,
+				NULL, NULL, &startup, &processes[i]) != FALSE, "independent synthetic writer process starts");
+		}
+		for (auto& process : processes)
+		{
+			Expect(WaitForSingleObject(process.hProcess, 30000) == WAIT_OBJECT_0, "independent writer completes within deadline");
+			DWORD code = 1; GetExitCodeProcess(process.hProcess, &code);
+			Expect(code == 0, "independent writer committed its complete event set");
+			CloseHandle(process.hThread); CloseHandle(process.hProcess);
+		}
+		Expect(QueryInteger(path, "SELECT COUNT(*) FROM gateway_events;") == 4200 &&
+			QueryInteger(path, "SELECT COUNT(DISTINCT event_id) FROM gateway_events;") == 4200 &&
+			QueryInteger(path, "SELECT MAX(receiver_sequence) FROM gateway_events;") == 4200,
+			"two processes exceed old reservation size without collisions or missing events");
+		RemoveDatabase(path);
+	}
+
+	void TestConcurrentReservations()
+	{
+		const std::string path = TempPath("concurrent");
+		pdw::gateway::GatewayOutboxStore stores[2];
+		std::string error;
+		Expect(stores[0].Open(path, error) && stores[1].Open(path, error), "two independent SQLite connections open");
+		HANDLE start = CreateEvent(NULL, TRUE, FALSE, NULL);
+		std::atomic<int> failures(0);
+		auto writer = [&](int index) {
+			WaitForSingleObject(start, 5000);
+			std::string localError;
+			for (int event = 1; event <= 192; ++event) {
+				long long sequence = 0;
+				if (!stores[index].AppendSequenced(SyntheticEvent(index * 192 + event, "FLEX", "SYNTHETIC CONCURRENT EVENT"), sequence, localError)) ++failures;
+			}
+		};
+		std::thread a(writer, 0), b(writer, 1); SetEvent(start); a.join(); b.join(); CloseHandle(start);
+		Expect(failures == 0 && QueryInteger(path, "SELECT COUNT(*) FROM gateway_events;") == 384 &&
+			QueryInteger(path, "SELECT COUNT(DISTINCT event_id) FROM gateway_events;") == 384,
+			"concurrent transactional assignment retains every event with unique identities");
+		const long long checkpoint = QueryInteger(path, "SELECT MAX(receiver_sequence) FROM gateway_events;");
+		long long sequence = 0;
+		Expect(stores[0].AppendSequenced(SyntheticEvent(400, "FLEX", "SYNTHETIC LATE EVENT"), sequence, error) && sequence > checkpoint,
+			"late commit is always above a reader's earlier checkpoint");
+		sqlite3* contender = NULL;
+		sqlite3_open(path.c_str(), &contender);
+		Expect(Exec(contender, "BEGIN IMMEDIATE;"), "external writer holds contention lock");
+		Expect(!stores[1].AppendSequenced(SyntheticEvent(401, "FLEX", "SYNTHETIC BLOCKED EVENT"), sequence, error), "write contention fails within busy deadline");
+		Exec(contender, "ROLLBACK;"); sqlite3_close(contender);
+		Expect(stores[1].AppendSequenced(SyntheticEvent(402, "FLEX", "SYNTHETIC RECOVERED EVENT"), sequence, error), "next intake recovers without sequence reservation or restart");
+		stores[0].Close(); stores[1].Close(); RemoveDatabase(path);
 	}
 
 	void TestIdentityHashAndValidation()
@@ -278,6 +362,31 @@ namespace
 		}
 	}
 
+	void TestBoundedStop()
+	{
+		const std::string path = TempPath("bounded-stop"), other = TempPath("must-not-open");
+		ConfigureManager(path, true);
+		GatewayOutboxSetWorkerDelayForTest(3500);
+		GatewayOutboxInitialize();
+		std::string error;
+		Expect(GatewayOutboxGenerateSynthetic("FLEX", error), "delayed writer receives event");
+		WaitForDrain(1000);
+		const ULONGLONG started = GetTickCount64();
+		GatewayOutboxShutdown();
+		Expect(GetTickCount64() - started < 1600 && !GatewayOutboxGetHealth().workerRunning,
+			"shutdown returns within bound while a stalled worker retains ownership");
+		ConfigureManager(other, true);
+		GatewayOutboxSettingsChanged();
+		Expect(GatewayOutboxGetHealth().path == path && GetFileAttributesA(other.c_str()) == INVALID_FILE_ATTRIBUTES,
+			"reconfiguration cannot replace state beneath a live worker");
+		Sleep(1800);
+		GatewayOutboxSetWorkerDelayForTest(0);
+		GatewayOutboxSettingsChanged();
+		Expect(GatewayOutboxGetHealth().path == other && GatewayOutboxGetHealth().workerRunning,
+			"completed worker can be reaped and configuration restarted");
+		GatewayOutboxShutdown(); RemoveDatabase(path); RemoveDatabase(other);
+	}
+
 	void TestDisabledManagerSyntheticAndSaturation()
 	{
 		const std::string disabledPath = TempPath("disabled");
@@ -339,13 +448,17 @@ namespace
 	}
 }
 
-int main()
+int main(int argc, char** argv)
 {
+	if (argc == 4 && std::string(argv[1]) == "--writer") return WriteProcessEvents(argv[2], std::atoi(argv[3]));
 	TestIdentityHashAndValidation();
+	TestConcurrentReservations();
+	TestConcurrentProcesses();
 	TestWalReadOnlyRestartAndStates();
 	TestMigrationAndOwnership();
 	TestRetentionAndWriteFailures();
 	TestDisabledManagerSyntheticAndSaturation();
+	TestBoundedStop();
 	if (g_failures)
 	{
 		std::cerr << g_failures << " gateway outbox test(s) failed.\n";

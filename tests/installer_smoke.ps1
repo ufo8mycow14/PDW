@@ -313,6 +313,11 @@ function Assert-InstalledApplication {
         -not (Test-Path -LiteralPath (Join-Path $InstallDirectory "Receivers\RTL-SDR\rtlsdr.dll"))) {
         throw "The Win32 installation is missing the bundled x86 RTL-SDR DLL."
     }
+    foreach ($mapping in @("base-ids.txt", "language.df")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $InstallDirectory $mapping) -PathType Leaf)) {
+            throw "Installation is missing mapping default $mapping for $Architecture."
+        }
+    }
     return $version
 }
 
@@ -367,7 +372,14 @@ function Test-Architecture([string]$Architecture, [uint16]$ExpectedMachine) {
     Set-Content -LiteralPath $legacyFilters -Value "[Filter]`r`n`r`nFilterCount=0`r`n" -Encoding Ascii
     Set-Content -LiteralPath $capcodeDatabase -Value "synthetic Capcode Directory database" -Encoding Ascii
     Set-Content -LiteralPath $customReceiver -Value "[Receiver]`r`nName=Installer smoke custom receiver" -Encoding Ascii
+    $mappingDirectory = if (Get-Variable standardDirectory -Scope Local -ErrorAction SilentlyContinue) { $standardDirectory } else { $directory }
+    $baseIds = Join-Path $mappingDirectory "base-ids.txt"
+    $language = Join-Path $mappingDirectory "language.df"
+    Set-Content -LiteralPath $baseIds -Value "synthetic operator base mapping" -Encoding Ascii
+    Set-Content -LiteralPath $language -Value "synthetic operator language mapping" -Encoding Ascii
     $operatorHashes = @{
+        $baseIds = (Get-FileHash -LiteralPath $baseIds -Algorithm SHA256).Hash
+        $language = (Get-FileHash -LiteralPath $language -Algorithm SHA256).Hash
         $standardIni = (Get-FileHash -LiteralPath $standardIni -Algorithm SHA256).Hash
         $legacyFilters = (Get-FileHash -LiteralPath $legacyFilters -Algorithm SHA256).Hash
         $capcodeDatabase = (Get-FileHash -LiteralPath $capcodeDatabase -Algorithm SHA256).Hash
@@ -451,7 +463,14 @@ function Test-CrossArchitectureReceiverBackup {
     $ini = Join-Path $directory "PDW.INI"
     $customReceiver = Join-Path $directory "Receivers\cross-architecture-custom.ini"
     Set-Content -LiteralPath $customReceiver -Value "[Receiver]`r`nName=preserve me" -Encoding Ascii
+    $mappingDirectory = if (Get-Variable standardDirectory -Scope Local -ErrorAction SilentlyContinue) { $standardDirectory } else { $directory }
+    $baseIds = Join-Path $mappingDirectory "base-ids.txt"
+    $language = Join-Path $mappingDirectory "language.df"
+    Set-Content -LiteralPath $baseIds -Value "synthetic operator base mapping" -Encoding Ascii
+    Set-Content -LiteralPath $language -Value "synthetic operator language mapping" -Encoding Ascii
     $operatorHashes = @{
+        $baseIds = (Get-FileHash -LiteralPath $baseIds -Algorithm SHA256).Hash
+        $language = (Get-FileHash -LiteralPath $language -Algorithm SHA256).Hash
         $ini = (Get-FileHash -LiteralPath $ini -Algorithm SHA256).Hash
         $customReceiver = (Get-FileHash -LiteralPath $customReceiver -Algorithm SHA256).Hash
     }
@@ -470,6 +489,9 @@ function Test-CrossArchitectureReceiverBackup {
     if ((Get-PeMachine $receiverDll) -ne 0x014c) {
         throw "Cross-architecture Win32 upgrade did not install an x86 RTL-SDR DLL."
     }
+    foreach ($path in $operatorHashes.Keys) {
+        Assert-FileHash $path $operatorHashes[$path] "Win32 architecture switch changed operator data."
+    }
     $win32ReceiverHash = (Get-FileHash -LiteralPath $receiverDll -Algorithm SHA256).Hash
 
     Invoke-Setup "x64" $directory
@@ -485,6 +507,9 @@ function Test-CrossArchitectureReceiverBackup {
     }
     Invoke-Uninstall $directory
     Assert-AppOwnedFilesRemoved $directory "x64 cross-architecture"
+    foreach ($path in $operatorHashes.Keys) {
+        Assert-FileHash $path $operatorHashes[$path] "Cross-architecture uninstall changed operator data."
+    }
     Assert-FileHash $x64Backup.FullName $x64ReceiverHash `
         "Uninstall removed or changed the retained x64 receiver recovery copy."
     Assert-FileHash $win32Backup.FullName $win32ReceiverHash `
@@ -508,7 +533,14 @@ function Test-CrossArchitectureReceiverRollback {
     Set-Content -LiteralPath $legacyFilters -Value "[Filter]`r`nFilterCount=0`r`n" -Encoding Ascii
     Set-Content -LiteralPath $capcodeDatabase -Value "synthetic rollback Capcode Directory" -Encoding Ascii
     Set-Content -LiteralPath $customReceiver -Value "[Receiver]`r`nName=rollback preserve me" -Encoding Ascii
+    $mappingDirectory = if (Get-Variable standardDirectory -Scope Local -ErrorAction SilentlyContinue) { $standardDirectory } else { $directory }
+    $baseIds = Join-Path $mappingDirectory "base-ids.txt"
+    $language = Join-Path $mappingDirectory "language.df"
+    Set-Content -LiteralPath $baseIds -Value "synthetic operator base mapping" -Encoding Ascii
+    Set-Content -LiteralPath $language -Value "synthetic operator language mapping" -Encoding Ascii
     $operatorHashes = @{
+        $baseIds = (Get-FileHash -LiteralPath $baseIds -Algorithm SHA256).Hash
+        $language = (Get-FileHash -LiteralPath $language -Algorithm SHA256).Hash
         $ini = (Get-FileHash -LiteralPath $ini -Algorithm SHA256).Hash
         $marker = (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash
         $legacyFilters = (Get-FileHash -LiteralPath $legacyFilters -Algorithm SHA256).Hash

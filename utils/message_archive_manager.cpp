@@ -9,6 +9,7 @@
 #include <sstream>
 
 #include "headers\pdw.h"
+#include "headers/sound_in.h"
 #include "decoded_event.h"
 #include "local_dashboard_server.h"
 
@@ -31,8 +32,15 @@ namespace
 #else
 	const int MESSAGE_ARCHIVE_TEST_BEFORE_OPERATION_LOCK = 1;
 	const int MESSAGE_ARCHIVE_TEST_AFTER_ARCHIVE_OPEN = 2;
+	const int MESSAGE_ARCHIVE_TEST_BEFORE_FILTER_PUBLICATION = 3;
 	void InvokeTestHook(int, const std::string&) {}
 #endif
+	void PublishRuntimeFilters(FILTERLIST& filters)
+	{
+		InvokeTestHook(MESSAGE_ARCHIVE_TEST_BEFORE_FILTER_PUBLICATION, std::string());
+		PdwSignalDecoderStateGuard guard;
+		Profile.filters.swap(filters);
+	}
 
 	class ArchiveOperationLock
 	{
@@ -785,7 +793,7 @@ bool MessageArchiveImportCapcodes(
 	}
 	FILTERLIST filters;
 	BuildRuntimeFilters(merged, filters);
-	Profile.filters.swap(filters);
+	PublishRuntimeFilters(filters);
 	return true;
 }
 
@@ -838,7 +846,7 @@ bool MessageArchiveReloadRuntimeFilters(std::string& error)
 	}
 	FILTERLIST filters;
 	BuildRuntimeFilters(entries, filters);
-	Profile.filters.swap(filters);
+	PublishRuntimeFilters(filters);
 	return true;
 }
 
@@ -852,6 +860,8 @@ bool MessageArchivePersistRuntimeFilterState(std::string& error)
 		RuntimeState() : hits(0) {}
 	};
 	std::map<long long, RuntimeState> states;
+	{
+		PdwSignalDecoderStateGuard guard;
 	for (FILTERLIST::const_iterator filter = Profile.filters.begin(); filter != Profile.filters.end(); ++filter)
 	{
 		if (filter->directory_id <= 0) continue;
@@ -862,6 +872,7 @@ bool MessageArchivePersistRuntimeFilterState(std::string& error)
 			runtimeState.date = filter->lasthit_date;
 			runtimeState.time = filter->lasthit_time;
 		}
+	}
 	}
 	const ArchiveConfig config = CurrentConfig();
 	const std::string resolvedPath = ResolveArchivePath(config.path);
@@ -904,7 +915,7 @@ bool MessageArchiveReplaceCapcodesCsv(const std::string& csv, int& rejected,
 	}
 	FILTERLIST filters;
 	BuildRuntimeFilters(entries, filters);
-	Profile.filters.swap(filters);
+	PublishRuntimeFilters(filters);
 	return true;
 }
 
@@ -925,8 +936,15 @@ bool MessageArchiveReplaceLegacyFilters(const FILTERLIST& filters,
 	}
 	FILTERLIST runtime;
 	BuildRuntimeFilters(entries, runtime);
-	Profile.filters.swap(runtime);
+	PublishRuntimeFilters(runtime);
 	return true;
+}
+
+void MessageArchiveConvertLegacyFilters(const FILTERLIST& filters,
+	std::vector<pdw::archive::CapcodeEntry>& entries)
+{
+	entries.clear();
+	for (const FILTER& filter : filters) entries.push_back(LegacyFilterEntry(filter));
 }
 
 bool MessageArchiveMergeLegacyFilters(const FILTERLIST& filters,
@@ -965,7 +983,7 @@ bool MessageArchiveMergeLegacyFilters(const FILTERLIST& filters,
 	}
 	FILTERLIST runtime;
 	BuildRuntimeFilters(entries, runtime);
-	Profile.filters.swap(runtime);
+	PublishRuntimeFilters(runtime);
 	return true;
 }
 

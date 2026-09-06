@@ -1,6 +1,7 @@
 #include "signal_recording_core.h"
 
 #include "audio_signal_core.h"
+#include "sigmf_metadata.h"
 
 #include <algorithm>
 #include <cmath>
@@ -63,20 +64,7 @@ bool IsFourCc(const unsigned char* value, const char* expected)
 	return std::memcmp(value, expected, 4) == 0;
 }
 
-bool ParseSampleRate(const std::string& metadata, std::uint32_t& sampleRate)
-{
-	const std::string key = "\"core:sample_rate\"";
-	const std::size_t keyPosition = metadata.find(key);
-	if (keyPosition == std::string::npos) return false;
-	const std::size_t colon = metadata.find(':', keyPosition + key.size());
-	if (colon == std::string::npos) return false;
-	std::istringstream value(metadata.substr(colon + 1));
-	double parsed = 0.0;
-	value >> parsed;
-	if (!value || parsed < 1.0 || parsed > 10000000.0) return false;
-	sampleRate = static_cast<std::uint32_t>(parsed + 0.5);
-	return true;
-}
+
 }
 
 bool ReadWavMono(const std::string& path, SignalRecording& recording, std::string& error)
@@ -241,20 +229,26 @@ bool ReadSigMfReal32(const std::string& basePath, SignalRecording& recording, st
 {
 	recording.samples.clear();
 	error.clear();
-	std::ifstream metadata((basePath + ".sigmf-meta").c_str(), std::ios::binary);
+	std::ifstream metadata((basePath + ".sigmf-meta").c_str(), std::ios::binary | std::ios::ate);
 	if (!metadata)
 	{
 		error = "Unable to open SigMF metadata.";
 		return false;
 	}
-	std::ostringstream metadataText;
-	metadataText << metadata.rdbuf();
-	if (metadataText.str().find("\"core:datatype\": \"rf32_le\"") == std::string::npos ||
-		!ParseSampleRate(metadataText.str(), recording.sampleRate))
-	{
-		error = "SigMF recording must use rf32_le and declare core:sample_rate.";
-		return false;
-	}
+    const std::streamoff metadataLength = metadata.tellg();
+    if (metadataLength <= 0 || metadataLength > 1024 * 1024)
+    {
+        error = "SigMF metadata is empty or exceeds the size limit.";
+        return false;
+    }
+    metadata.seekg(0, std::ios::beg);
+    std::string metadataText(static_cast<std::size_t>(metadataLength), '\0');
+    if (!ReadExact(metadata, &metadataText[0], metadataText.size()) ||
+        !SigMfMetadataReader(metadataText).Read(recording.sampleRate))
+    {
+        error = "SigMF metadata must be valid JSON with global rf32_le datatype and an integral sample rate.";
+        return false;
+    }
 	std::ifstream data((basePath + ".sigmf-data").c_str(), std::ios::binary | std::ios::ate);
 	if (!data)
 	{

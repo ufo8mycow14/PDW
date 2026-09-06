@@ -28,6 +28,7 @@
 #include "headers\toolbar.h"
 #include "headers\gfx.h"
 #include "headers\initapp.h"
+#include "headers\misc.h"
 #include "headers\ui_theme.h"
 
 #include "headers\helper_funcs.h"
@@ -308,6 +309,7 @@ void InitializePane(PaneStruct *pane)
 {
 	char *pchar;
 	BYTE *pcolor;
+	PdwPaneDataEnter();
 
 	pane->Bottom = 0;
 
@@ -327,6 +329,7 @@ void InitializePane(PaneStruct *pane)
 	pane->iVscrollMax = 0;
 	pane->iHscrollPos = 0;
 	pane->iHscrollMax = 0;
+	PdwPaneDataLeave();
 
 	SetScrollRange(pane->hWnd, SB_VERT, 0, 0, TRUE);
 	SetScrollRange(pane->hWnd, SB_HORZ, 0, 0, TRUE);

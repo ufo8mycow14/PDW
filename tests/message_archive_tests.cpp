@@ -41,6 +41,21 @@ namespace
 
 int main()
 {
+    // Live filter CSV and history export share this spreadsheet-facing boundary.
+    for (const std::string& value : {std::string("=1+1"), std::string("+1"),
+        std::string("-1"), std::string("@SUM(A1)"), std::string("  =1"),
+        std::string("\tvalue"), std::string("\r\n=1")})
+    {
+        std::vector<std::string> cells;
+        Expect(pdw::archive::ParseCsvLine(pdw::archive::SpreadsheetCsvEscape(value), cells) &&
+            cells.size() == 1 && cells[0] == "'" + value,
+            "spreadsheet-facing fields neutralise formulas and leading controls");
+    }
+    Expect(pdw::archive::SpreadsheetCsvEscape("plain text") == "plain text" &&
+        pdw::archive::SpreadsheetCsvEscape("a,\"b\"") == "\"a,\"\"b\"\"\"",
+        "ordinary message fields retain standard CSV formatting");
+    Expect(pdw::archive::CsvEscape("=1+1") == "=1+1",
+        "directory CSV retains raw values for configuration round trips");
 	char temporaryFolder[MAX_PATH] = {};
 	char databasePath[MAX_PATH] = {};
 	Expect(GetTempPathA(_countof(temporaryFolder), temporaryFolder) != 0,
@@ -93,6 +108,21 @@ int main()
 	sqlite3_close(versionOne);
 	pdw::archive::MessageArchive migratedArchive;
 	std::string migrationError;
+	Expect(migratedArchive.Open(databasePath, migrationError, true), "restore opens legacy schema inside outer transaction");
+	bool rollbackSafe = false;
+	Expect(!migratedArchive.ReplaceCapcodesAtomically({}, [](std::string& failure) { failure = "synthetic credential failure"; return false; },
+		migrationError, &rollbackSafe) && rollbackSafe, "credential failure also rolls back both legacy migrations");
+	migratedArchive.Close();
+	Expect(sqlite3_open(databasePath, &versionOne) == SQLITE_OK, "original schema reopens after failed restore");
+	sqlite3_stmt* legacyCheck = NULL;
+	Expect(sqlite3_prepare_v2(versionOne, "PRAGMA user_version;", -1, &legacyCheck, NULL) == SQLITE_OK &&
+		sqlite3_step(legacyCheck) == SQLITE_ROW && sqlite3_column_int(legacyCheck, 0) == 1,
+		"failed restore retains original schema version");
+	sqlite3_finalize(legacyCheck);
+	Expect(sqlite3_prepare_v2(versionOne, "SELECT COUNT(*) FROM capcode_directory WHERE notes LIKE '%legacy mapping';", -1, &legacyCheck, NULL) == SQLITE_OK &&
+		sqlite3_step(legacyCheck) == SQLITE_ROW && sqlite3_column_int(legacyCheck, 0) == 2,
+		"failed legacy restore retains original rows and fields");
+	sqlite3_finalize(legacyCheck); sqlite3_close(versionOne);
 	Expect(migratedArchive.Open(databasePath, migrationError),
 		"version-one Capcode Directory migrates in place");
 	std::vector<pdw::archive::CapcodeEntry> migratedRows;
@@ -472,6 +502,30 @@ int main()
 		failingOutput, exported, error) && exported == 0 && !error.empty(),
 		"CSV history export fails as a whole when its output stream fails");
 
+	std::vector<pdw::archive::CapcodeEntry> beforeRollback, afterRollback;
+	Expect(archive.ListCapcodes(std::string(), beforeRollback, error) && !beforeRollback.empty(), "rollback fixture retains directory rows");
+	const std::string secondPath = std::string(databasePath) + ".restore-target";
+	pdw::archive::MessageArchive target;
+	Expect(target.Open(secondPath, error) && target.ReplaceCapcodes(beforeRollback, error), "independent restore target opens");
+	std::vector<pdw::archive::CapcodeEntry> originalTarget;
+	Expect(target.ListCapcodes(std::string(), originalTarget, error), "capture exact target IDs");
+	bool callbackReached = false;
+	Expect(!target.ReplaceCapcodesAtomically({}, [&](std::string& failure) {
+		callbackReached = true; failure = "synthetic configuration write failure"; return false;
+	}, error) && callbackReached && error == "synthetic configuration write failure", "failure after directory mutation rolls back");
+	Expect(target.ListCapcodes(std::string(), afterRollback, error) && afterRollback.size() == originalTarget.size(), "target rows restored after callback failure");
+	std::ostringstream originalCsv, restoredCsv;
+	Expect(pdw::archive::WriteCapcodeDirectoryCsv(originalTarget, originalCsv, error) &&
+		pdw::archive::WriteCapcodeDirectoryCsv(afterRollback, restoredCsv, error) && originalCsv.str() == restoredCsv.str(), "all target directory fields survive rollback");
+	for (std::size_t i = 0; i < originalTarget.size(); ++i)
+		Expect(originalTarget[i].id == afterRollback[i].id, "rollback preserves exact directory row IDs");
+	Expect(archive.ListCapcodes(std::string(), afterRollback, error) && afterRollback.size() == beforeRollback.size(), "active database A remains untouched");
+	for (std::size_t i = 0; i < beforeRollback.size(); ++i)
+		Expect(beforeRollback[i].id == afterRollback[i].id, "active database IDs remain unchanged");
+	Expect(target.ReplaceCapcodesAtomically({}, [](std::string&) { return true; }, error) &&
+		target.ListCapcodes(std::string(), afterRollback, error) && afterRollback.empty(), "successful empty restore commits");
+	target.Close();
+	DeleteFileA(secondPath.c_str()); DeleteFileA((secondPath + "-wal").c_str()); DeleteFileA((secondPath + "-shm").c_str());
 	archive.Close();
 	DeleteFileA(databasePath);
 	DeleteFileA((std::string(databasePath) + "-wal").c_str());

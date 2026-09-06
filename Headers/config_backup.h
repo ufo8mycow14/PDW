@@ -5,5 +5,6 @@
 
 void ShowConfigurationBackupDialog(HWND owner);
 bool ConfigurationRestoreCompleted(void);
+bool ConfigurationRestoreNeedsRecovery(void);
 
 #endif

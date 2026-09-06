@@ -38,7 +38,6 @@ namespace
 	{
 		OutboxState() : workEvent(NULL), stopEvent(NULL), readyEvent(NULL), thread(NULL),
 			accepting(false), startupSucceeded(false), nextSequence(0),
-			reservationCeiling(0),
 			queueHighWaterMark(0), droppedEvents(0), writeFailures(0),
 			lastCommittedSequence(0), oldestRetainedSequence(0), retainedRecords(0),
 			databaseBytes(0), availableDiskBytes(0), diskWarning(false)
@@ -57,7 +56,6 @@ namespace
 		bool accepting;
 		bool startupSucceeded;
 		long long nextSequence;
-		long long reservationCeiling;
 		unsigned long queueHighWaterMark;
 		unsigned long long droppedEvents;
 		unsigned long long writeFailures;
@@ -68,7 +66,10 @@ namespace
 		unsigned long long availableDiskBytes;
 		bool diskWarning;
 		std::string lastError;
-	} g_state;
+	};
+    // Retained for process lifetime: a timed-out filesystem call may still
+    // reference the queue, lock and events when normal shutdown returns.
+    OutboxState& g_state = *new OutboxState;
 
 #ifdef PDW_GATEWAY_OUTBOX_TEST_HOOKS
 	volatile LONG g_workerDelayMs = 0;
@@ -194,15 +195,8 @@ namespace
 				++g_state.droppedEvents;
 				if (error) *error = "Local Gateway Outbox queue is full; the event was dropped.";
 			}
-			else if (g_state.nextSequence >= g_state.reservationCeiling)
-			{
-				++g_state.droppedEvents;
-				if (error) *error = "Local Gateway Outbox sequence reservation is temporarily unavailable.";
-			}
 			else
 			{
-				event.receiverSequence = ++g_state.nextSequence;
-				event.contentHash = pdw::gateway::GatewayEventContentHash(event);
 				g_state.queue.push_back(event);
 				g_state.queueHighWaterMark = (std::max)(g_state.queueHighWaterMark,
 					static_cast<unsigned long>(g_state.queue.size()));
@@ -249,30 +243,22 @@ namespace
 		LeaveCriticalSection(&g_state.lock);
 
 		pdw::gateway::GatewayOutboxStore store;
+        store.SetCancellation([] { return WaitForSingleObject(g_state.stopEvent, 0) == WAIT_OBJECT_0; });
 		std::string error;
 		const std::string resolvedPath = ResolvePath(config.path);
-		long long highestAssigned = 0;
 		pdw::gateway::StoreStatistics statistics;
 		pdw::gateway::RetentionPolicy startupPolicy;
 		startupPolicy.retentionDays = config.retentionDays;
 		startupPolicy.maximumMegabytes = config.maximumMegabytes;
 		int startupRemoved = 0;
-		const long long reservationSize = (std::max)(2048LL,
-			static_cast<long long>(config.queueCapacity) * 2LL);
-		long long reservationCeiling = 0;
 		const bool opened = store.Open(resolvedPath, error) &&
 			store.EnforceRetention(startupPolicy, startupRemoved, error) &&
-			store.GetHighestAssignedSequence(highestAssigned, error) &&
-			store.GetStatistics(statistics, error) &&
-			((reservationCeiling = (std::max)(highestAssigned,
-				statistics.lastCommittedSequence) + reservationSize) > 0) &&
-			store.RecordHighestAssignedSequence(reservationCeiling, error);
+            store.GetStatistics(statistics, error);
 		EnterCriticalSection(&g_state.lock);
 		g_state.startupSucceeded = opened;
 		if (opened)
 		{
-			g_state.nextSequence = (std::max)(highestAssigned, statistics.lastCommittedSequence);
-			g_state.reservationCeiling = reservationCeiling;
+			g_state.nextSequence = statistics.lastCommittedSequence;
 			g_state.lastCommittedSequence = statistics.lastCommittedSequence;
 			g_state.oldestRetainedSequence = statistics.oldestRetainedSequence;
 			g_state.retainedRecords = statistics.retainedRecords;
@@ -299,8 +285,8 @@ namespace
 				const LONG delay = InterlockedCompareExchange(&g_workerDelayMs, 0, 0);
 				if (delay > 0) Sleep(static_cast<DWORD>(delay));
 #endif
-				if (!store.Append(event, error) ||
-					!store.RecordHighestAssignedSequence(event.receiverSequence, error))
+				long long committedSequence = 0;
+				if (!store.AppendSequenced(event, committedSequence, error))
 				{
 					EnterCriticalSection(&g_state.lock);
 					++g_state.writeFailures;
@@ -309,22 +295,9 @@ namespace
 					LeaveCriticalSection(&g_state.lock);
 					continue;
 				}
-				long long currentReservation = 0;
-				EnterCriticalSection(&g_state.lock);
-				currentReservation = g_state.reservationCeiling;
-				LeaveCriticalSection(&g_state.lock);
-				if (event.receiverSequence + static_cast<long long>(config.queueCapacity) >=
-					currentReservation)
-				{
-					const long long extended = currentReservation + reservationSize;
-					if (store.RecordHighestAssignedSequence(extended, error))
-					{
-						EnterCriticalSection(&g_state.lock);
-						g_state.reservationCeiling = extended;
-						LeaveCriticalSection(&g_state.lock);
-					}
-					else SetLastError(error);
-				}
+                EnterCriticalSection(&g_state.lock);
+                g_state.nextSequence = committedSequence;
+                LeaveCriticalSection(&g_state.lock);
 				++writesSinceRetention;
 				if (writesSinceRetention >= 100)
 				{
@@ -344,25 +317,14 @@ namespace
 				if (store.GetStatistics(statistics, error)) UpdateStatistics(statistics);
 				else SetLastError(error);
 			}
-			long long assigned = 0;
-			EnterCriticalSection(&g_state.lock);
-			assigned = g_state.nextSequence;
-			LeaveCriticalSection(&g_state.lock);
-			if (!store.RecordHighestAssignedSequence(assigned, error)) SetLastError(error);
 			if (stopping) break;
 		}
-		pdw::gateway::RetentionPolicy policy;
-		policy.retentionDays = config.retentionDays;
-		policy.maximumMegabytes = config.maximumMegabytes;
-		int removed = 0;
-		if (!store.EnforceRetention(policy, removed, error)) SetLastError(error);
-		store.Checkpoint(error);
-		if (store.GetStatistics(statistics, error)) UpdateStatistics(statistics);
+		// Stop does not start retention, VACUUM or a truncating checkpoint.
 		store.Close();
 		return 0;
 	}
 
-	void StopWorker()
+	bool StopWorker()
 	{
 		EnterCriticalSection(&g_state.lock);
 		g_state.accepting = false;
@@ -376,7 +338,11 @@ namespace
 		if (g_state.workEvent) SetEvent(g_state.workEvent);
 		if (g_state.thread)
 		{
-			WaitForSingleObject(g_state.thread, INFINITE);
+            if (WaitForSingleObject(g_state.thread, 1000) != WAIT_OBJECT_0)
+            {
+                SetLastError("Local Gateway Outbox is still stopping; its worker state is retained.");
+                return false;
+            }
 			CloseHandle(g_state.thread);
 		}
 		if (g_state.stopEvent) CloseHandle(g_state.stopEvent);
@@ -389,6 +355,7 @@ namespace
 		g_state.readyEvent = NULL;
 		g_state.startupSucceeded = false;
 		LeaveCriticalSection(&g_state.lock);
+        return true;
 	}
 
 	bool StartWorker()
@@ -456,7 +423,7 @@ void GatewayOutboxShutdown(void) { StopWorker(); }
 
 void GatewayOutboxSettingsChanged(void)
 {
-	StopWorker();
+	if (!StopWorker()) return;
 	const OutboxConfig config = ConfigFromProfile();
 	EnterCriticalSection(&g_state.lock);
 	g_state.config = config;

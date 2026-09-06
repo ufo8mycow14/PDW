@@ -60,8 +60,13 @@ Name: "autostart"; Description: "Start PDW when I sign in to Windows"; GroupDesc
 [Files]
 ; Static application files are refreshed on upgrade. Mutable operator files,
 ; receivers and sounds are handled separately and never overwritten.
-Source: "{#Win32Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,PDW-Adelaide-FLEX.INI,PDW_INSTALLER_INPUT_SHA256SUMS.txt,filters.ini,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: not InstallX64
-Source: "{#X64Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,PDW-Adelaide-FLEX.INI,PDW_INSTALLER_INPUT_SHA256SUMS.txt,filters.ini,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: InstallX64
+Source: "{#Win32Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,PDW-Adelaide-FLEX.INI,PDW_INSTALLER_INPUT_SHA256SUMS.txt,filters.ini,base-ids.txt,language.df,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: not InstallX64
+Source: "{#X64Application}\*"; DestDir: "{app}"; Excludes: "PDW.INI,PDW-Adelaide-FLEX.INI,PDW_INSTALLER_INPUT_SHA256SUMS.txt,filters.ini,base-ids.txt,language.df,Receivers\*,Wavfiles\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: InstallX64
+
+Source: "{#Win32Application}\base-ids.txt"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: not InstallX64
+Source: "{#X64Application}\base-ids.txt"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: InstallX64
+Source: "{#Win32Application}\language.df"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: not InstallX64
+Source: "{#X64Application}\language.df"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: InstallX64
 
 Source: "{#Win32Application}\PDW.INI"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: (not InstallX64) and InstallStandardProfile
 Source: "{#X64Application}\PDW.INI"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: InstallX64 and InstallStandardProfile

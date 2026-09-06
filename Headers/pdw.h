@@ -131,6 +131,8 @@ typedef struct
 
 
 #define SYSTEMTRAY_ICON_MESSAGE (WM_USER+1) // ID for PDW sytem tray icon
+#define PDW_DEFERRED_PANE_REFRESH_MESSAGE (WM_APP+74)
+#define PDW_DEFERRED_WINDOW_TITLE_MESSAGE (WM_APP+75)
 
 #include <cstring>
 
@@ -539,7 +541,7 @@ void CopyToClipboard(PaneStruct *pane, UINT min_col, UINT max_col, UINT min_row,
 void PanePaint(PaneStruct *pane);
 void PaneHScroll(PaneStruct *pane, WPARAM wParam);
 void PaneVScroll(PaneStruct *pane, WPARAM wParam, LPARAM lParam);
-void BuildFilterString(char *temp_str, FILTER filter);
+void BuildFilterString(char *temp_str, const FILTER& filter);
 void ChangeDataMode(HWND hWnd, int mode);
 
 INT_PTR NEAR GoModalDialogBoxParam(HINSTANCE hInstance, LPCSTR lpszTemplate, HWND hWnd, DLGPROC lpDlgProc, LPARAM lParam);

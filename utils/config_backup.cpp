@@ -2,6 +2,8 @@
 #define STRICT 1
 #endif
 
+#include "profile_snapshot.h"
+#include "restore_temporary_file.h"
 #include <windows.h>
 #include <commdlg.h>
 #include <wincred.h>
@@ -14,6 +16,9 @@
 #include <vector>
 
 #include "config_backup_core.h"
+#include "decoded_event.h"
+#include "headers/sound_in.h"
+#include <sstream>
 #include "headers\config_backup.h"
 #include "headers\data_outputs.h"
 #include "headers\ftp.h"
@@ -25,6 +30,8 @@
 #include "headers\resource.h"
 #include "headers\ui_theme.h"
 
+extern int nDriverLoaded;
+
 namespace
 {
 	const std::size_t kMaximumConfigurationFileSize = 16u * 1024u * 1024u;
@@ -32,6 +39,7 @@ namespace
 	const char kBackupFilter[] =
 		"PDW configuration backup (*.pdwbackup)\0*.pdwbackup\0All files (*.*)\0*.*\0\0";
 	bool g_restoreCompleted = false;
+	bool g_restoreRecoveryRequired = false;
 
 	struct PasswordDialogContext
 	{
@@ -280,98 +288,88 @@ namespace
 			EnumerateProfileCredentials(contents.credentials, error);
 	}
 
-	bool ApplyDirectoryBackup(const std::string& contents, std::string& error)
-	{
-		if (contents.empty() || contents.compare(0, 8, "protocol") == 0 ||
-			(contents.size() >= 3 && static_cast<unsigned char>(contents[0]) == 0xEF &&
-			 static_cast<unsigned char>(contents[1]) == 0xBB &&
-			 static_cast<unsigned char>(contents[2]) == 0xBF))
-		{
-			int rejected = 0;
-			return MessageArchiveReplaceCapcodesCsv(contents, rejected, error);
-		}
-		if (contents.compare(0, 8, "[Filter]") != 0)
-		{
-			error = "The backup does not contain a supported Capcode Directory or legacy filter set.";
-			return false;
-		}
 
-		char temporaryPath[MAX_PATH] = {};
-		if (!GetTempFileNameA(szPath, "PDF", 0, temporaryPath))
-		{
-			error = "PDW could not prepare the legacy filter migration file.";
-			return false;
-		}
-		if (!AtomicWriteText(temporaryPath, contents, error))
-		{
-			DeleteFileA(temporaryPath);
-			return false;
-		}
-		PROFILE legacy = Profile;
-		legacy.filters.clear();
-		if (!ReadFilters(temporaryPath, &legacy, true))
-		{
-			DeleteFileA(temporaryPath);
-			error = "The legacy filter data in this backup is invalid.";
-			return false;
-		}
-		return MessageArchiveReplaceLegacyFilters(legacy.filters, error);
-	}
+    bool ParseDirectoryBackup(const std::string& contents,
+        std::vector<pdw::archive::CapcodeEntry>& entries, std::string& error)
+    {
+        if (contents.empty()) { entries.clear(); return true; }
+        if (contents.compare(0, 8, "[Filter]") != 0)
+        {
+            std::istringstream input(contents);
+            int rejected = 0;
+            if (!pdw::archive::ReadCapcodeDirectoryCsv(input, entries, rejected, error)) return false;
+            if (rejected) { error = "The backup directory contains invalid rows."; return false; }
+            return true;
+        }
+        RestoreTemporaryFile temporary(szPath);
+        if (!temporary.path[0]) { error = "A restore temporary file could not be created."; return false; }
+        if (!AtomicWriteText(temporary.path, contents, error)) return false;
+        PROFILE legacy = {};
+        { PdwSignalDecoderStateGuard guard; legacy = Profile; }
+        legacy.filters.clear();
+        if (!ReadFilters(temporary.path, &legacy, true))
+        {
+            error = "The legacy filter data in this backup is invalid.";
+            return false;
+        }
+        MessageArchiveConvertLegacyFilters(legacy.filters, entries);
+        return true;
+    }
 
-	bool RestoreConfiguration(const pdw::backup::BackupContents& restored,
-		std::string& error)
-	{
-		std::string previousSettings;
-		std::string previousFilters;
-		std::vector<pdw::backup::BackupCredential> previousCredentials;
-		bool settingsExisted = false;
-		if (!ReadOptionalTextFile(szIniPathName, previousSettings, settingsExisted, error) ||
-			!MessageArchiveExportCapcodesCsv(previousFilters, error) ||
-			!EnumerateProfileCredentials(previousCredentials, error)) return false;
+    bool RestoreConfiguration(const pdw::backup::BackupContents& restored, std::string& error,
+        bool& recoverySafe)
+    {
+        recoverySafe = true;
+        std::vector<pdw::archive::CapcodeEntry> entries;
+        if (!ParseDirectoryBackup(restored.filters, entries, error)) return false;
+        RestoreTemporaryFile settings(szPath);
+        if (!settings.path[0]) { error = "A restore temporary file could not be created."; return false; }
+        if (!AtomicWriteText(settings.path, restored.settings, error)) return false;
+        char configuredPath[MESSAGE_ARCHIVE_PATH_LEN + 1] = {};
+        GetPrivateProfileStringA("MessageArchive", "Path", "pdw-history.sqlite3",
+            configuredPath, sizeof(configuredPath), settings.path);
+        std::string targetPath(configuredPath);
+        if (!(targetPath.size() >= 2 && targetPath[1] == ':') &&
+            !(targetPath.size() >= 2 && targetPath[0] == '\\' && targetPath[1] == '\\'))
+            targetPath = std::string(szPath) + "\\" + targetPath;
 
-		bool settingsChanged = false;
-		bool filtersChanged = false;
-		bool credentialsChanged = false;
-		char previousArchivePath[MESSAGE_ARCHIVE_PATH_LEN + 1] = {};
-		strncpy(previousArchivePath, Profile.messageArchivePath, sizeof(previousArchivePath) - 1);
-		if (AtomicWriteText(szIniPathName, restored.settings, error)) settingsChanged = true;
-		if (settingsChanged)
-		{
-			GetPrivateProfileStringA("MessageArchive", "Path", "pdw-history.sqlite3",
-				Profile.messageArchivePath, sizeof(Profile.messageArchivePath), szIniPathName);
-			MessageArchiveSettingsChanged();
-			if (ApplyDirectoryBackup(restored.filters, error)) filtersChanged = true;
-		}
-		if (settingsChanged && filtersChanged &&
-			ApplyCredentialSet(restored.credentials, error)) credentialsChanged = true;
+        std::string previousSettings;
+        std::vector<pdw::backup::BackupCredential> previousCredentials;
+        bool settingsExisted = false;
+        if (!ReadOptionalTextFile(szIniPathName, previousSettings, settingsExisted, error) ||
+            !EnumerateProfileCredentials(previousCredentials, error)) return false;
 
-		if (!settingsChanged || !filtersChanged || !credentialsChanged)
-		{
-			bool rollbackFailed = false;
-			std::string rollbackError;
-			if (settingsChanged && (settingsExisted ?
-				!AtomicWriteText(szIniPathName, previousSettings, rollbackError) :
-				(!DeleteFileA(szIniPathName) && GetLastError() != ERROR_FILE_NOT_FOUND)))
-				rollbackFailed = true;
-			rollbackError.clear();
-			strncpy(Profile.messageArchivePath, previousArchivePath,
-				sizeof(Profile.messageArchivePath) - 1);
-			Profile.messageArchivePath[sizeof(Profile.messageArchivePath) - 1] = '\0';
-			MessageArchiveSettingsChanged();
-			if (filtersChanged && !ApplyDirectoryBackup(previousFilters, rollbackError))
-				rollbackFailed = true;
-			rollbackError.clear();
-			if (!ApplyCredentialSet(previousCredentials, rollbackError)) rollbackFailed = true;
-			if (rollbackFailed)
-				error += " The original configuration rollback also reported an error.";
-		}
-		pdw::backup::BackupContents wipe;
-		wipe.settings.swap(previousSettings);
-		wipe.filters.swap(previousFilters);
-		wipe.credentials.swap(previousCredentials);
-		pdw::backup::WipeBackupContents(wipe);
-		return settingsChanged && filtersChanged && credentialsChanged;
-	}
+        // The dedicated connection targets restored database B, without changing
+        // the active profile/database A. Its transaction retains exact original
+        // rows and IDs until every associated configuration write succeeds.
+        pdw::archive::MessageArchive target;
+        bool credentialsAttempted = false;
+        bool settingsChanged = false;
+        const bool success = target.Open(pdw::events::PdwTextToUtf8(targetPath.c_str()), error, true) &&
+            target.ReplaceCapcodesAtomically(entries, [&](std::string& commitError)
+            {
+                credentialsAttempted = true;
+                if (!ApplyCredentialSet(restored.credentials, commitError)) return false;
+                settingsChanged = AtomicWriteText(szIniPathName, restored.settings, commitError);
+                return settingsChanged;
+            }, error, &recoverySafe);
+        if (!success)
+        {
+            bool rollbackFailed = false;
+            std::string rollbackError;
+            if (settingsChanged && (settingsExisted ?
+                !AtomicWriteText(szIniPathName, previousSettings, rollbackError) :
+                (!DeleteFileA(szIniPathName) && GetLastError() != ERROR_FILE_NOT_FOUND))) rollbackFailed = true;
+            if (credentialsAttempted && !ApplyCredentialSet(previousCredentials, rollbackError)) rollbackFailed = true;
+            if (rollbackFailed) { recoverySafe = false; error += " The original configuration rollback also reported an error."; }
+        }
+        pdw::backup::BackupContents wipe;
+        wipe.settings.swap(previousSettings);
+        wipe.credentials.swap(previousCredentials);
+        pdw::backup::WipeBackupContents(wipe);
+        return success;
+    }
+
 
 	void BuildDefaultBackupName(char* name, std::size_t capacity)
 	{
@@ -561,19 +559,55 @@ namespace
 			return;
 		}
 
+        if (SignalDiagnosticIsReplaying() && !SignalDiagnosticStopReplay())
+        {
+            pdw::backup::WipeBackupContents(contents);
+            SetBackupStatus(dialog, "Restore cancelled because replay could not stop safely.");
+            return;
+        }
+        const bool resumeSerial = nDriverLoaded != 0;
+        const bool resumeCapture = bCapturing;
+        if (resumeSerial) UnloadDriver();
+        if (nDriverLoaded)
+        {
+            pdw::backup::WipeBackupContents(contents);
+            SetBackupStatus(dialog, "Restore cancelled because serial input could not stop safely.");
+            return;
+        }
+        if (resumeCapture && !Stop_Capturing())
+        {
+            pdw::backup::WipeBackupContents(contents);
+            SetBackupStatus(dialog, "Restore cancelled because capture could not stop safely.");
+            return;
+        }
+        MessageArchiveManagerShutdown();
 		SetBackupStatus(dialog, "Stopping data delivery and restoring the configuration...");
 		DataOutputManagerShutdown();
 		PublishingManagerShutdown();
 		NotificationManagerShutdown();
 		FtpShutdown();
-		if (!RestoreConfiguration(contents, error))
+		bool recoverySafe = true;
+		if (!RestoreConfiguration(contents, error, recoverySafe))
 		{
+            if (!recoverySafe)
+            {
+                g_restoreRecoveryRequired = true;
+                pdw::backup::WipeBackupContents(contents);
+                MessageBoxA(dialog, (error + " PDW will close without saving settings. Recover the configuration before reopening.").c_str(),
+                    "PDW Restore", MB_OK | MB_ICONERROR);
+                EndDialog(dialog, IDCANCEL);
+                PostMessage(ghWnd, WM_CLOSE, 0, 0);
+                return;
+            }
+            MessageArchiveManagerInitialize();
+            if (resumeSerial ? !LoadDriver() : (resumeCapture && !Start_Capturing()))
+                error += " The previous input could not restart; review Interface Setup.";
 			DataOutputManagerInitialize();
 			PublishingManagerInitialize();
 			NotificationManagerInitialize();
 			FtpInitialize();
 			pdw::backup::WipeBackupContents(contents);
-			SetBackupStatus(dialog, "Restore failed; PDW kept or recovered the previous configuration.");
+			SetBackupStatus(dialog, "Restore failed; review the error for the recovery outcome.");
 			MessageBoxA(dialog, error.c_str(), "PDW Restore", MB_OK | MB_ICONERROR);
 			return;
 		}
@@ -627,4 +661,9 @@ void ShowConfigurationBackupDialog(HWND owner)
 bool ConfigurationRestoreCompleted(void)
 {
 	return g_restoreCompleted;
+}
+
+bool ConfigurationRestoreNeedsRecovery(void)
+{
+	return g_restoreRecoveryRequired;
 }

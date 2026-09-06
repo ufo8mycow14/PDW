@@ -81,6 +81,12 @@ private:
 	PolyphaseFirResampler audioResampler_;
 	ComplexSample previousIq_;
 	bool havePreviousIq_;
+	bool havePendingI_;
+	unsigned char pendingI_;
+	std::vector<ComplexSample> inputScratch_;
+	std::vector<ComplexSample> filteredIqScratch_;
+	std::vector<ComplexSample> discriminatorScratch_;
+	std::vector<ComplexSample> resampledAudioScratch_;
 };
 
 } // namespace signal

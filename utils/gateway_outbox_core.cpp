@@ -13,6 +13,7 @@
 #include <set>
 #include <sstream>
 #include <vector>
+#include <limits>
 
 namespace pdw
 {
@@ -243,6 +244,7 @@ GatewayOutboxStore::~GatewayOutboxStore() { Close(); }
 
 bool GatewayOutboxStore::Execute(const char* sql, std::string& error)
 {
+	operationStarted_ = GetTickCount64();
 	char* sqliteError = NULL;
 	const int result = sqlite3_exec(database_, sql, NULL, NULL, &sqliteError);
 	if (result == SQLITE_OK) return true;
@@ -368,6 +370,7 @@ bool GatewayOutboxStore::ValidateSchema(std::string& error)
 
 bool GatewayOutboxStore::Open(const std::string& utf8Path, std::string& error)
 {
+	operationStarted_ = GetTickCount64();
 	if (database_ && path_ == utf8Path) return true;
 	Close();
 	if (utf8Path.empty())
@@ -384,6 +387,8 @@ bool GatewayOutboxStore::Open(const std::string& utf8Path, std::string& error)
 	}
 	path_ = utf8Path;
 	sqlite3_busy_timeout(database_, 1000);
+	operationStarted_ = GetTickCount64();
+	sqlite3_progress_handler(database_, 1000, Progress, this);
 	int effective = 0;
 	std::string journalMode;
 	long long synchronous = 0;
@@ -414,6 +419,7 @@ const std::string& GatewayOutboxStore::Path() const { return path_; }
 
 bool GatewayOutboxStore::Append(const GatewayEvent& event, std::string& error)
 {
+	operationStarted_ = GetTickCount64();
 	if (!database_)
 	{
 		error = "Gateway outbox is not open.";
@@ -480,6 +486,7 @@ bool GatewayOutboxStore::Append(const GatewayEvent& event, std::string& error)
 bool GatewayOutboxStore::RecordHighestAssignedSequence(long long sequence,
 	std::string& error)
 {
+	operationStarted_ = GetTickCount64();
 	if (!database_) { error = "Gateway outbox is not open."; return false; }
 	sqlite3_stmt* statement = NULL;
 	if (sqlite3_prepare_v2(database_,
@@ -503,14 +510,62 @@ bool GatewayOutboxStore::RecordHighestAssignedSequence(long long sequence,
 bool GatewayOutboxStore::GetHighestAssignedSequence(long long& sequence,
 	std::string& error)
 {
+	operationStarted_ = GetTickCount64();
 	if (!database_) { error = "Gateway outbox is not open."; return false; }
 	return ReadInteger(database_,
 		"SELECT highest_assigned_sequence FROM gateway_outbox_state WHERE singleton=1;",
 		sequence, error);
 }
 
+bool GatewayOutboxStore::AppendSequenced(GatewayEvent event, long long& committedSequence,
+	std::string& error)
+{
+	committedSequence = 0;
+	if (!database_) { error = "Gateway outbox is not open."; return false; }
+	operationStarted_ = GetTickCount64();
+	if (!Execute("BEGIN IMMEDIATE;", error)) return false;
+	long long highest = 0;
+	bool ok = ReadInteger(database_,
+		"SELECT max(highest_assigned_sequence,(SELECT COALESCE(MAX(receiver_sequence),0) FROM gateway_events)) "
+		"FROM gateway_outbox_state WHERE singleton=1;", highest, error);
+	if (ok && (highest < 0 || highest == (std::numeric_limits<long long>::max)()))
+	{
+		error = "Gateway sequence space is exhausted.";
+		ok = false;
+	}
+	if (ok)
+	{
+		event.receiverSequence = highest + 1;
+		event.contentHash = GatewayEventContentHash(event);
+		ok = Append(event, error) && RecordHighestAssignedSequence(event.receiverSequence, error);
+	}
+	if (ok) ok = Execute("COMMIT;", error);
+	if (!ok)
+	{
+		std::string rollbackError;
+		if (!Execute("ROLLBACK;", rollbackError) && sqlite3_get_autocommit(database_) == 0)
+			Close(); // Never reuse a connection with an unresolved write transaction.
+		return false;
+	}
+	committedSequence = event.receiverSequence;
+	return true;
+}
+
+void GatewayOutboxStore::SetCancellation(const std::function<bool()>& cancelled)
+{
+	cancelled_ = cancelled;
+}
+
+int __stdcall GatewayOutboxStore::Progress(void* context)
+{
+	GatewayOutboxStore* store = static_cast<GatewayOutboxStore*>(context);
+	return (store->cancelled_ && store->cancelled_()) ||
+		GetTickCount64() - store->operationStarted_ > 2500 ? 1 : 0;
+}
+
 bool GatewayOutboxStore::Checkpoint(std::string& error)
 {
+	operationStarted_ = GetTickCount64();
 	if (!database_) { error = "Gateway outbox is not open."; return false; }
 	int logFrames = 0;
 	int checkpointed = 0;
@@ -537,6 +592,7 @@ bool GatewayOutboxStore::RefreshFileStatistics(StoreStatistics& statistics)
 
 bool GatewayOutboxStore::GetStatistics(StoreStatistics& statistics, std::string& error)
 {
+	operationStarted_ = GetTickCount64();
 	if (!database_) { error = "Gateway outbox is not open."; return false; }
 	long long last = 0, oldest = 0, count = 0;
 	if (!ReadInteger(database_, "SELECT COALESCE(MAX(receiver_sequence),0) FROM gateway_events;", last, error) ||
@@ -552,6 +608,7 @@ bool GatewayOutboxStore::GetStatistics(StoreStatistics& statistics, std::string&
 bool GatewayOutboxStore::EnforceRetention(const RetentionPolicy& policy,
 	int& removed, std::string& error)
 {
+	operationStarted_ = GetTickCount64();
 	removed = 0;
 	if (!database_) { error = "Gateway outbox is not open."; return false; }
 	if (policy.retentionDays < 1 || policy.maximumMegabytes < 1)

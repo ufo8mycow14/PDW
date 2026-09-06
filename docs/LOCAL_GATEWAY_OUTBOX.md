@@ -34,8 +34,14 @@ Gateway processes must:
 2. Set `PRAGMA query_only=ON`.
 3. Read `gateway_events` in ascending `receiver_sequence` order.
 4. Keep their checkpoint in their own storage, never in PDW's outbox.
-5. Treat sequence gaps as observable local drops and `event_id` as the stable
-   idempotency key.
+5. Treat `event_id` as the stable idempotency key. Sequence gaps may reflect
+   retention or allocations from older versions; consult the drop counters for
+   rejected intake and failed writes.
+
+Sequence assignment and insertion share one SQLite write transaction. Multiple
+channel processes can therefore write the same outbox without committing a
+new event below a reader's existing checkpoint. Queued events have a stable
+event ID; they receive their sequence only when committed.
 
 The `-wal` and `-shm` files must remain beside the database while PDW is open.
 Copying only the main database is not a safe live-reader mechanism.

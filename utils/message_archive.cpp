@@ -322,7 +322,7 @@ namespace
 		if (schemaVersion == 1)
 		{
 			const char migration[] =
-			"BEGIN IMMEDIATE;"
+			"SAVEPOINT archive_migration;"
 			"ALTER TABLE capcode_directory RENAME TO capcode_directory_v1;"
 			"CREATE TABLE capcode_directory("
 			"id INTEGER PRIMARY KEY,protocol TEXT NOT NULL DEFAULT '',address TEXT NOT NULL DEFAULT '',"
@@ -340,13 +340,13 @@ namespace
 			"CASE upper(protocol) WHEN 'FLEX' THEN 1 WHEN 'POCSAG' THEN 2 WHEN 'ERMES' THEN 4 WHEN 'ACARS' THEN 5 WHEN 'MOBITEX' THEN 6 ELSE 0 END,"
 			"display_name,1,updated_utc FROM capcode_directory_v1;"
 			"DROP TABLE capcode_directory_v1;"
-			"PRAGMA user_version=2;COMMIT;";
+			"PRAGMA user_version=2;RELEASE archive_migration;";
 			char* sqliteError = NULL;
 			if (sqlite3_exec(database, migration, NULL, NULL, &sqliteError) != SQLITE_OK)
 			{
 				error = sqliteError ? sqliteError : "PDW could not upgrade the Capcode Directory.";
 				if (sqliteError) sqlite3_free(sqliteError);
-				sqlite3_exec(database, "ROLLBACK;", NULL, NULL, NULL);
+				sqlite3_exec(database, "ROLLBACK TO archive_migration;RELEASE archive_migration;", NULL, NULL, NULL);
 				return false;
 			}
 			schemaVersion = 2;
@@ -354,7 +354,7 @@ namespace
 		if (schemaVersion == 2)
 		{
 			const char migration[] =
-				"BEGIN IMMEDIATE;"
+				"SAVEPOINT archive_migration;"
 				"ALTER TABLE capcode_directory ADD COLUMN filter_enabled INTEGER NOT NULL DEFAULT 1;"
 				"ALTER TABLE capcode_directory ADD COLUMN output_routing_configured INTEGER NOT NULL DEFAULT 0;"
 				"ALTER TABLE capcode_directory ADD COLUMN output_routes INTEGER NOT NULL DEFAULT 0;"
@@ -365,13 +365,13 @@ namespace
 				"output_routing_configured=0,"
 				"output_routes=CASE WHEN email_enabled=1 THEN 1 ELSE 0 END,"
 				"filter_label=display_name,command_enabled=1;"
-				"PRAGMA user_version=3;COMMIT;";
+				"PRAGMA user_version=3;RELEASE archive_migration;";
 			char* sqliteError = NULL;
 			if (sqlite3_exec(database, migration, NULL, NULL, &sqliteError) != SQLITE_OK)
 			{
 				error = sqliteError ? sqliteError : "PDW could not add per-filter output routing.";
 				if (sqliteError) sqlite3_free(sqliteError);
-				sqlite3_exec(database, "ROLLBACK;", NULL, NULL, NULL);
+				sqlite3_exec(database, "ROLLBACK TO archive_migration;RELEASE archive_migration;", NULL, NULL, NULL);
 				return false;
 			}
 		}
@@ -459,6 +459,30 @@ CsvRecordReadResult ReadCsvRecord(std::istream& input, std::string& record)
 	}
 	return record.empty() ? CSV_RECORD_END : CSV_RECORD_MALFORMED;
 }
+
+	std::string SpreadsheetCsvEscape(const std::string& value)
+	{
+		std::size_t firstMeaningful = 0;
+		bool hasLeadingControl = false;
+		while (firstMeaningful < value.size() &&
+			static_cast<unsigned char>(value[firstMeaningful]) <= 0x20)
+		{
+			if (static_cast<unsigned char>(value[firstMeaningful]) < 0x20)
+				hasLeadingControl = true;
+			++firstMeaningful;
+		}
+		std::string safe(value);
+		bool requiresTextPrefix = hasLeadingControl;
+		if (firstMeaningful < value.size())
+		{
+			const char first = value[firstMeaningful];
+			if (first == '=' || first == '+' || first == '-' || first == '@')
+				requiresTextPrefix = true;
+		}
+		if (requiresTextPrefix) safe.insert(safe.begin(), '\'');
+		return CsvEscape(safe);
+	}
+
 
 namespace
 {
@@ -552,28 +576,6 @@ namespace
 		return true;
 	}
 
-	std::string SpreadsheetCsvEscape(const std::string& value)
-	{
-		std::size_t firstMeaningful = 0;
-		bool hasLeadingControl = false;
-		while (firstMeaningful < value.size() &&
-			static_cast<unsigned char>(value[firstMeaningful]) <= 0x20)
-		{
-			if (static_cast<unsigned char>(value[firstMeaningful]) < 0x20)
-				hasLeadingControl = true;
-			++firstMeaningful;
-		}
-		std::string safe(value);
-		bool requiresTextPrefix = hasLeadingControl;
-		if (firstMeaningful < value.size())
-		{
-			const char first = value[firstMeaningful];
-			if (first == '=' || first == '+' || first == '-' || first == '@')
-				requiresTextPrefix = true;
-		}
-		if (requiresTextPrefix) safe.insert(safe.begin(), '\'');
-		return CsvEscape(safe);
-	}
 
 	bool ExportHistoryCsvFromDatabase(sqlite3* database, const HistoryQuery& query,
 		std::ostream& output, int& exported, std::string& error)
@@ -709,7 +711,7 @@ bool MessageArchive::Execute(const std::string& sql, std::string& error)
 	return false;
 }
 
-bool MessageArchive::Open(const std::string& utf8Path, std::string& error)
+bool MessageArchive::Open(const std::string& utf8Path, std::string& error, bool transactionalRestore)
 {
 	LockGuard guard(&lock_);
 	error.clear();
@@ -718,7 +720,7 @@ bool MessageArchive::Open(const std::string& utf8Path, std::string& error)
 		error = "Choose a message archive database file.";
 		return false;
 	}
-	if (database_ && path_ == utf8Path) return true;
+	if (database_ && path_ == utf8Path && !transactionalRestore) return true;
 	if (database_) sqlite3_close(database_);
 	database_ = NULL;
 	path_.clear();
@@ -760,6 +762,8 @@ bool MessageArchive::Open(const std::string& utf8Path, std::string& error)
 		!QueryPragmaInteger(database_, "PRAGMA cell_size_check;", 1, error) ||
 		!Execute("PRAGMA mmap_size=0;", error) ||
 		!QueryPragmaInteger(database_, "PRAGMA mmap_size;", 0, error) ||
+		(transactionalRestore && (!Execute("PRAGMA synchronous=NORMAL;PRAGMA foreign_keys=ON;", error) ||
+			!Execute("BEGIN IMMEDIATE;", error))) ||
 		!VerifyOrClaimArchiveOwnership(database_, error))
 	{
 		sqlite3_close(database_);
@@ -772,8 +776,8 @@ bool MessageArchive::Open(const std::string& utf8Path, std::string& error)
 		database_ = NULL;
 		return false;
 	}
-	const std::string schema =
-		"PRAGMA journal_mode=WAL;PRAGMA synchronous=NORMAL;PRAGMA foreign_keys=ON;"
+	const std::string schema = std::string(transactionalRestore ? "" :
+		"PRAGMA journal_mode=WAL;PRAGMA synchronous=NORMAL;PRAGMA foreign_keys=ON;") +
 		"CREATE TABLE IF NOT EXISTS capcode_directory("
 		"id INTEGER PRIMARY KEY,protocol TEXT NOT NULL DEFAULT '',address TEXT NOT NULL DEFAULT '',"
 		"display_name TEXT NOT NULL DEFAULT '',agency TEXT NOT NULL DEFAULT '',"
@@ -981,13 +985,28 @@ bool MessageArchive::UpsertCapcode(const CapcodeEntry& entry, std::string& error
 bool MessageArchive::ReplaceCapcodes(const std::vector<CapcodeEntry>& entries,
 	std::string& error)
 {
+	return ReplaceCapcodesAtomically(entries, [](std::string&) { return true; }, error);
+}
+
+bool MessageArchive::ReplaceCapcodesAtomically(const std::vector<CapcodeEntry>& entries,
+	const std::function<bool(std::string&)>& beforeCommit, std::string& error, bool* rollbackSucceeded)
+{
 	LockGuard guard(&lock_);
+	if (rollbackSucceeded) *rollbackSucceeded = true;
 	error.clear();
 	if (!database_) { error = "Message archive is not open."; return false; }
-	if (!Execute("BEGIN IMMEDIATE;", error)) return false;
+	if (sqlite3_get_autocommit(database_) && !Execute("BEGIN IMMEDIATE;", error)) return false;
+	auto rollback = [&] {
+		std::string rollbackError;
+		if (!Execute("ROLLBACK;", rollbackError))
+		{
+			if (rollbackSucceeded) *rollbackSucceeded = false;
+			error += " The directory transaction rollback also failed; close PDW before recovery.";
+		}
+	};
 	if (!Execute("DELETE FROM capcode_directory;", error))
 	{
-		Execute("ROLLBACK;", error);
+		rollback();
 		return false;
 	}
 	for (std::vector<CapcodeEntry>::const_iterator entry = entries.begin();
@@ -997,15 +1016,13 @@ bool MessageArchive::ReplaceCapcodes(const std::vector<CapcodeEntry>& entries,
 		insert.id = 0;
 		if (!UpsertCapcode(insert, error))
 		{
-			std::string ignored;
-			Execute("ROLLBACK;", ignored);
+			rollback();
 			return false;
 		}
 	}
-	if (!Execute("COMMIT;", error))
+	if (!beforeCommit(error) || !Execute("COMMIT;", error))
 	{
-		std::string ignored;
-		Execute("ROLLBACK;", ignored);
+		rollback();
 		return false;
 	}
 	return true;

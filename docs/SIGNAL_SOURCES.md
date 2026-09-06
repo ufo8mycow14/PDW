@@ -70,6 +70,15 @@ Tools`. It can install WinUSB for RTL-SDR hardware, but it requires
 administrator approval and selecting the exact receiver interface. PDW never
 launches it or changes a Windows driver automatically.
 
+Direct/modern capture feeds a fixed-capacity, preallocated decoder worker. The
+capture callback does not wait for the Windows message loop, and decoded pane
+refreshes are coalesced back onto the UI thread. Signal diagnostics expose
+queue depth/high-water/drops, lag, accepted-row freshness, worker lifecycle,
+process resources, and meter resources. Hardware acceptance must use the
+trusted-feed correlation gate in
+[`DIRECT_RTL_SDR_SOAK_ACCEPTANCE.md`](DIRECT_RTL_SDR_SOAK_ACCEPTANCE.md); fresh
+IQ callbacks or a moving signal meter are not sufficient evidence of health.
+
 ## SDR# and VB-Audio Virtual Cable
 
 For a new `PDW.INI`, Setup offers an explicit **SDR# + VB-Audio Cable
@@ -93,8 +102,12 @@ metadata. The in-memory diagnostic safety limit is 25 million samples; PDW
 reports when that limit truncates a recording.
 
 Replay accepts mono/stereo PCM8, PCM16, or float32 WAV and real float32 SigMF.
-It uses the recording's sample rate, resets protocol timing, runs through the
-normal PDW decoder functions in real time, then restores the exact prior live
+It accepts sample rates from 8,000 to 192,000 Hz. Modern capture and replay
+convert audio to the decoder's 44,100 Hz reference rate; samples already at
+that rate pass through unchanged. Discontinuities, pause/resume and rate
+changes discard partial protocol state before reacquisition. Finite replay
+flushes the resampler tail without extending the recording duration.
+Replay runs through the normal PDW decoder functions in real time, then restores the exact prior live
 audio/radio/serial source. Stop a diagnostic recording before starting replay.
 
 The same dialog shows a rolling discriminator waveform, audio spectrum,

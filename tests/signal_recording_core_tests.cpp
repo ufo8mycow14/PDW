@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <fstream>
 
 namespace
 {
@@ -70,6 +71,31 @@ int main()
 	Expect(sigmfRoundTrip.samples.size() == generated.samples.size(), "SigMF sample count round trip");
 	for (std::size_t index = 0; index < generated.samples.size(); ++index)
 		Expect(sigmfRoundTrip.samples[index] == wavRoundTrip.samples[index], "SigMF float sample round trip");
+	for (const char* metadata : {
+		"{\"global\":{\"core:datatype\":\"rf32_le\",\"core:sample_rate\":48000}}",
+		"{\n\"annotations\":[{\"custom\":[true,false,null,1.5]}],\"global\":{\"core:sample_rate\":4.8e4,\"core:datatype\":\"rf32_le\"}}",
+		"{\"global\":{\"core:datatype\":\"rf32_\\u006ce\",\"core:sample_rate\":48000}}"})
+	{
+		std::ofstream file(sigmfBase + ".sigmf-meta", std::ios::binary); file << metadata; file.close();
+		Expect(ReadSigMfReal32(sigmfBase, sigmfRoundTrip, error) && sigmfRoundTrip.sampleRate == 48000,
+			"equivalent compact/reordered/escaped SigMF metadata is accepted");
+	}
+	for (const char* metadata : {
+		"{\"global\":{\"core:datatype\":\"rf32_le\",\"core:sample_rate\":NaN}}",
+		"{\"global\":{\"core:datatype\":\"rf32_le\",\"core:sample_rate\":1e999}}",
+		"{\"global\":{\"core:datatype\":\"rf32_le\",\"core:sample_rate\":48000.5}}",
+		"{\"global\":{\"core:datatype\":\"rf32_le\",\"core:sample_rate\":0}}",
+		"{\"global\":{\"core:datatype\":\"rf32_le\",\"core:sample_rate\":48000,}}",
+		"{\"core:datatype\":\"rf32_le\",\"core:sample_rate\":48000}",
+		"{\"global\":{\"core:datatype\":\"rf32_le\",\"core:sample_rate\":48000,\"core:sample_rate\":8000}}"})
+	{
+		std::ofstream file(sigmfBase + ".sigmf-meta", std::ios::binary); file << metadata; file.close();
+		Expect(!ReadSigMfReal32(sigmfBase, sigmfRoundTrip, error), "invalid or ambiguous SigMF metadata is rejected");
+	}
+	{
+		std::ofstream file(sigmfBase + ".sigmf-meta", std::ios::binary); file << std::string(1024 * 1024 + 1, ' '); file.close();
+		Expect(!ReadSigMfReal32(sigmfBase, sigmfRoundTrip, error), "metadata size is bounded before allocation/parsing");
+	}
 
 	AdaptiveSlicer flexSlicer;
 	for (int symbol = 0; symbol < 320; ++symbol)

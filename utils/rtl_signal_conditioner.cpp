@@ -294,34 +294,40 @@ void RtlSignalConditioner::Reset()
 	previousIq_.i = 0.0f;
 	previousIq_.q = 0.0f;
 	havePreviousIq_ = false;
+	havePendingI_ = false;
+	pendingI_ = 0;
 }
 
 void RtlSignalConditioner::ProcessUnsignedIq(const unsigned char* iqBytes,
 	std::size_t byteCount, std::vector<float>& audio)
 {
 	audio.clear();
-	if (!iqBytes || byteCount < 2) return;
+	if (!iqBytes || !byteCount) return;
 
-	std::vector<ComplexSample> input;
-	input.reserve(byteCount / 2);
-	for (std::size_t byte = 0; byte + 1 < byteCount; byte += 2)
+	inputScratch_.clear();
+	inputScratch_.reserve(byteCount / 2);
+	for (std::size_t byte = 0; byte < byteCount;)
 	{
+		if (!havePendingI_) { pendingI_ = iqBytes[byte++]; havePendingI_ = true; }
+		if (byte == byteCount) break;
 		ComplexSample sample;
-		sample.i = (static_cast<int>(iqBytes[byte]) - 127.5f) / 128.0f;
-		sample.q = (static_cast<int>(iqBytes[byte + 1]) - 127.5f) / 128.0f;
-		input.push_back(sample);
+		sample.i = (static_cast<int>(pendingI_) - 127.5f) / 128.0f;
+		sample.q = (static_cast<int>(iqBytes[byte++]) - 127.5f) / 128.0f;
+		havePendingI_ = false;
+		inputScratch_.push_back(sample);
 	}
+	if (inputScratch_.empty()) return;
 
-	std::vector<ComplexSample> filteredIq;
-	filteredIq.reserve(static_cast<std::size_t>(input.size()) *
+	filteredIqScratch_.clear();
+	filteredIqScratch_.reserve(static_cast<std::size_t>(inputScratch_.size()) *
 		demodulatorSampleRate_ / iqSampleRate_ + 2);
-	iqResampler_.Process(&input[0], input.size(), filteredIq);
-	if (filteredIq.empty()) return;
+	iqResampler_.Process(&inputScratch_[0], inputScratch_.size(), filteredIqScratch_);
+	if (filteredIqScratch_.empty()) return;
 
-	std::vector<ComplexSample> discriminator;
-	discriminator.reserve(filteredIq.size());
-	for (std::vector<ComplexSample>::const_iterator sample = filteredIq.begin();
-		sample != filteredIq.end(); ++sample)
+	discriminatorScratch_.clear();
+	discriminatorScratch_.reserve(filteredIqScratch_.size());
+	for (std::vector<ComplexSample>::const_iterator sample = filteredIqScratch_.begin();
+		sample != filteredIqScratch_.end(); ++sample)
 	{
 		if (havePreviousIq_)
 		{
@@ -336,20 +342,21 @@ void RtlSignalConditioner::ProcessUnsignedIq(const unsigned char* iqBytes,
 			demodulated.i = static_cast<float>(
 				std::atan2(cross, dot) / PI * frequencyScale);
 			demodulated.q = 0.0f;
-			discriminator.push_back(demodulated);
+			discriminatorScratch_.push_back(demodulated);
 		}
 		previousIq_ = *sample;
 		havePreviousIq_ = true;
 	}
-	if (discriminator.empty()) return;
+	if (discriminatorScratch_.empty()) return;
 
-	std::vector<ComplexSample> resampledAudio;
-	resampledAudio.reserve(static_cast<std::size_t>(discriminator.size()) *
+	resampledAudioScratch_.clear();
+	resampledAudioScratch_.reserve(static_cast<std::size_t>(discriminatorScratch_.size()) *
 		audioSampleRate_ / demodulatorSampleRate_ + 2);
-	audioResampler_.Process(&discriminator[0], discriminator.size(), resampledAudio);
-	audio.reserve(resampledAudio.size());
-	for (std::vector<ComplexSample>::const_iterator sample = resampledAudio.begin();
-		sample != resampledAudio.end(); ++sample)
+	audioResampler_.Process(&discriminatorScratch_[0], discriminatorScratch_.size(),
+		resampledAudioScratch_);
+	audio.reserve(resampledAudioScratch_.size());
+	for (std::vector<ComplexSample>::const_iterator sample = resampledAudioScratch_.begin();
+		sample != resampledAudioScratch_.end(); ++sample)
 		audio.push_back(ClampNormalized(sample->i));
 }
 

@@ -30,6 +30,13 @@ namespace
 	const UINT_PTR kMeterTimer = 1;
 	volatile LONG g_legacyActivity = 0;
 	volatile LONG g_legacyDirection = 0;
+	volatile LONG g_paintCount = 0;
+	volatile LONG g_skippedUpdateCount = 0;
+	volatile LONG g_suspendedUpdateCount = 0;
+	volatile LONG g_tooltipUpdateCount = 0;
+	volatile LONG g_backbufferCreateCount = 0;
+	volatile LONG g_backbufferDeleteCount = 0;
+	volatile LONG g_activeBackbufferObjects = 0;
 
 	struct MeterState
 	{
@@ -41,8 +48,15 @@ namespace
 		float displayedLevel;
 		float peakHold;
 		bool animationsEnabled;
+		bool remoteSession;
 		bool hovered;
 		HWND tooltip;
+		HDC backbufferDc;
+		HBITMAP backbufferBitmap;
+		HGDIOBJ backbufferOldBitmap;
+		int backbufferWidth;
+		int backbufferHeight;
+		UINT timerInterval;
 		char tooltipText[320];
 		char stateText[32];
 		char sourceText[40];
@@ -50,7 +64,9 @@ namespace
 		MeterState()
 			: lastSampleCount(0), lastSampleTick(0), peakTick(0),
 			  lastLegacyActivity(0), displayedLevel(0.0f), peakHold(0.0f),
-			  animationsEnabled(true), hovered(false), tooltip(NULL)
+			  animationsEnabled(true), remoteSession(false), hovered(false), tooltip(NULL),
+			  backbufferDc(NULL), backbufferBitmap(NULL), backbufferOldBitmap(NULL),
+			  backbufferWidth(0), backbufferHeight(0), timerInterval(0)
 		{
 			ZeroMemory(&snapshot, sizeof(snapshot));
 			tooltipText[0] = '\0';
@@ -85,6 +101,75 @@ namespace
 		return enabled != FALSE;
 	}
 
+	bool IsRemoteDesktopSession()
+	{
+		return GetSystemMetrics(SM_REMOTESESSION) != 0;
+	}
+
+	void ReleaseBackbuffer(MeterState& state)
+	{
+		if (state.backbufferDc && state.backbufferOldBitmap)
+			SelectObject(state.backbufferDc, state.backbufferOldBitmap);
+		if (state.backbufferBitmap)
+		{
+			DeleteObject(state.backbufferBitmap);
+			InterlockedIncrement(&g_backbufferDeleteCount);
+			InterlockedDecrement(&g_activeBackbufferObjects);
+		}
+		if (state.backbufferDc)
+		{
+			DeleteDC(state.backbufferDc);
+			InterlockedIncrement(&g_backbufferDeleteCount);
+			InterlockedDecrement(&g_activeBackbufferObjects);
+		}
+		state.backbufferDc = NULL;
+		state.backbufferBitmap = NULL;
+		state.backbufferOldBitmap = NULL;
+		state.backbufferWidth = 0;
+		state.backbufferHeight = 0;
+	}
+
+	bool EnsureBackbuffer(HDC reference, int width, int height, MeterState& state)
+	{
+		if (state.backbufferDc && state.backbufferBitmap &&
+			state.backbufferWidth == width && state.backbufferHeight == height) return true;
+		ReleaseBackbuffer(state);
+		state.backbufferDc = CreateCompatibleDC(reference);
+		if (!state.backbufferDc) return false;
+		InterlockedIncrement(&g_backbufferCreateCount);
+		InterlockedIncrement(&g_activeBackbufferObjects);
+		state.backbufferBitmap = CreateCompatibleBitmap(reference, width, height);
+		if (!state.backbufferBitmap)
+		{
+			ReleaseBackbuffer(state);
+			return false;
+		}
+		InterlockedIncrement(&g_backbufferCreateCount);
+		InterlockedIncrement(&g_activeBackbufferObjects);
+		state.backbufferOldBitmap = SelectObject(state.backbufferDc, state.backbufferBitmap);
+		state.backbufferWidth = width;
+		state.backbufferHeight = height;
+		return true;
+	}
+
+	UINT DesiredTimerInterval(HWND window, const MeterState& state)
+	{
+		if (!IsWindowVisible(window) || (ghWnd && IsIconic(ghWnd))) return 1000;
+		if (state.remoteSession) return 250;
+		if (state.snapshot.decoderLagMs >= 100 ||
+			(state.snapshot.decodeQueueCapacity &&
+			state.snapshot.decodeQueueDepth * 2 >= state.snapshot.decodeQueueCapacity)) return 250;
+		return state.animationsEnabled ? 100 : 250;
+	}
+
+	void UpdateTimerInterval(HWND window, MeterState& state)
+	{
+		const UINT desired = DesiredTimerInterval(window, state);
+		if (state.timerInterval == desired) return;
+		SetTimer(window, kMeterTimer, desired, NULL);
+		state.timerInterval = desired;
+	}
+
 	const char* SourceName(const MeterState& state)
 	{
 		if (state.snapshot.diagnosticReplay || bPlayback) return "Recording playback";
@@ -105,7 +190,8 @@ namespace
 	void UpdateTooltip(HWND window, MeterState& state)
 	{
 		const float db = DbValue(state.snapshot.rmsLevel);
-		snprintf(state.tooltipText, sizeof(state.tooltipText),
+		char updatedText[sizeof(state.tooltipText)];
+		snprintf(updatedText, sizeof(updatedText),
 			"%s - %s, level %.0f dBFS, quality %.0f%%, clipping %.2f%%. %s%s%s"
 			"Click to open Signal & radio settings.",
 			state.stateText, state.sourceText, db, state.snapshot.signalQuality,
@@ -113,6 +199,9 @@ namespace
 			state.snapshot.receiverStatus[0] ? state.snapshot.receiverStatus : "",
 			state.snapshot.lastReceiverError[0] ? ". Last error: " : ". ",
 			state.snapshot.lastReceiverError);
+		if (strcmp(updatedText, state.tooltipText) == 0) return;
+		lstrcpynA(state.tooltipText, updatedText, _countof(state.tooltipText));
+		InterlockedIncrement(&g_tooltipUpdateCount);
 		SetWindowTextA(window, state.tooltipText);
 		if (state.tooltip)
 		{
@@ -130,6 +219,22 @@ namespace
 
 	void UpdateState(HWND window, MeterState& state)
 	{
+		state.remoteSession = IsRemoteDesktopSession();
+		state.animationsEnabled = ClientAnimationsEnabled() && !state.remoteSession;
+		UpdateTimerInterval(window, state);
+		if (!IsWindowVisible(window) || (ghWnd && IsIconic(ghWnd)))
+		{
+			InterlockedIncrement(&g_suspendedUpdateCount);
+			return;
+		}
+
+		const PdwLiveSignalSnapshot previousSnapshot = state.snapshot;
+		const float previousDisplayedLevel = state.displayedLevel;
+		const float previousPeakHold = state.peakHold;
+		char previousStateText[sizeof(state.stateText)];
+		char previousSourceText[sizeof(state.sourceText)];
+		lstrcpynA(previousStateText, state.stateText, _countof(previousStateText));
+		lstrcpynA(previousSourceText, state.sourceText, _countof(previousSourceText));
 		SignalDiagnosticsGetLiveSnapshot(&state.snapshot);
 		const ULONGLONG now = GetTickCount64();
 		const bool samplesAdvanced = state.snapshot.sampleCount != state.lastSampleCount;
@@ -193,7 +298,18 @@ namespace
 				(state.animationsEnabled ? 0.025f : 0.08f));
 		}
 		UpdateTooltip(window, state);
-		InvalidateRect(window, NULL, FALSE);
+		UpdateTimerInterval(window, state);
+		const bool visualChanged = samplesAdvanced || legacyAdvanced ||
+			strcmp(previousStateText, state.stateText) != 0 ||
+			strcmp(previousSourceText, state.sourceText) != 0 ||
+			std::fabs(previousDisplayedLevel - state.displayedLevel) >= 0.005f ||
+			std::fabs(previousPeakHold - state.peakHold) >= 0.005f ||
+			std::fabs(previousSnapshot.signalQuality - state.snapshot.signalQuality) >= 0.5f ||
+			previousSnapshot.clippingPercent != state.snapshot.clippingPercent ||
+			previousSnapshot.decodeQueueDrops != state.snapshot.decodeQueueDrops ||
+			previousSnapshot.decoderLagMs != state.snapshot.decoderLagMs;
+		if (visualChanged) InvalidateRect(window, NULL, FALSE);
+		else InterlockedIncrement(&g_skippedUpdateCount);
 	}
 
 	COLORREF MeterAccent(const MeterState& state)
@@ -241,24 +357,26 @@ namespace
 			return;
 		}
 
-		HDC memory = CreateCompatibleDC(dc);
-		HBITMAP bitmap = CreateCompatibleBitmap(dc, bounds.right, bounds.bottom);
-		HGDIOBJ oldBitmap = SelectObject(memory, bitmap);
+		if (!EnsureBackbuffer(dc, bounds.right, bounds.bottom, state))
+		{
+			EndPaint(window, &paint);
+			return;
+		}
+		HDC memory = state.backbufferDc;
+		const int savedDc = SaveDC(memory);
 		const COLORREF panelColour = state.hovered ?
 			BlendColour(PdwThemeSurfaceColor(), PdwThemeAccentColor(), 12) :
 			PdwThemeSurfaceColor();
-		HBRUSH background = CreateSolidBrush(panelColour);
-		FillRect(memory, &bounds, background);
-		DeleteObject(background);
+		HBRUSH dcBrush = static_cast<HBRUSH>(GetStockObject(DC_BRUSH));
+		HPEN dcPen = static_cast<HPEN>(GetStockObject(DC_PEN));
+		SetDCBrushColor(memory, panelColour);
+		FillRect(memory, &bounds, dcBrush);
 
-		HPEN border = CreatePen(PS_SOLID, 1,
+		SelectObject(memory, dcPen);
+		SetDCPenColor(memory,
 			state.hovered ? PdwThemeAccentColor() : PdwThemeBorderColor());
-		HGDIOBJ oldPen = SelectObject(memory, border);
-		HGDIOBJ oldBrush = SelectObject(memory, GetStockObject(NULL_BRUSH));
+		SelectObject(memory, GetStockObject(NULL_BRUSH));
 		RoundRect(memory, bounds.left, bounds.top, bounds.right, bounds.bottom, 6, 6);
-		SelectObject(memory, oldBrush);
-		SelectObject(memory, oldPen);
-		DeleteObject(border);
 
 		const COLORREF accent = MeterAccent(state);
 		const bool compactHeight = bounds.bottom < 32;
@@ -310,9 +428,9 @@ namespace
 		const float sampleScale = 1.0f / (std::max)(0.002f,
 			state.snapshot.peakLevel * 1.15f);
 		const float visibleLevel = 0.28f + state.displayedLevel * 0.72f;
-		HBRUSH barBrush = CreateSolidBrush(accent);
-		oldBrush = SelectObject(memory, barBrush);
-		oldPen = SelectObject(memory, GetStockObject(NULL_PEN));
+		SelectObject(memory, dcBrush);
+		SetDCBrushColor(memory, accent);
+		SelectObject(memory, GetStockObject(NULL_PEN));
 		for (int bar = 0; bar < barCount; ++bar)
 		{
 			float amplitude = 0.06f;
@@ -341,10 +459,6 @@ namespace
 				x + barWidth, waveform.top + (waveHeight + barHeight) / 2 };
 			RoundRect(memory, barRect.left, barRect.top, barRect.right, barRect.bottom, 3, 3);
 		}
-		SelectObject(memory, oldPen);
-		SelectObject(memory, oldBrush);
-		DeleteObject(barBrush);
-
 		if (!compactHeight && !narrowMeter)
 		{
 			SetTextColor(memory, MeterStatusColour(state));
@@ -357,29 +471,22 @@ namespace
 		}
 
 		RECT peakTrack = { bounds.right - 13, 5, bounds.right - 8, bounds.bottom - 5 };
-		HBRUSH trackBrush = CreateSolidBrush(PdwThemeBorderColor());
-		oldBrush = SelectObject(memory, trackBrush);
-		oldPen = SelectObject(memory, GetStockObject(NULL_PEN));
+		SelectObject(memory, dcBrush);
+		SetDCBrushColor(memory, PdwThemeBorderColor());
+		SelectObject(memory, GetStockObject(NULL_PEN));
 		RoundRect(memory, peakTrack.left, peakTrack.top, peakTrack.right,
 			peakTrack.bottom, 4, 4);
-		SelectObject(memory, oldBrush);
-		DeleteObject(trackBrush);
 		const int peakHeight = static_cast<int>((peakTrack.bottom - peakTrack.top) * state.peakHold);
 		RECT peakFill = { peakTrack.left, peakTrack.bottom - peakHeight,
 			peakTrack.right, peakTrack.bottom };
-		HBRUSH peakBrush = CreateSolidBrush(state.snapshot.clippingPercent >= 1.0f ?
+		SetDCBrushColor(memory, state.snapshot.clippingPercent >= 1.0f ?
 			RGB(255, 112, 102) : RGB(108, 203, 95));
-		SelectObject(memory, peakBrush);
 		RoundRect(memory, peakFill.left, peakFill.top, peakFill.right,
 			peakFill.bottom, 4, 4);
-		SelectObject(memory, oldBrush);
-		SelectObject(memory, oldPen);
-		DeleteObject(peakBrush);
 
 		BitBlt(dc, 0, 0, bounds.right, bounds.bottom, memory, 0, 0, SRCCOPY);
-		SelectObject(memory, oldBitmap);
-		DeleteObject(bitmap);
-		DeleteDC(memory);
+		RestoreDC(memory, savedDc);
+		InterlockedIncrement(&g_paintCount);
 		EndPaint(window, &paint);
 	}
 
@@ -398,7 +505,8 @@ namespace
 			case WM_CREATE:
 			{
 				state = new MeterState();
-				state->animationsEnabled = ClientAnimationsEnabled();
+				state->remoteSession = IsRemoteDesktopSession();
+				state->animationsEnabled = ClientAnimationsEnabled() && !state->remoteSession;
 				SetWindowLongPtr(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
 				state->tooltip = CreateWindowExA(WS_EX_TOPMOST, TOOLTIPS_CLASSA, NULL,
 					WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT, CW_USEDEFAULT,
@@ -415,7 +523,7 @@ namespace
 					SendMessageA(state->tooltip, TTM_ADDTOOLA, 0,
 						reinterpret_cast<LPARAM>(&info));
 				}
-				SetTimer(window, kMeterTimer, state->animationsEnabled ? 40 : 100, NULL);
+				UpdateTimerInterval(window, *state);
 				UpdateState(window, *state);
 				return 0;
 			}
@@ -430,6 +538,18 @@ namespace
 
 			case WM_ERASEBKGND:
 				return TRUE;
+
+			case WM_SIZE:
+				if (state)
+				{
+					ReleaseBackbuffer(*state);
+					InvalidateRect(window, NULL, FALSE);
+				}
+				return 0;
+
+			case WM_SHOWWINDOW:
+				if (state && wParam) UpdateState(window, *state);
+				return 0;
 
 			case WM_MOUSEMOVE:
 				if (state && !state->hovered)
@@ -473,7 +593,19 @@ namespace
 				return TRUE;
 
 			case WM_SETTINGCHANGE:
-				if (state) state->animationsEnabled = ClientAnimationsEnabled();
+				if (state)
+				{
+					state->remoteSession = IsRemoteDesktopSession();
+					state->animationsEnabled = ClientAnimationsEnabled() && !state->remoteSession;
+					ReleaseBackbuffer(*state);
+					UpdateTimerInterval(window, *state);
+				}
+				InvalidateRect(window, NULL, TRUE);
+				return 0;
+
+			case WM_DISPLAYCHANGE:
+			case WM_THEMECHANGED:
+				if (state) ReleaseBackbuffer(*state);
 				InvalidateRect(window, NULL, TRUE);
 				return 0;
 
@@ -482,6 +614,7 @@ namespace
 				if (state)
 				{
 					if (state->tooltip) DestroyWindow(state->tooltip);
+					ReleaseBackbuffer(*state);
 					delete state;
 				}
 				SetWindowLongPtr(window, GWLP_USERDATA, 0);
@@ -534,4 +667,23 @@ void LiveSignalMeterNoteLegacyActivity(int direction)
 int LiveSignalMeterPreferredWidth(void)
 {
 	return 292;
+}
+
+void LiveSignalMeterGetTelemetry(PdwLiveSignalMeterTelemetry* telemetry)
+{
+	if (!telemetry) return;
+	telemetry->paintCount = static_cast<unsigned long>(
+		InterlockedCompareExchange(&g_paintCount, 0, 0));
+	telemetry->skippedUpdateCount = static_cast<unsigned long>(
+		InterlockedCompareExchange(&g_skippedUpdateCount, 0, 0));
+	telemetry->suspendedUpdateCount = static_cast<unsigned long>(
+		InterlockedCompareExchange(&g_suspendedUpdateCount, 0, 0));
+	telemetry->tooltipUpdateCount = static_cast<unsigned long>(
+		InterlockedCompareExchange(&g_tooltipUpdateCount, 0, 0));
+	telemetry->backbufferCreateCount = static_cast<unsigned long>(
+		InterlockedCompareExchange(&g_backbufferCreateCount, 0, 0));
+	telemetry->backbufferDeleteCount = static_cast<unsigned long>(
+		InterlockedCompareExchange(&g_backbufferDeleteCount, 0, 0));
+	telemetry->activeBackbufferObjects = static_cast<unsigned long>(
+		InterlockedCompareExchange(&g_activeBackbufferObjects, 0, 0));
 }

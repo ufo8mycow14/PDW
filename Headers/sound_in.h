@@ -35,6 +35,39 @@ typedef struct PdwLiveSignalSnapshot
 	unsigned long lastIqCallbackTick;
 	unsigned long lastIqAgeMs;
 	unsigned long retryInMs;
+	unsigned int decodeQueueDepth;
+	unsigned int decodeQueueCapacity;
+	unsigned int decodeQueueHighWater;
+	unsigned long long decodeQueueDrops;
+	unsigned long long decodeDroppedSamples;
+	unsigned long long decodeResetDiscardedBlocks;
+	unsigned long long decodeResetDiscardedSamples;
+	unsigned long long decodeQueuePreallocatedBytes;
+	unsigned long long decodedAudioSamples;
+	unsigned long long decoderLagMs;
+	unsigned long long maximumDecoderLagMs;
+	unsigned long long decoderThreadStarts;
+	unsigned long long decoderThreadStops;
+	unsigned long long decoderHandlesCreated;
+	unsigned long long decoderHandlesClosed;
+	unsigned long long decoderStopTimeouts;
+	unsigned int decoderOwnedHandles;
+	int decoderWorkerRunning;
+	int decoderPriorityElevated;
+	int decoderQuarantined;
+	unsigned long acceptedDecodeRows;
+	unsigned long lastAcceptedDecodeTick;
+	unsigned long lastAcceptedDecodeAgeMs;
+	unsigned long processHandleCount;
+	unsigned long processGdiObjectCount;
+	unsigned long processUserObjectCount;
+	unsigned long meterPaintCount;
+	unsigned long meterSkippedUpdateCount;
+	unsigned long meterSuspendedUpdateCount;
+	unsigned long meterTooltipUpdateCount;
+	unsigned long meterBackbufferCreateCount;
+	unsigned long meterBackbufferDeleteCount;
+	unsigned long meterActiveBackbufferObjects;
 	char receiverStatus[128];
 	char lastReceiverError[256];
 	int diagnosticRecording;
@@ -68,7 +101,22 @@ bool SignalDiagnosticIsRecording(void);
 bool SignalDiagnosticIsReplaying(void);
 bool SignalDiagnosticToggleRecording(HWND owner);
 void SignalDiagnosticsRecordDecodeResult(int errors);
+void SignalDiagnosticsRecordAcceptedDecodeRow(void);
 bool SignalDiagnosticsGetLiveSnapshot(PdwLiveSignalSnapshot* snapshot);
+void SignalDecoderStateEnter(void);
+void SignalDecoderStateLeave(void);
+
+#ifdef __cplusplus
+class PdwSignalDecoderStateGuard
+{
+public:
+	PdwSignalDecoderStateGuard() { SignalDecoderStateEnter(); }
+	~PdwSignalDecoderStateGuard() { SignalDecoderStateLeave(); }
+private:
+	PdwSignalDecoderStateGuard(const PdwSignalDecoderStateGuard&);
+	PdwSignalDecoderStateGuard& operator=(const PdwSignalDecoderStateGuard&);
+};
+#endif
 
 #endif
 

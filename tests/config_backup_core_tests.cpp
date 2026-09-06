@@ -1,4 +1,5 @@
 #include "config_backup_core.h"
+#include "restore_temporary_file.h"
 
 #include <algorithm>
 #include <iostream>
@@ -59,6 +60,22 @@ namespace
 
 int main()
 {
+	char temporaryRoot[MAX_PATH] = {};
+	GetTempPathA(MAX_PATH, temporaryRoot);
+	std::string temporaryPath;
+	auto parseFixture = [&](bool valid) {
+		RestoreTemporaryFile temporary(temporaryRoot);
+		temporaryPath = temporary.path;
+		Expect(!temporaryPath.empty() && GetFileAttributesA(temporary.path) != INVALID_FILE_ATTRIBUTES,
+			"legacy restore owns a temporary file during parsing");
+		return valid; // Both parser outcomes must release plaintext storage.
+	};
+	for (bool valid : {false, true})
+	{
+		Expect(parseFixture(valid) == valid, "legacy parser outcome preserved");
+		Expect(GetFileAttributesA(temporaryPath.c_str()) == INVALID_FILE_ATTRIBUTES,
+			"legacy restore temporary file removed on success and failure");
+	}
 	const std::string password = "correct horse battery staple";
 	const pdw::backup::BackupContents original = RepresentativeConfiguration();
 	std::vector<unsigned char> encrypted;

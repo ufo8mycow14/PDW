@@ -53,12 +53,12 @@ int main()
 
 	Expect(!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_STANDALONE),
 		"standalone FLEX messages retain the direct display path");
-	Expect(pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_BUFFERED_START) &&
-		pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_BUFFERED_CONTINUATION) &&
-		pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_BUFFERED_OUT_OF_ORDER) &&
+	Expect(!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_BUFFERED_START) &&
+		!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_BUFFERED_CONTINUATION) &&
+		!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_BUFFERED_OUT_OF_ORDER) &&
 		pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_DUPLICATE) &&
 		pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_ASSEMBLED),
-		"valid FLEX chain states hold the original fragment");
+		"buffered FLEX parts remain visible; duplicates and completed originals are suppressed");
 	Expect(!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_CONFLICT) &&
 		!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_CAPACITY_REACHED) &&
 		!pdw::flex::ShouldHoldOriginalFragment(FRAGMENT_INVALID),

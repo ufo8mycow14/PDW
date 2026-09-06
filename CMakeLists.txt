@@ -495,6 +495,8 @@ if(BUILD_TESTING)
 	add_executable(PDWPocsagFixtureTests
 		tests/pocsag_fixture_tests.cpp
 		tests/pocsag_test_environment.cpp
+		utils/rtl_signal_conditioner.cpp
+		utils/audio_signal_core.cpp
 		Pocsag.cpp
 	)
 	target_include_directories(PDWPocsagFixtureTests PRIVATE
@@ -540,6 +542,20 @@ if(BUILD_TESTING)
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	add_test(NAME signal-diagnostics-core COMMAND PDWSignalDiagnosticsTests)
+
+	add_executable(PDWBoundedAudioDecodeWorkerTests
+		tests/bounded_audio_decode_worker_tests.cpp
+		utils/bounded_audio_decode_worker.cpp
+	)
+	target_include_directories(PDWBoundedAudioDecodeWorkerTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/utils"
+	)
+	target_compile_options(PDWBoundedAudioDecodeWorkerTests PRIVATE
+		/W4 /WX /EHsc
+		"$<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>"
+		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
+	)
+	add_test(NAME bounded-audio-decode-worker COMMAND PDWBoundedAudioDecodeWorkerTests)
 
 	add_executable(PDWWasapiCaptureTests
 		tests/wasapi_capture_tests.cpp
@@ -723,6 +739,7 @@ if(BUILD_TESTING)
 	add_test(NAME message-archive COMMAND PDWMessageArchiveTests)
 
 	add_executable(PDWMessageArchiveManagerTests
+		utils/decoder_state_lock.cpp
 		tests/message_archive_manager_tests.cpp
 		utils/filter_match_core.cpp
 		utils/local_dashboard_server.cpp
@@ -957,6 +974,14 @@ target_compile_definitions(PDWMessageArchiveManagerTests PRIVATE
 		"$<$<COMPILE_LANGUAGE:CXX>:/execution-charset:.1252>"
 	)
 	add_test(NAME assembled-message-visibility COMMAND PDWAssembledMessageVisibilityTests)
+
+    add_executable(PDWLegacyMessageSafetyTests
+        tests/legacy_message_safety_tests.cpp
+        utils/legacy_message_safety.cpp
+    )
+    target_include_directories(PDWLegacyMessageSafetyTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/utils")
+    target_compile_options(PDWLegacyMessageSafetyTests PRIVATE /W4 /WX)
+    add_test(NAME legacy-message-safety COMMAND PDWLegacyMessageSafetyTests)
 
 	add_executable(PDWSettingsNavigationTests
 		tests/settings_navigation_tests.cpp

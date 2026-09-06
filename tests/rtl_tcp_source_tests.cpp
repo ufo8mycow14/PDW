@@ -2,6 +2,7 @@
 #include <ws2tcpip.h>
 
 #include "rtl_tcp_source.h"
+#include "decoder_audio_adapter.h"
 
 #include <cmath>
 #include <cstdint>
@@ -333,6 +334,35 @@ double FskSignAccuracy(const std::vector<float>& audio,
 
 int main(int argc, char** argv)
 {
+	for (const std::uint32_t rate : {8000u, 22050u, 44100u, 48000u, 96000u, 192000u})
+	{
+		std::vector<float> input(rate / 5);
+		for (std::size_t i = 0; i < input.size(); ++i)
+			input[i] = 0.5f * static_cast<float>(std::sin(2.0 * 3.141592653589793 * 1200 * i / rate));
+		pdw::signal::DecoderAudioAdapter whole, chunks;
+		std::vector<float> expected, actual, part, tail;
+		bool reset = false;
+		Expect(whole.Process(input.data(), input.size(), rate, false, expected, reset) && reset,
+			"new audio stream requests protocol reset");
+		whole.Flush(tail); expected.insert(expected.end(), tail.begin(), tail.end());
+		for (std::size_t i = 0; i < input.size(); i += 137)
+		{
+			Expect(chunks.Process(input.data() + i, (std::min)(std::size_t(137), input.size() - i),
+				rate, false, part, reset) && reset == (i == 0), "audio chunk maintains acquisition state");
+			actual.insert(actual.end(), part.begin(), part.end());
+		}
+		chunks.Flush(tail); actual.insert(actual.end(), tail.begin(), tail.end());
+		Expect(expected == actual && actual.size() == 8820, "audio rate adaptation is chunk invariant with complete finite tail");
+		for (std::size_t i = 200; i + 200 < actual.size(); ++i)
+			Expect(std::fabs(actual[i] - 0.5 * std::sin(2.0 * 3.141592653589793 * 1200 * i / 44100)) < 0.04,
+				"reference-rate waveform preserves a synthetic paging-rate tone");
+		Expect(chunks.Process(input.data(), input.size(), rate, false, part, reset) && reset,
+			"new finite replay resets acquisition");
+		Expect(chunks.Process(input.data(), input.size(), rate, true, actual, reset) && reset && part == actual,
+			"gap discards FIR history before reacquisition");
+		Expect(!chunks.Process(input.data(), input.size(), 0, false, actual, reset), "invalid rate rejected");
+		if (rate == 44100) Expect(part == input, "legacy reference-rate samples remain exact");
+	}
 	using namespace pdw::signal;
 	Expect(RtlThreadResourcesMayBeReleased(WAIT_OBJECT_0),
 		"a signalled RTL source thread may be torn down");
@@ -376,6 +406,23 @@ int main(int argc, char** argv)
 	demodulator.Reset();
 	demodulator.ProcessUnsignedIq(NULL, 0, audio);
 	Expect(audio.empty(), "empty IQ input is safe");
+	for (int enabled = 0; enabled <= 1; ++enabled)
+	{
+		RtlFmDemodulator whole(iqRate, audioRate, 12000, enabled != 0);
+		RtlFmDemodulator singles(iqRate, audioRate, 12000, enabled != 0);
+		std::vector<float> expected, received, one;
+		whole.ProcessUnsignedIq(iq.data(), iq.size(), expected);
+		for (std::size_t i = 0; i < iq.size(); ++i)
+		{
+			singles.ProcessUnsignedIq(&iq[i], 1, one);
+			received.insert(received.end(), one.begin(), one.end());
+		}
+		Expect(received == expected, "one-byte TCP reads preserve every I/Q pair in both demodulators");
+		singles.ProcessUnsignedIq(iq.data(), 1, one);
+		singles.Reset();
+		singles.ProcessUnsignedIq(iq.data(), iq.size(), received);
+		Expect(received == expected, "stream reset discards the incomplete I/Q pair");
+	}
 
 	const std::vector<unsigned char> impaired = GenerateFskWithInterferer(iqRate,
 		static_cast<std::size_t>(iqRate / 4), 1200.0, 4500.0, 0.35, 60000.0, 0.60);
@@ -400,9 +447,7 @@ int main(int argc, char** argv)
 	for (std::size_t offset = 0; offset < impaired.size();)
 	{
 		const std::size_t remaining = impaired.size() - offset;
-		std::size_t blockBytes = (std::min)(remaining, static_cast<std::size_t>(8190));
-		blockBytes &= ~static_cast<std::size_t>(1);
-		if (!blockBytes) blockBytes = remaining;
+		const std::size_t blockBytes = (std::min)(remaining, static_cast<std::size_t>(8191));
 		chunked.ProcessUnsignedIq(&impaired[offset], blockBytes, blockAudio);
 		chunkedAudio.insert(chunkedAudio.end(), blockAudio.begin(), blockAudio.end());
 		offset += blockBytes;
