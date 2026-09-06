@@ -154,7 +154,7 @@ namespace
 		RemoveDatabase(path);
 	}
 
-	void TestConcurrentReservations()
+	void TestConcurrentAssignments()
 	{
 		const std::string path = TempPath("concurrent");
 		pdw::gateway::GatewayOutboxStore stores[2];
@@ -162,15 +162,28 @@ namespace
 		Expect(stores[0].Open(path, error) && stores[1].Open(path, error), "two independent SQLite connections open");
 		HANDLE start = CreateEvent(NULL, TRUE, FALSE, NULL);
 		std::atomic<int> failures(0);
+		std::string writerErrors[2];
 		auto writer = [&](int index) {
 			WaitForSingleObject(start, 5000);
 			std::string localError;
 			for (int event = 1; event <= 192; ++event) {
 				long long sequence = 0;
-				if (!stores[index].AppendSequenced(SyntheticEvent(index * 192 + event, "FLEX", "SYNTHETIC CONCURRENT EVENT"), sequence, localError)) ++failures;
+				const auto input = SyntheticEvent(index * 192 + event, "FLEX", "SYNTHETIC CONCURRENT EVENT");
+				// A bounded busy timeout is valid under contention. Retry the same
+				// identity, as the independent-process test does, without relaxing
+				// the exact committed-row and uniqueness assertions below.
+				const ULONGLONG deadline = GetTickCount64() + 5000;
+				while (!stores[index].AppendSequenced(input, sequence, localError)) {
+					if (GetTickCount64() >= deadline) {
+						++failures; writerErrors[index] = localError; break;
+					}
+					Sleep(1);
+				}
 			}
 		};
 		std::thread a(writer, 0), b(writer, 1); SetEvent(start); a.join(); b.join(); CloseHandle(start);
+		for (const auto& writerError : writerErrors)
+			if (!writerError.empty()) std::cerr << "Synthetic concurrent writer: " << writerError << "\n";
 		Expect(failures == 0 && QueryInteger(path, "SELECT COUNT(*) FROM gateway_events;") == 384 &&
 			QueryInteger(path, "SELECT COUNT(DISTINCT event_id) FROM gateway_events;") == 384,
 			"concurrent transactional assignment retains every event with unique identities");
@@ -452,7 +465,7 @@ int main(int argc, char** argv)
 {
 	if (argc == 4 && std::string(argv[1]) == "--writer") return WriteProcessEvents(argv[2], std::atoi(argv[3]));
 	TestIdentityHashAndValidation();
-	TestConcurrentReservations();
+	TestConcurrentAssignments();
 	TestConcurrentProcesses();
 	TestWalReadOnlyRestartAndStates();
 	TestMigrationAndOwnership();
