@@ -8,6 +8,10 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$versionHeader = Get-Content -LiteralPath (Join-Path $sourceRoot 'Headers\version.h') -Raw
+$packageMatch = [regex]::Match($versionHeader, '(?m)^#define PDW_PACKAGE_BASENAME "(PDW-[A-Za-z0-9.-]+)"\r?$')
+if (-not $packageMatch.Success) { throw 'Cannot read the canonical package identity.' }
+$setupBaseName = $packageMatch.Groups[1].Value + '-Setup'
 . (Join-Path $sourceRoot "scripts\release-provenance.ps1")
 $root = [System.IO.Path]::GetFullPath($TestRoot)
 if (Test-Path -LiteralPath $root) {
@@ -50,7 +54,7 @@ $output = $outputArgument.Substring('/DInstallerOutput='.Length)
 $win32 = $win32Argument.Substring('/DWin32Application='.Length)
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 [System.IO.File]::WriteAllBytes(
-    (Join-Path $output 'PDW-v5.5.2-2026-Release-Setup.exe'),
+    (Join-Path $output '__PDW_SETUP_FILENAME__'),
     [byte[]](0x4d, 0x5a, 0x00, 0x00))
 if ($env:PDW_FAKE_COMPILER_MUTATE_INPUT -eq '1') {
     [System.IO.File]::AppendAllText(
@@ -60,6 +64,7 @@ if ($env:PDW_FAKE_COMPILER_MUTATE_INPUT -eq '1') {
 }
 $global:LASTEXITCODE = 0
 '@
+$fakeCompilerText = $fakeCompilerText.Replace('__PDW_SETUP_FILENAME__', "$setupBaseName.exe")
 [System.IO.File]::WriteAllText($fakeCompiler, $fakeCompilerText,
     [System.Text.UTF8Encoding]::new($false))
 
@@ -88,8 +93,8 @@ if (-not $failedClosed) {
     throw "Setup build accepted a postcompile installer-input mutation."
 }
 
-$publicSet = Join-Path $outputRoot "PDW-v5.5.2-2026-Release-Setup-package"
-$publicSetup = Join-Path $publicSet "PDW-v5.5.2-2026-Release-Setup.exe"
+$publicSet = Join-Path $outputRoot "$setupBaseName-package"
+$publicSetup = Join-Path $publicSet "$setupBaseName.exe"
 if ((Test-Path -LiteralPath $publicSetup) -or
     (Test-Path -LiteralPath "$publicSetup.sha256")) {
     throw "Failed Setup validation left a public candidate or checksum behind."
