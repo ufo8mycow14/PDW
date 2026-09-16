@@ -15,7 +15,13 @@ namespace
 
 extern "C"
 {
-	__declspec(dllexport) std::uint32_t __cdecl rtlsdr_get_device_count() { return 1; }
+	__declspec(dllexport) std::uint32_t __cdecl rtlsdr_get_device_count()
+	{
+		char readyPath[MAX_PATH] = {};
+		if (GetEnvironmentVariableA("PDW_TEST_RTL_READY_FILE", readyPath, MAX_PATH))
+			return GetFileAttributesA(readyPath) == INVALID_FILE_ATTRIBUTES ? 0 : 1;
+		return 1;
+	}
 	__declspec(dllexport) const char* __cdecl rtlsdr_get_device_name(std::uint32_t) { return "PDW test receiver"; }
 	__declspec(dllexport) int __cdecl rtlsdr_get_device_usb_strings(std::uint32_t,
 		char* manufacturer, char* product, char* serial)
@@ -50,7 +56,11 @@ extern "C"
 	__declspec(dllexport) int __cdecl rtlsdr_set_sample_rate(void*, std::uint32_t) { return 0; }
 	__declspec(dllexport) int __cdecl rtlsdr_set_tuner_gain_mode(void*, int) { return 0; }
 	__declspec(dllexport) int __cdecl rtlsdr_set_tuner_gain(void*, int) { return 0; }
-	__declspec(dllexport) int __cdecl rtlsdr_set_freq_correction(void*, int) { return 0; }
+	__declspec(dllexport) int __cdecl rtlsdr_set_freq_correction(void*, int ppm)
+	{
+		if (ppm == 1000000) return -3;
+		return ppm == 0 ? -2 : 0;
+	}
 	__declspec(dllexport) int __cdecl rtlsdr_reset_buffer(void*) { return 0; }
 	__declspec(dllexport) int __cdecl rtlsdr_read_async(void*,
 		void (__cdecl *callback)(unsigned char*, std::uint32_t, void*), void* context,
@@ -63,6 +73,13 @@ extern "C"
 			iq[index + 1] = static_cast<unsigned char>(159 - ((index / 2) % 64));
 		}
 		if (callback) callback(iq, static_cast<std::uint32_t>(sizeof(iq)), context);
+		char markerPath[MAX_PATH] = {};
+		if (GetEnvironmentVariableA("PDW_TEST_RTL_CALLBACK_MARKER", markerPath, MAX_PATH))
+		{
+			HANDLE marker = CreateFileA(markerPath, GENERIC_WRITE, FILE_SHARE_READ,
+				NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+			if (marker != INVALID_HANDLE_VALUE) CloseHandle(marker);
+		}
 		if (InterlockedCompareExchange(&g_endCaptureEarly, 0, 0) != 0)
 		{
 			Sleep(50);

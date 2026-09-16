@@ -69,8 +69,8 @@ Write-Host "Using CMake $cmakeVersion generator '$cmakeGenerator' and MSVC $msvc
 
 $recipeSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
 $versions = [ordered]@{
-    openssl = "3.5.7"
-    curl = "8.21.0"
+    openssl = "3.5.8"
+    curl = "8.22.0"
     libssh2 = "1.11.1"
     architecture = $Architecture
     visualStudioMajor = $VisualStudioMajor
@@ -84,9 +84,9 @@ $versions = [ordered]@{
 
 $archives = @(
     @{
-        Name = "openssl-3.5.7.tar.gz"
-        Uri = "https://github.com/openssl/openssl/releases/download/openssl-3.5.7/openssl-3.5.7.tar.gz"
-        Sha256 = "A8C0D28A529CA480F9F36CF5792E2CD21984552A3C8E4AA11A24AA31AEAC98E8"
+        Name = "openssl-3.5.8.tar.gz"
+        Uri = "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz"
+        Sha256 = "A8F84A39918EC6415CE765D9B429D313BA97B8143169C172E734B9514464F5B2"
     },
     @{
         Name = "libssh2-1.11.1.tar.xz"
@@ -94,9 +94,9 @@ $archives = @(
         Sha256 = "9954CB54C4F548198A7CBEBAD248BDC87DD64BD26185708A294B2B50771E3769"
     },
     @{
-        Name = "curl-8.21.0.tar.xz"
-        Uri = "https://curl.se/download/curl-8.21.0.tar.xz"
-        Sha256 = "AA1B66A70EACE83DC624508745646C08AE561DE512AB403ADFFB93AC87FC72E6"
+        Name = "curl-8.22.0.tar.xz"
+        Uri = "https://curl.se/download/curl-8.22.0.tar.xz"
+        Sha256 = "F7EF3AE8A22E521F289803FE93543EB64C329B58AA73A9E224DFD915A2A5F4F7"
     }
 )
 
@@ -403,8 +403,8 @@ foreach ($requiredFile in $requiredFiles) {
 }
 
 $opensslVersionHeader = Get-Content -LiteralPath (Join-Path $InstallRoot "include\openssl\opensslv.h") -Raw
-if ($opensslVersionHeader -notmatch '#\s*define\s+OPENSSL_VERSION_STR\s+"3\.5\.7"') {
-    throw "The installed OpenSSL headers do not report version 3.5.7."
+if ($opensslVersionHeader -notmatch '#\s*define\s+OPENSSL_VERSION_STR\s+"3\.5\.8"') {
+    throw "The installed OpenSSL headers do not report version 3.5.8."
 }
 
 Set-Content -LiteralPath $markerPath -Value $expectedMarker -Encoding ascii

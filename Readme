@@ -6,8 +6,8 @@
 
 A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
-![Version](https://img.shields.io/badge/version-v5.5.2%202026%20Release-2E74B5)
-![Status](https://img.shields.io/badge/status-stable%20candidate%20awaiting%20signing-F0A000)
+![Version](https://img.shields.io/badge/version-v5.5.3%202026%20Release-2E74B5)
+![Status](https://img.shields.io/badge/status-development%20candidate%20awaiting%20validation-F0A000)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
 ![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20Win32-555555)
 ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C)
@@ -19,6 +19,11 @@ A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 ---
 
 ## About PDW
+
+I am validating the September audit follow-up and dependency security updates.
+The current development tree is not approved for Lounge installation or stable
+publication. I track exact build evidence and remaining acceptance gates in
+`HANDOVER.md` and `docs/DIRECT_RTL_SDR_STARVATION_REVIEW_HANDOFF.md`.
 
 PDW—Paging Decoder for Windows—is a native Windows application for receiving, decoding, displaying, filtering, logging and securely routing supported digital radio messages.
 
@@ -68,11 +73,10 @@ Configuration and decoder behaviour are shared between the builds. Native DLLs m
 
 ## Install on Windows
 
-**PDW v5.5.2 2026 Release** is prepared as a normal stable release, but its
-public download is not available until trusted Authenticode signing and final
-release acceptance pass. Once published, the
-[v5.5.2 GitHub Release](https://github.com/ufo8mycow14/PDW/releases/tag/v5.5.2)
-will provide one **PDW-v5.5.2-2026-Release-Setup.exe**. The guided Setup contains both
+I am validating **PDW v5.5.3 2026 Release** as a local receiver-recovery candidate.
+There is no approved public download for this candidate. Trusted signing and
+the complete release/physical acceptance gates remain required for publication.
+The candidate installer is **PDW-v5.5.3-2026-Release-Setup.exe**. The guided Setup contains both
 architectures, keeps the executable, `PDW.INI`, Capcode Directory database, any
 existing legacy `filters.ini` recovery file, receivers, WAV files and logs
 together in one PDW folder, creates normal Windows shortcuts, preserves
@@ -85,11 +89,10 @@ uninstall. Use **Settings > General
 > and confirm that Windows reports the expected trusted publisher before use.
 
 > [!NOTE]
-> Automated x64/Win32 builds, tests, package checks, Defender scanning and the
-> complete installer matrix pass. Physical SDR, SDR# and VB-CABLE combinations
-> are not yet validated by the maintainer. Users are invited to report
-> content-free results through
-> [the feedback form](https://github.com/ufo8mycow14/PDW/issues/new?template=pdw-v5.5.2-feedback.yml); never attach private
+> I record current build, package and device evidence in `HANDOVER.md`; earlier
+> release results do not certify this candidate. Direct RTL-SDR needs no SDRSharp
+> or Airspy application. Content-free feedback can use
+> [the feedback form](https://github.com/ufo8mycow14/PDW/issues/new?template=pdw-v5.5.3-feedback.yml); never attach private
 > pager traffic, recordings, credentials, endpoint IDs or operator settings.
 
 Setup enforces Windows build 10586 as the technical API floor. Production use
@@ -296,7 +299,18 @@ PDW is being modernised conservatively.
 
 ## Release History
 
-### Stable release candidate
+### Current receiver-recovery candidate
+
+I prepared v5.5.3 to accept the RTL-SDR driver's unchanged zero-PPM result and
+retry late receiver availability without a blocking startup dialog. It includes
+the September capture/decoder/persistence fixes and OpenSSL 3.5.8/curl 8.22.0
+source pins. Local rollout validation is separate from a public stable release.
+
+| Version | Status | Highlights |
+| --- | --- | --- |
+| **PDW v5.5.3 2026 Release** | **Local recovery candidate; acceptance in progress** | Direct RTL-SDR zero-PPM startup, automatic receiver recovery, retained audit repairs and security dependency refresh. |
+
+### Historical v5.5.2 candidate record
 
 **PDW v5.5.2 2026 Release** is the prepared normal stable candidate. It is not
 a beta or GitHub prerelease. It retains the Public Beta 2 Capcode

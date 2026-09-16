@@ -1,8 +1,16 @@
 # Radio, recording, and replay
 
 Open **Settings > Decoder and input > Radio and replay**. These inputs are
-additional choices inside the same `PDW v5.5.2 2026 Release.exe`; they do not create a separate
+additional choices inside the same `PDW v5.5.3 2026 Release.exe`; they do not create a separate
 edition or background helper.
+
+For direct RTL-SDR operation, I select the USB receiver source inside PDW; SDRSharp
+and Airspy applications are not required. In v5.5.3 I accept the RTL-SDR driver's
+unchanged-correction result at zero PPM and keep startup retry active when the
+configured modern receiver is unavailable. Late device availability no longer
+waits for dismissal of a startup error dialog. This does not bypass a real tuner
+error or unsafe shutdown/quarantine, and a running source still requires accepted
+decode rows to establish receiver health.
 
 ## Local audio and serial compatibility
 

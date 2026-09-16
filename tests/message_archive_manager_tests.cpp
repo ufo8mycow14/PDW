@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -298,7 +299,14 @@ int main()
 
 	pdw::publishing::PublishEvent event;
 	event.id = "queued-event-1";
-	event.timestamp = "2026-08-10T12:00:00.000Z";
+	SYSTEMTIME now = {};
+	GetSystemTime(&now);
+	char timestamp[32] = {};
+	std::snprintf(timestamp, sizeof(timestamp), "%04u-%02u-%02uT%02u:%02u:%02u.000Z",
+		static_cast<unsigned int>(now.wYear), static_cast<unsigned int>(now.wMonth),
+		static_cast<unsigned int>(now.wDay), static_cast<unsigned int>(now.wHour),
+		static_cast<unsigned int>(now.wMinute), static_cast<unsigned int>(now.wSecond));
+	event.timestamp = timestamp;
 	event.source = "PDW test";
 	event.address = "1234567";
 	event.mode = "POCSAG-1200";

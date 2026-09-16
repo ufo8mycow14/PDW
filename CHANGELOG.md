@@ -1,5 +1,29 @@
 # Changelog
 
+## PDW v5.5.3 2026 Release
+
+**16 September 2026 — local recovery candidate; not publicly released**
+
+- I fixed direct RTL-SDR startup at zero PPM: the driver's unchanged-correction
+  result (`-2`) is accepted while genuine tuner-setting errors remain failures.
+- I routed automatic modern-receiver startup through the existing silent retry
+  service, so a late USB receiver or receiver library cannot block recovery with
+  a modal error before the service timer starts.
+- I added native delayed-device and delayed-library startup regressions and
+  retained the earlier audio-worker, decoder-rate and persistence audit repairs.
+- I retained direct RTL-SDR operation without an SDRSharp/Airspy dependency;
+  existing optional legacy and Windows-audio integrations remain supported.
+
+### Unreleased development changes
+
+- I updated the source pins to OpenSSL 3.5.8 and curl 8.22.0 following the
+  September dependency-security review, retaining Schannel, WinCNG and both
+  Windows architectures. Release adoption remains gated by validation.
+- I made the archive-manager regression use the current UTC event timestamp
+  so the 30-day retention policy cannot expire its fixture as the test ages.
+- The earlier committed audio-starvation and audit repairs remain included;
+  their physical receiver and remote-session acceptance gate is still open.
+
 ## PDW v5.5.2 2026 Release
 
 **12 August 2026**

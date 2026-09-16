@@ -1,6 +1,6 @@
 # Dependency and security review
 
-Reviewed: 12 August 2026
+Reviewed: 16 September 2026 (Connector/ODBC release verification remains incomplete)
 
 This record must be refreshed from official upstream release and security
 pages before each PDW release. A newer version is not adopted until it passes
@@ -8,11 +8,11 @@ the complete Win32 and x64 gates and preserves legacy support.
 
 | Component | Pinned | Official status reviewed | Decision |
 | --- | --- | --- | --- |
-| OpenSSL | 3.5.7 | Current OpenSSL 3.5 LTS release; 3.5 support is listed through 8 April 2030 | Retain 3.5.7 and its verified source hash |
-| curl/libcurl | 8.21.0 | Current published curl release; the next release is listed as pending | Retain 8.21.0 and its verified source hash |
+| OpenSSL | 3.5.8 | Current 3.5 LTS maintenance release, published 25 August 2026; 3.5 support is listed through 8 April 2030 | Prepare the security update with its verified source hash; release adoption requires both architecture gates |
+| curl/libcurl | 8.22.0 | Published 2 September 2026; its official vulnerability page lists no published security problems at review time | Prepare the security update with its verified source hash; release adoption requires both architecture gates |
 | libssh2 | 1.11.1 | Newest archive on the official download index | Retain 1.11.1 and its verified source hash |
 | Windows SQLite | Operating-system component | Uses the supported Windows `winsqlite3` API; no bundled SQLite DLL | Retain the platform binding; require fully patched Windows and fail closed when archive connection protections are unavailable |
-| MySQL | Operator-installed ODBC driver | Connector/ODBC 9.7.0 is the current GA release and Windows x64 download reviewed for this release; PDW does not bundle a driver or server | Use Connector/ODBC 9.7.0 with a secured Windows DSN for x64; require a supported architecture-matched driver before enabling Win32 MySQL output |
+| MySQL | Operator-installed ODBC driver | Official source tag 26.7.1 declares GA and supersedes the August 9.7.0 reference; the binary download and release-note endpoints returned HTTP 403 | Verify binary availability, supported architecture and release-note/security details before adoption; require a secured DSN; PDW does not bundle or install a driver |
 | Inno Setup | 6.7.3 | Latest 6.x compiler; Inno Setup 7.0.2 is also available | Retain 6.7.3 for v5.5.2 so a compiler-major migration does not overlap the message-handling and display-recovery change; evaluate 7 separately through full dual installer gates |
 | Visual Studio / MSVC | Visual Studio 2026 / v145 | Current maintained Windows release toolchain; v145 targets Windows 10/Server 2016 and newer | Build and test both architectures on the explicit VS 2026 runner; distribute only the reviewed architecture-matched app-local Microsoft Visual C++ runtime DLLs; record the exact compiler, generator and CMake version in each dependency lock |
 | SDR# | Production revision 1921 | External Windows SDR application used only by the named local-audio profile; the official x86/x64 revision 1922 downloads are labelled beta | Record 1921 as the reviewed stable integration target; operator installs, configures, updates, and supports it; PDW does not bundle or control it |
@@ -25,9 +25,9 @@ and apply current Oracle CPU updates.
 
 Oracle's July 2026 Critical Patch Update lists affected Connector/NET,
 Connector/J and Connector/C++ components in the 9.7 line; it does not identify
-Connector/ODBC as an affected component in that risk matrix. The current
-Connector/ODBC 9.7.0 GA download remains the reviewed PDW x64 integration
-target. PDW does not install the driver, and operators must still repeat the
+Connector/ODBC as an affected component in that risk matrix. The August-reviewed
+Connector/ODBC 9.7.0 GA download remains the historical PDW x64 integration
+reference. PDW does not install the driver, and operators must still repeat the
 vendor-advisory review before deployment rather than relying indefinitely on
 this release record.
 
@@ -38,6 +38,9 @@ Official review sources:
 - curl releases: <https://curl.se/docs/releases.html>
 - curl vulnerabilities: <https://curl.se/docs/vulnerabilities.html>
 - curl 8.21.0 security status: <https://curl.se/docs/vuln-8.21.0.html>
+- curl 8.22.0 security status: <https://curl.se/docs/vuln-8.22.0.html>
+- OpenSSL August advisories: <https://openssl-library.org/news/secadv/20260813.txt>
+  and <https://openssl-library.org/news/secadv/20260825.txt>
 - libssh2 downloads: <https://libssh2.org/download/>
 - libssh2 security advisories: <https://github.com/libssh2/libssh2/security>
 - SQLite releases and security guidance: <https://sqlite.org/changes.html> and
@@ -206,6 +209,49 @@ the executable to its public Setup filename only after postcompile provenance,
 signature-policy, and optional Defender checks pass. The release package's
 outer `SHA256SUMS.txt` also binds the inner source provenance and manifest;
 Authenticode remains the separate public-release authenticity gate.
+
+## 16 September 2026 development refresh
+
+I found that the August security assessment no longer describes the pinned
+dependencies: curl 8.21.0 now lists nine published issues, and OpenSSL's August
+advisories recommend 3.5.8 for 3.5 users. I downloaded OpenSSL 3.5.8 and curl
+8.22.0 from their official release locations and verified each archive against
+the SHA-256 digest in the publisher's GitHub release metadata. The exact pins
+are recorded in `THIRD_PARTY_NOTICES.md` and `scripts/build-dependencies.ps1`.
+
+I retained the TLS backends and feature choices: SMTP uses OpenSSL's TLS client,
+curl uses Windows Schannel, and libssh2 uses Windows CNG. The curl OpenSSL-provider
+and pinning advisories therefore do not describe this curl build. The source
+review found no QUIC, DTLS, CMP, CMS or raw-public-key use in PDW's SMTP client.
+This is an applicability observation, not a claim that all dependency issues
+are unreachable or that native integration testing can be skipped.
+
+I rechecked libssh2's download and advisory pages (1.11.1; no published GitHub
+advisories), SQLite's release/security guidance, MSVC 14.51/v145 guidance,
+Inno Setup's download and 6.x history, SDR# production 1921/beta 1922, VB-CABLE
+Package 45, RTL-SDR Blog V1.4.0 and libwdi v1.5.1 release metadata. Those pins
+and external integration boundaries remain unchanged. Windows SQLite remains
+an OS-serviced dependency; its upstream release number is not the version of
+the installed Windows binding.
+
+I also opened Oracle's July CPU and September Critical Security Patch Update.
+Neither retrieved page identified Connector/ODBC, but the Connector/ODBC
+download and release-note pages returned HTTP 403. I have not established the
+current binary distribution from that partial review. I then checked Oracle's
+official `mysql/mysql-connector-odbc` source repository: tag `26.7.1`, commit
+`0c93eb7c94abbc5aa4c1118c4b2ce16e3bd0afd7`, declares version 26.7.1 and quality
+`GA` in `version.cmake`. That establishes newer released source, not Windows
+driver availability or local compatibility. The driver is optional and
+operator-managed; its enabled use requires a completed vendor review. Source:
+<https://github.com/mysql/mysql-connector-odbc/blob/26.7.1/version.cmake>.
+
+The new dependencies are locally built development candidates: both architectures
+build, pass 37/37 CTest tests and execute the WASAPI/WinMM smoke programs. These
+results do not replace transfer/SMTP acceptance or release staging. Clean source provenance,
+both architecture build/test/device-smoke gates, package/source-tamper and Setup
+gates, native startup, signing and physical acceptance must be satisfied before
+release adoption. Current execution evidence belongs in `HANDOVER.md` and the
+direct-source review handoff; the dated August paragraphs above remain historical.
 
 ## Required review procedure
 

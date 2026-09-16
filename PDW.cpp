@@ -983,7 +983,12 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	}
 	else if (Profile.audioEnabled && !bCapturing)
 	{
-		if (Start_Capturing() || Profile.audioSource != AUDIO_SOURCE_LOCAL)
+		if (Profile.audioSource != AUDIO_SOURCE_LOCAL)
+		{
+			SignalSourceService();
+			SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL);
+		}
+		else if (Start_Capturing())
 		{
 			SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC) NULL); // start timer.
 		}

@@ -140,14 +140,14 @@ endif()
 
 file(STRINGS "${PDW_DEPENDENCY_ROOT}/include/openssl/opensslv.h" PDW_OPENSSL_VERSION_LINE
   REGEX "^# *define +OPENSSL_VERSION_STR +\"[0-9]+\\.[0-9]+\\.[0-9]+\"$")
-if(NOT PDW_OPENSSL_VERSION_LINE MATCHES "\"3\\.5\\.7\"$")
-  message(FATAL_ERROR "PDW requires the pinned OpenSSL 3.5.7 dependency set.")
+if(NOT PDW_OPENSSL_VERSION_LINE MATCHES "\"3\\.5\\.8\"$")
+  message(FATAL_ERROR "PDW requires the pinned OpenSSL 3.5.8 dependency set.")
 endif()
 
 list(PREPEND CMAKE_PREFIX_PATH "${PDW_DEPENDENCY_ROOT}")
 set(CURL_USE_STATIC_LIBS TRUE)
 set(LIBSSH2_USE_STATIC_LIBS TRUE)
-find_package(CURL 8.21.0 EXACT CONFIG REQUIRED
+find_package(CURL 8.22.0 EXACT CONFIG REQUIRED
   PATHS "${PDW_DEPENDENCY_ROOT}/lib/cmake/CURL"
   NO_DEFAULT_PATH)
 
@@ -614,6 +614,14 @@ if(BUILD_TESTING)
 	add_dependencies(PDWRtlTcpTests PDWMockRtlSdr)
 	set_target_properties(PDWMockRtlSdr PROPERTIES PREFIX "")
 	target_compile_options(PDWMockRtlSdr PRIVATE /W4 /WX)
+	find_program(PDW_TEST_POWERSHELL NAMES pwsh powershell REQUIRED)
+	add_test(NAME receiver-startup-recovery
+		COMMAND "${PDW_TEST_POWERSHELL}" -NoProfile -File
+		"${CMAKE_CURRENT_SOURCE_DIR}/tests/receiver_startup_smoke.ps1"
+		-Executable $<TARGET_FILE:PDW>
+		-MockReceiver $<TARGET_FILE:PDWMockRtlSdr>
+		-TestRoot "${CMAKE_CURRENT_BINARY_DIR}/receiver-startup-smoke")
+	set_tests_properties(receiver-startup-recovery PROPERTIES TIMEOUT 60)
 
 	add_executable(PDWReceiverCatalogTests
 		tests/receiver_catalog_tests.cpp

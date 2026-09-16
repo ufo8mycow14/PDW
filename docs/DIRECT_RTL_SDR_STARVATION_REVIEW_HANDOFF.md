@@ -1,6 +1,13 @@
 # Direct RTL-SDR starvation correction - frozen review handoff
 
-**FROZEN FOR INDEPENDENT REVIEW - DO NOT INSTALL ON THE LOUNGE PC**
+**Historical review freeze; controlled Lounge recovery authorised on 16 September 2026. No stable-release approval.**
+
+The owner has explicitly authorised diagnosis, repair and local rollout to restore
+PDW's direct RTL-SDR operation on Lounge, including restart recovery. I am preparing
+v5.5.3 with the zero-PPM no-change fix and non-blocking receiver startup retry.
+The active authority and exact evidence are in `HANDOVER.md`. The previous freeze
+and hashes below remain historical and do not certify a new candidate. Operator
+backups, exact build identity, rollback and content-free acceptance remain required.
 
 - Prepared: 14 August 2026
 - Repository: `C:\PDW Update\PDW-source`
@@ -31,6 +38,34 @@ I retain the installation freeze pending physical receiver and remote-session
 soak acceptance. The development evidence does not establish stable-release
 acceptance. I preserve the historical scope and results below without applying
 their original diff-scope statements to the later audit repairs.
+
+## Development verification - 16 September 2026
+
+I resumed from committed `master` at `ab0dbb45aada84af16e1088e8f3bf96df3107bb4`.
+Fresh baseline builds passed, but both test suites exposed the expired fixed-date
+archive-manager fixture. I changed the fixture to use current UTC without changing
+production retention. I also prepared the officially hash-verified OpenSSL 3.5.8
+and curl 8.22.0 security updates, preserving the existing TLS backends and Win32.
+
+With those local changes, both fresh dependency/application builds pass, both
+CTest suites pass 37/37, both WASAPI/WinMM device smoke programs compile and run,
+the archive-manager and bounded-worker regressions pass 20 repeats each on each
+architecture, and gateway outbox passes five repeats per architecture. I checked
+both executable architectures/versions, x64 startup/Settings/About and Win32 hidden
+startup. `HANDOVER.md` records exact hashes, paths, timings and UI limitations.
+
+The local audio smoke results supersede the historical compile-only statement
+below for this computer only. The current receiver is on Lounge, where no test
+has been run by this task. The shared read-only inspection packet contains no
+candidate executable and does not authorise a live change. No remote worker has
+been started or physical evidence received.
+
+The September changes remain uncommitted; both executables correctly report
+`state=dirty`. Clean-source packaging, Setup, signing, independent approval,
+remaining native UI/graceful-exit checks and the trusted-feed physical soak remain
+open. I retain the Lounge installation freeze. The August review and outstanding
+list below are historical evidence, not a statement that September device-smoke
+execution was omitted.
 
 ## Diagnosis
 

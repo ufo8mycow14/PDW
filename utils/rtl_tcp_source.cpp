@@ -694,7 +694,11 @@ DWORD RtlSdrSource::DeviceThread()
 	const bool deviceOpened = result == 0 && device != NULL;
 	if (result == 0) result = setSampleRate(device, config_.sampleRate);
 	if (result == 0) result = setFrequency(device, config_.frequencyHz);
-	if (result == 0) result = setCorrection(device, config_.frequencyCorrectionPpm);
+	if (result == 0)
+	{
+		const int correctionResult = setCorrection(device, config_.frequencyCorrectionPpm);
+		result = correctionResult == -2 ? 0 : correctionResult;
+	}
 	if (result == 0) result = setGainMode(device, config_.automaticGain ? 0 : 1);
 	if (result == 0 && !config_.automaticGain) result = setGain(device, config_.gainTenthsDb);
 	if (result == 0) result = resetBuffer(device);

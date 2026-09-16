@@ -1,6 +1,6 @@
 # PDW product roadmap
 
-Updated: 12 August 2026
+Updated: 16 September 2026
 
 This is the concise delivery roadmap. `MODERNIZATION.md` contains the detailed
 technical strategy, while the root `HANDOVER.md` records exact repository,
@@ -12,11 +12,28 @@ Deliver one dependable Windows PDW application that keeps the proven legacy
 decoders, hardware paths, layout, and outputs while adding current Windows
 input, diagnostics, secure delivery, and maintainable test boundaries.
 
+## September follow-up
+
+I am preparing v5.5.3 for the authorised Lounge recovery: direct RTL-SDR at zero
+PPM, unattended retry when the receiver is late, a PDW-only startup path and
+architecture-matched rollout with rollback. The source has a native delayed-device
+and delayed-library regression. The Lounge task is collecting content-free
+physical evidence; earlier milestones do not establish current decode health.
+
+I have retained the committed starvation/audit repairs and validated a
+calendar-independent archive regression and the OpenSSL 3.5.8/curl 8.22.0
+development security refresh: both architectures build, pass 37/37 tests and
+execute the WASAPI/WinMM smoke programs. `HANDOVER.md` records exact evidence and
+uncommitted source state. The live receiver is on the Lounge PC; physical
+remote-session soak, a trusted reference feed, independent review and approved
+signing remain release gates. The older milestone rows below describe historical
+delivery stages and do not establish acceptance of the current development tree.
+
 ## Status map
 
 | Area | Current state | Next gate |
 | --- | --- | --- |
-| Win32 build | v5.5.2 passes the explicit Visual Studio 2026/MSVC v145 Win32 clean build, 35-test suite, device-smoke compilation, package/source-tamper gates and exact-head CI | Collect physical legacy receiver/slicer feedback without weakening Win32 compatibility |
+| Win32 build | September security refresh builds and passes 37/37 tests plus both local audio-device smokes; source remains uncommitted | Complete clean-commit release gates and physical legacy receiver/slicer acceptance |
 | Windows interface | Approved 2026 command bar, live meter, modeless 9-page Settings Center, encrypted configuration backup/restore, dark/light palette, compact relayout, and retained dialog routing implemented | Keyboard, High Contrast, 125-200% DPI, and physical-radio acceptance |
 | Legacy decoding | Existing protocols retained; synthetic POCSAG alpha, numeric, and tone-only fixtures exercise the unchanged decoder | Add correction, FLEX, recording, filter, duplicate, and other-protocol fixtures |
 | Windows audio | WinMM and WASAPI remain available; Public Beta 2 retains stable endpoint IDs and endpoint-specific WASAPI capture for an explicit SDR#/VB-CABLE profile, with automated fail-closed coverage | Physical device-loss, hot-plug and broader device-matrix beta acceptance |
@@ -32,12 +49,13 @@ input, diagnostics, secure delivery, and maintainable test boundaries.
 | Repository hygiene | File-by-file x64/Win32 audit complete; obsolete VC6/VS2017 state, caches, duplicate archive, and unused code/assets removed; CMake is authoritative | Enforce `scripts/audit-release.ps1` and repeat the review when adding native dependencies or release-only assets |
 | Local operations | Capcode Directory with CSV upsert/deduplication, independent lower-panel filtering, explicit multi-output routing, optional bounded history, loopback-only dashboard, one-way Local Gateway Outbox, spectrum/waterfall, isolated multi-channel workers, and optional RTL conditioning are implemented | Complete operator UI and physical multi-receiver/output acceptance without changing decoder behavior |
 | Named local-input profile | Public Beta 2 retains the explicit clean-install Adelaide FLEX profile, stable exact endpoint identity, fail-closed capture, default-No verified-backup apply action and passing automated installer/profile smoke; SDR# and VB-CABLE remain external | Collect licensed physical-workflow and dual native-UI feedback without changing operator data |
-| Release packaging | One combined `PDW-v5.5.2-2026-Release-Setup.exe` is gated by provenance, profile selection, predecessor cleanup, Defender, trusted signing and the Win32/x64 install/upgrade/uninstall matrix | Publish the normal GitHub release only after every gate passes |
+| Release packaging | Prior packages do not contain the uncommitted September security refresh; clean provenance and all package/Setup gates still apply | Commit the reviewed source with authorisation, align the next published version, then complete package, signing and acceptance gates |
 | x64 | PDW v5.5.2 is gated by the Visual Studio 2026 x64 clean build, complete test suite, device-smoke compilation, package/source-tamper gates, combined Setup and exact-head CI | Collect physical receiver and broader Windows UI acceptance while keeping Win32 available |
 
 ## Safe integration sequence
 
-The v5.5.2 release state is maintained on fork `master`. The approved
+The v5.5.3 development state is maintained on local `master`; no public release
+has been created for it. The approved
 interface, defaults, and legacy behavior remain authoritative. The `spiral` remote is
 fetch-only; work is selectively adopted and independently tested rather than
 wholesale merged.

@@ -471,6 +471,19 @@ int main(int argc, char** argv)
 		RtlSdrSource source;
 		Expect(!source.Start(config, 99, &sink), "unavailable RTL-SDR device reports failure");
 		Expect(source.state() == RTL_TCP_FAILED, "unavailable RTL-SDR state is failed");
+		Expect(source.Start(config, 0, &sink),
+			"zero PPM accepts the RTL-SDR unchanged-correction result");
+		Expect(source.Stop(), "zero-PPM source stops cleanly");
+		RtlTcpConfig correctedConfig = config;
+		correctedConfig.frequencyCorrectionPpm = 1;
+		Expect(source.Start(correctedConfig, 0, &sink),
+			"nonzero PPM still applies a successful frequency correction");
+		Expect(source.Stop(), "nonzero-PPM source stops cleanly");
+		correctedConfig.frequencyCorrectionPpm = 1000000;
+		Expect(!source.Start(correctedConfig, 0, &sink),
+			"a genuine frequency-correction error still rejects the source");
+		Expect(source.lastError().find("error -3") != std::string::npos,
+			"frequency-correction failure retains the actual driver error");
 
 		RtlTcpConfig lossConfig = config;
 		lossConfig.frequencyHz = 148812501;

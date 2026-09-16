@@ -1,4 +1,4 @@
-PDW v5.5.2 2026 RELEASE
+PDW v5.5.3 2026 RELEASE
 
 This release is gated by automated x64 and Win32 builds, tests, package checks,
 Defender scanning, trusted Authenticode signing, and the
@@ -9,7 +9,7 @@ Report only content-free results through the maintained GitHub Issues page.
 Do not include pager traffic, recordings, credentials, endpoint IDs, PDW.INI,
 logs, or operator settings in a public report.
 
-PDW v5.5.2 2026 Release keeps all established decoder, receiver, slicer, audio,
+PDW v5.5.3 2026 Release keeps all established decoder, receiver, slicer, audio,
 serial, filter and output paths. This Setup installs the same PDW application
 that remains available in portable form.
 
@@ -39,7 +39,7 @@ one. The profile changes only local audio and decoder settings. It does not
 create, replace, import, or modify Capcode Directory entries or filters.ini.
 Existing PDW.INI and operator data always take precedence during upgrade.
 
-PDW v5.5.2 retains lower-panel filtering and explicit per-Capcode output
+PDW v5.5.3 retains lower-panel filtering and explicit per-Capcode output
 routing. A rule can select multiple destinations, but every destination must
 also be enabled and configured in Settings. Existing disabled rules remain
 dormant, and legacy global routing remains until a rule is deliberately saved
