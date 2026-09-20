@@ -10,7 +10,7 @@ and hashes below remain historical and do not certify a new candidate. Operator
 backups, exact build identity, rollback and content-free acceptance remain required.
 
 - Prepared: 14 August 2026
-- Repository: `C:\PDW Update\PDW-source`
+- Repository: `C:\CodexWorkspace\projects\pdw\PDW-source`
 - Baseline: `4843c8a9dbc75e74a976eb48670b5c96cbe8ab06`
 - Release identity retained: `PDW v5.5.2 2026 Release`
 

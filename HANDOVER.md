@@ -35,9 +35,36 @@ delivery and supervision use the already-authorised Chrome Remote Desktop
 session. Final clean-commit package and physical acceptance results belong to
 the exact resulting candidate, not the historical runs below.
 
-I am preparing the required local source commit and architecture-matched rollout
-under the owner's update request. Production data stays local to Lounge, and
-rollback copies must be retained. The new development identity is v5.5.3.
+The private v5.5.3 recovery candidate was built from clean local commit
+`68b544d7dbe6c0a0ca621bad507d4848a203c026`. Both final architecture suites passed
+38/38 tests (Win32 45.58 s; x64 39.38 s). Both portable packages and their
+extracted-source rebuilds passed, including tampered/missing/extra source and
+stale-marker rejection. Both actual WASAPI and legacy WinMM device smoke tests
+passed. The combined installer passed its audit and full preservation/rollback
+smoke script; its fail-closed build fixture also passed. Defender scans reported
+no threats in the portable packages or Setup. Setup remains unsigned and is not
+a public stable release.
+
+Candidate outputs are under `out/recovery553-packages` and
+`out/recovery553-installer`; evidence is under `out/validation-20260916`.
+The Win32 ZIP SHA-256 is
+`9D6C2F0EE1B07C53E7D31C5AF3BDB53B3ED43C3FCB63D7601F4D266DB2F3C96A`;
+its executable SHA-256 is
+`0398248372EE256C639FC71295BA0D717984289C1235EB8965F4E1C2F1EA8085`.
+The deployment instructions are `out/validation-20260916/LOUNGE_V553_ROLLOUT.md`.
+This handover update is subsequent documentation, not part of that immutable
+candidate's clean-source marker.
+
+Chrome Remote Desktop file transfer was blocked by the browser extension's
+file-URL access setting (`fileChooser.setFiles`: not allowed). The user has been
+given the supported instruction to enable that setting; it has not been bypassed.
+OneDrive synchronisation remains unverified. No new candidate has been deployed
+to Lounge. Its PDW remains stopped after the remote task's diagnostic, with
+rollback material preserved. Resume with transfer of the exact Win32 ZIP and
+rollout brief, verify hashes on Lounge, then establish fresh accepted rows and
+three graceful restart recoveries with zero PPM and no SDRSharp/Airspy. Actual
+power-loss recovery and the long trusted-feed soak remain unverified. Production
+data must stay local to Lounge.
 
 ## September development follow-up
 
@@ -57,8 +84,8 @@ I also prepared the verified OpenSSL 3.5.8 and curl 8.22.0 security source pins;
 Connector/ODBC binary/release-note limitation. Dependency build outputs are
 isolated under `out/dependencies-20260916/{x64,x86}`; execution logs and downloaded
 public review evidence are under `out/validation-20260916`. The source changes
-remain uncommitted and retain the v5.5.2 development identity. A published update
-must advance and align all release-version surfaces through the normal gates.
+were subsequently incorporated into the local v5.5.3 recovery candidate described
+above. Public publication remains unauthorised and subject to the release gates.
 
 The current production receiver is on the Lounge PC, not this build computer.
 I prepared a read-only coordination packet at
@@ -116,7 +143,7 @@ authorise any of them.
 
 ## Current release identity
 
-- Repository: `C:\PDW Update\PDW-source`
+- Repository: `C:\CodexWorkspace\projects\pdw\PDW-source`
 - Active branch: fork `master`
 - Candidate tag identity: `v5.5.3` (no tag or public release created)
 - Product/display name: **PDW v5.5.3 2026 Release**
