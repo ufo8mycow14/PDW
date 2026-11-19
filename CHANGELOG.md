@@ -1,5 +1,30 @@
 # Changelog
 
+## PDW v5.5.4 2026 Release
+
+**19 November 2026 - maintenance candidate; publication pending release gates**
+
+- I replaced repeated Capcode Directory import scans with indexed lookups,
+  preserving row order, database IDs and the existing duplicate-handling rules.
+  A synthetic 4,000-row import measured about 157 times faster on both architectures.
+- I reduced repeated bounds checking in FIR processing while preserving the
+  accumulation order. Synthetic conditioning time fell by 14% on x64 and 57% on
+  Win32, with byte-identical output across 36 comparison cases per architecture.
+- I made WAV import reject truncated RIFF/chunk lengths before allocating from
+  them and read only the required format fields, preventing a tiny malformed file
+  from requesting a 512 MiB buffer.
+- I scoped Settings keyboard handling to its own window so opening Settings no
+  longer intercepts Ctrl+F intended for another PDW window.
+- I passed all 38 full-application tests per architecture with the local v143
+  toolchain and the prior dependency set before the dependency refresh.
+  Restoring the verified Git history removed the full application source
+  provenance blocker without weakening the build safeguard.
+- I updated the source pins to OpenSSL 3.5.9 and curl 8.23.0, and the CI installer
+  compiler to Inno Setup 6.7.4, subject to the final dual-architecture gates.
+- I made gateway contention tests tolerate bounded writer starvation on shared
+  CI disks and report child startup/write failures, retaining exact committed
+  event counts and identities and the application's existing busy timeout.
+
 ## PDW v5.5.3 2026 Release
 
 **16 September 2026 — local recovery candidate; not publicly released**
@@ -15,6 +40,8 @@
   existing optional legacy and Windows-audio integrations remain supported.
 
 ### Unreleased development changes
+
+**Earlier development changes**
 
 - I updated the source pins to OpenSSL 3.5.8 and curl 8.22.0 following the
   September dependency-security review, retaining Schannel, WinCNG and both

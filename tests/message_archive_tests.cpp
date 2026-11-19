@@ -282,6 +282,40 @@ int main()
 		addedImport->displayName == "New final value" &&
 		FindCapcode(mergedImport, "8888888") != NULL,
 		"CSV import updates matching capcodes, keeps the final CSV row, and preserves unrelated entries");
+	Expect(updatedImport->id == importExisting[0].id,
+		"CSV replacement retains the first existing database identity");
+	{
+		std::vector<pdw::archive::CapcodeEntry> existing, incoming, result;
+		for (int index = 0; index < 4000; ++index)
+		{
+			pdw::archive::CapcodeEntry row;
+			row.id = index + 1;
+			row.address = "Cap-" + std::to_string(index);
+			row.displayName = "Existing";
+			existing.push_back(row);
+			row.id = 0;
+			row.address = "cap-" + std::to_string(index + 2000);
+			row.displayName = "Imported";
+			incoming.push_back(row);
+		}
+		pdw::archive::CapcodeEntry blank;
+		blank.id = 7000;
+		existing.insert(existing.begin() + 1, blank);
+		existing.push_back(existing[0]);
+		incoming.push_back(incoming[0]);
+		incoming.back().displayName = "Final value";
+		incoming.push_back(blank);
+		pdw::archive::CapcodeImportStats stats;
+		pdw::archive::MergeCapcodeDirectoryImport(existing, incoming, result, stats);
+		Expect(result.size() == 6002 && stats.added == 2001 && stats.updated == 2000 &&
+			stats.duplicatesDiscarded == 2, "large import counts duplicates, updates and blank rows");
+		Expect(result[0].address == "Cap-0" && result[1].address.empty() &&
+			result[2001].address == "cap-2000" && result[2001].id == 2001 &&
+			result[2001].displayName == "Final value" &&
+			result[4001].address == "cap-4000" && result[4001].id == 0 &&
+			result.back().address.empty(),
+			"large import keeps stable order, case-insensitive matching, IDs and blank rows");
+	}
 	std::istringstream legacyDisabledDirectory(
 		"protocol,address,display_name,agency,color,notes,enabled,filter_type,match_text,filter_label,"
 		"reject,match_exact,show_label,command_enabled,monitor_only,email_enabled,separate_file_enabled,"

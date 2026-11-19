@@ -1106,6 +1106,9 @@ void ShowSettingsCenter(HWND owner, int page)
 BOOL SettingsCenterIsDialogMessage(MSG* message)
 {
 	if (!g_window || !message) return FALSE;
+	// The main loop offers every queued message here. Keep Settings
+	// shortcuts and dialog navigation local to this window and its controls.
+	if (message->hwnd != g_window && !IsChild(g_window, message->hwnd)) return FALSE;
 	if (message->message == WM_KEYDOWN && message->wParam == 'F' &&
 		(GetKeyState(VK_CONTROL) & 0x8000))
 	{

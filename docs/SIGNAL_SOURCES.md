@@ -1,7 +1,7 @@
 # Radio, recording, and replay
 
 Open **Settings > Decoder and input > Radio and replay**. These inputs are
-additional choices inside the same `PDW v5.5.3 2026 Release.exe`; they do not create a separate
+additional choices inside the same `PDW v5.5.4 2026 Release.exe`; they do not create a separate
 edition or background helper.
 
 For direct RTL-SDR operation, I select the USB receiver source inside PDW; SDRSharp

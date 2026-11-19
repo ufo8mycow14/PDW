@@ -1,6 +1,6 @@
 # Dependency and security review
 
-Reviewed: 16 September 2026 (Connector/ODBC release verification remains incomplete)
+Reviewed: 19 November 2026 (v5.5.4 candidate; final dual-architecture CI pending)
 
 This record must be refreshed from official upstream release and security
 pages before each PDW release. A newer version is not adopted until it passes
@@ -8,15 +8,80 @@ the complete Win32 and x64 gates and preserves legacy support.
 
 | Component | Pinned | Official status reviewed | Decision |
 | --- | --- | --- | --- |
-| OpenSSL | 3.5.8 | Current 3.5 LTS maintenance release, published 25 August 2026; 3.5 support is listed through 8 April 2030 | Prepare the security update with its verified source hash; release adoption requires both architecture gates |
-| curl/libcurl | 8.22.0 | Published 2 September 2026; its official vulnerability page lists no published security problems at review time | Prepare the security update with its verified source hash; release adoption requires both architecture gates |
+| OpenSSL | 3.5.9 | Latest downloadable 3.5 LTS release, 29 September 2026; supported through 8 April 2030; three 17 November advisories reviewed below | Update from 3.5.8 with the upstream SHA-256; final adoption requires both architecture gates; revisit 3.5.10 when published |
+| curl/libcurl | 8.23.0 | Stable release, 14 October 2026; version-specific vulnerability page lists no published problems at review time | Update from 8.22.0, including SFTP fixes, with the official HTTPS archive's pinned SHA-256 and dual-architecture gates |
 | libssh2 | 1.11.1 | Newest archive on the official download index | Retain 1.11.1 and its verified source hash |
 | Windows SQLite | Operating-system component | Uses the supported Windows `winsqlite3` API; no bundled SQLite DLL | Retain the platform binding; require fully patched Windows and fail closed when archive connection protections are unavailable |
-| MySQL | Operator-installed ODBC driver | Official source tag 26.7.1 declares GA and supersedes the August 9.7.0 reference; the binary download and release-note endpoints returned HTTP 403 | Verify binary availability, supported architecture and release-note/security details before adoption; require a secured DSN; PDW does not bundle or install a driver |
-| Inno Setup | 6.7.3 | Latest 6.x compiler; Inno Setup 7.0.2 is also available | Retain 6.7.3 for v5.5.2 so a compiler-major migration does not overlap the message-handling and display-recovery change; evaluate 7 separately through full dual installer gates |
+| MySQL | Operator-installed ODBC driver | Official download lists Windows x64 26.10.0; November CSPU lists CVE-2026-101806 affecting Connector/ODBC 26.7.1 | Do not rely on the former 26.7.1 reference; require current vendor remediation, a secured DSN and matching-bitness driver; no driver is installed or bundled by PDW |
+| Inno Setup | 6.7.4 | Current 6.x patch release, 28 October 2026 | Update CI from 6.7.3 through the complete Setup gates; evaluate major-version 7 separately |
 | Visual Studio / MSVC | Visual Studio 2026 / v145 | Current maintained Windows release toolchain; v145 targets Windows 10/Server 2016 and newer | Build and test both architectures on the explicit VS 2026 runner; distribute only the reviewed architecture-matched app-local Microsoft Visual C++ runtime DLLs; record the exact compiler, generator and CMake version in each dependency lock |
 | SDR# | Production revision 1921 | External Windows SDR application used only by the named local-audio profile; the official x86/x64 revision 1922 downloads are labelled beta | Record 1921 as the reviewed stable integration target; operator installs, configures, updates, and supports it; PDW does not bundle or control it |
 | VB-CABLE | Package 45 | External VB-Audio virtual driver for Windows 32/64/Arm64; published October 2024 | Operator installs and licenses it directly; PDW does not bundle the driver and uses only the selected Windows recording endpoint |
+| RTL-SDR Blog / Zadig | V1.4.0 / 2.9 (libwdi 1.5.1) | Official upstream release lists remain at the bundled versions | Retain reviewed optional x86 assets and source/licence companions; do not install or change a USB driver automatically |
+| Apprise | External service; historical validation at API 1.5.1 / library 1.12.0 | Upstream now lists API 2.1.0 and library 2.2.0; API 1.x has also advanced to 1.5.4 | Preserve the HTTPS client contract; operator service upgrades and major-version acceptance are separate; do not interpret historical validation as current security approval |
+
+## November applicability and validation
+
+The OpenSSL 17 November advisory schedules fixed releases for 1 December 2026;
+3.5.10 is not yet downloadable. The reviewed affected paths are:
+
+- CVE-2026-35190: TLS 1.3 servers using the specified Suite B certificate flag.
+  PDW SMTP uses `TLS_client_method`; no such flag is set.
+- CVE-2026-107493: `PEM_X509_INFO_read*` callers supplying an existing non-null
+  stack and using it after a failed parse. PDW does not call those APIs.
+- CVE-2026-124709: QUIC servers rejecting peer streams. PDW has no QUIC server;
+  its curl build uses Schannel and disables QUICHE.
+
+These paths were not found reachable through the reviewed PDW integrations.
+This is a source-level applicability assessment, not a claim that OpenSSL 3.5.9
+contains the fixes. SMTP still uses OpenSSL TLS; backup uses EVP crypto.
+Repeat the review when the fixed LTS release is available or these integrations
+change. curl 8.23.0 supersedes the five advisories fixed after 8.22.0
+(CVE-2026-87862, CVE-2026-86415, CVE-2026-94266, CVE-2026-86414 and
+CVE-2026-87863); Schannel excludes OpenSSL-backend-specific paths, but no blanket
+non-applicability claim is made for the others.
+
+OpenSSL's archive digest was matched to its official SHA-256 sidecar. curl's
+digest was calculated from its official HTTPS archive and its detached signature
+was verified against Daniel Stenberg's key from the official verification page,
+using an isolated keyring. Every build
+still verifies the pinned SHA-256 before extraction. The source changes add no
+new native library or runtime. Full local v143 builds and 38/38 tests passed
+on both architectures before this dependency refresh. Final VS2026/v145 builds,
+tests, portable/source-archive checks and Setup checks must pass on the exact
+release commit before adoption. The local rebuild of the refreshed dependency
+set is unavailable because the required Perl module is missing.
+
+libssh2's official download index still lists 1.11.1 and its upstream Security
+page lists no published advisory. The GitHub Advisory Database also contains
+unreviewed reports, including CVE-2026-66032, CVE-2026-66033, CVE-2026-66035 and
+CVE-2025-15661, claiming issues in that version. These were not confirmed by an
+upstream release/advisory in this review; they remain an unresolved review item
+for PDW's optional SFTP path. Retaining the latest official pin is not a claim
+that these reports are false or that libssh2 is vulnerability-free.
+
+Windows SQLite is serviced by Windows, so upstream SQLite 3.54.1 and its CVE
+list do not establish this host's runtime version or patch status. The current
+API floor remains build 10586; require a supported, patched Windows installation.
+MQTT uses the same libcurl build with peer and hostname verification, rather
+than a separate bundled MQTT library; no broker version is imposed or certified.
+Connector/ODBC 26.10.0 is not listed in the current Oracle affected-version row,
+but its release notes do not explicitly identify CVE-2026-101806 as fixed.
+
+Additional official review sources:
+
+- OpenSSL 17 November advisory: <https://openssl-library.org/news/secadv/20261117.txt>
+- curl 8.23.0 security status: <https://curl.se/docs/vuln-8.23.0.html>
+- curl archive verification: <https://curl.se/docs/verify.html>
+- Oracle November CSPU: <https://www.oracle.com/security-alerts/cspunov2026.html>
+- Inno Setup downloads and verification: <https://jrsoftware.org/inno-setup/downloads>
+  and <https://jrsoftware.org/inno-setup/downloads/verify>
+- Apprise API and library releases: <https://github.com/caronc/apprise-api/releases>
+  and <https://github.com/caronc/apprise/releases>
+- RTL-SDR Blog and libwdi releases: <https://github.com/rtlsdrblog/rtl-sdr-blog/releases>
+  and <https://github.com/pbatard/libwdi/releases>
+
+## Retained earlier review context
 
 Operator-installed MySQL Connector/ODBC 9.0.0 through 9.5.0 must not be used;
 Oracle's January 2026 Critical Patch Update lists CVE-2025-9230 for those

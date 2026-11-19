@@ -7,14 +7,14 @@ the generated dependency set.
 
 | Component | Version | SHA-256 source archive | License |
 | --- | --- | --- | --- |
-| OpenSSL | 3.5.8 | `A8F84A39918EC6415CE765D9B429D313BA97B8143169C172E734B9514464F5B2` | Apache License 2.0 |
-| curl/libcurl | 8.22.0 | `F7EF3AE8A22E521F289803FE93543EB64C329B58AA73A9E224DFD915A2A5F4F7` | curl license |
+| OpenSSL | 3.5.9 | `603F5602E2EEF00D77FBD429D34DCD5822BB301757A1BC9CDB24C670F1EB859A` | Apache License 2.0 |
+| curl/libcurl | 8.23.0 | `8DADD7D2536A314F982AD05A651B713F426BF7D02CC2C76CFFB9796F2218E6C5` | curl license |
 | libssh2 | 1.11.1 | `9954CB54C4F548198A7CBEBAD248BDC87DD64BD26185708A294B2B50771E3769` | Revised BSD license |
 
 Official sources and license information:
 
-- OpenSSL: <https://github.com/openssl/openssl/releases/tag/openssl-3.5.8>
-- curl: <https://github.com/curl/curl/releases/tag/curl-8_22_0>
+- OpenSSL: <https://github.com/openssl/openssl/releases/tag/openssl-3.5.9>
+- curl: <https://github.com/curl/curl/releases/tag/curl-8_23_0>
 - libssh2: <https://github.com/libssh2/libssh2/releases/tag/libssh2-1.11.1>
 
 OpenSSL continues to provide TLS for PDW's existing SMTP code. The file

@@ -8,6 +8,8 @@
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
+#include <set>
 #include <sstream>
 
 namespace pdw
@@ -1168,7 +1170,9 @@ void MergeCapcodeDirectoryImport(const std::vector<CapcodeEntry>& existing,
 {
 	merged.clear();
 	stats = CapcodeImportStats();
-	std::vector<std::string> existingAddresses;
+	// Keep vector order and database identities, but index addresses once rather
+	// than repeatedly scanning/lowercasing the whole directory for each CSV row.
+	std::map<std::string, std::size_t> addressIndex;
 	for (std::vector<CapcodeEntry>::const_iterator entry = existing.begin();
 		entry != existing.end(); ++entry)
 	{
@@ -1178,17 +1182,16 @@ void MergeCapcodeDirectoryImport(const std::vector<CapcodeEntry>& existing,
 			continue;
 		}
 		const std::string address = Lowercase(entry->address);
-		if (std::find(existingAddresses.begin(), existingAddresses.end(), address) !=
-			existingAddresses.end())
+		if (!addressIndex.insert(std::make_pair(address, merged.size())).second)
 		{
 			++stats.duplicatesDiscarded;
 			continue;
 		}
-		existingAddresses.push_back(address);
 		merged.push_back(*entry);
 	}
+	const std::size_t existingCount = merged.size();
 
-	std::vector<std::string> importedAddresses;
+	std::set<std::string> importedAddresses;
 	for (std::vector<CapcodeEntry>::const_iterator entry = imported.begin();
 		entry != imported.end(); ++entry)
 	{
@@ -1199,36 +1202,24 @@ void MergeCapcodeDirectoryImport(const std::vector<CapcodeEntry>& existing,
 			continue;
 		}
 		const std::string address = Lowercase(entry->address);
-		const bool repeatedImport = std::find(importedAddresses.begin(),
-			importedAddresses.end(), address) != importedAddresses.end();
+		const bool repeatedImport = !importedAddresses.insert(address).second;
 		if (repeatedImport) ++stats.duplicatesDiscarded;
-		else importedAddresses.push_back(address);
 
-		std::vector<CapcodeEntry>::iterator match = merged.end();
-		for (std::vector<CapcodeEntry>::iterator candidate = merged.begin();
-			candidate != merged.end(); ++candidate)
-		{
-			if (!candidate->address.empty() &&
-				Lowercase(candidate->address) == address)
-			{
-				match = candidate;
-				break;
-			}
-		}
-		if (match != merged.end())
+		const std::map<std::string, std::size_t>::const_iterator match = addressIndex.find(address);
+		if (match != addressIndex.end())
 		{
 			CapcodeEntry replacement(*entry);
-			replacement.id = match->id;
-			*match = replacement;
+			replacement.id = merged[match->second].id;
+			merged[match->second] = replacement;
 			if (!repeatedImport)
 			{
-				if (std::find(existingAddresses.begin(), existingAddresses.end(), address) !=
-					existingAddresses.end()) ++stats.updated;
+				if (match->second < existingCount) ++stats.updated;
 				else ++stats.added;
 			}
 		}
 		else
 		{
+			addressIndex.insert(std::make_pair(address, merged.size()));
 			merged.push_back(*entry);
 			if (!repeatedImport) ++stats.added;
 		}

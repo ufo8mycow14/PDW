@@ -189,19 +189,24 @@ void PolyphaseFirResampler::Process(const ComplexSample* samples,
 		double sumQ = 0.0;
 		const std::size_t coefficientBase = static_cast<std::size_t>(phase) *
 			tapCount_;
-		for (unsigned int tap = 0; tap < tapCount_; ++tap)
+		// The look-ahead check above already bounds the last tap. Clip the
+		// leading zero-padding once, keeping the original accumulation order,
+		// instead of doing three 64-bit bounds checks for every multiply.
+		const std::int64_t firstSampleOffset = centerIndex -
+			static_cast<std::int64_t>(halfTapCount_) -
+			static_cast<std::int64_t>(bufferStartIndex_);
+		const unsigned int firstTap = static_cast<unsigned int>((std::min)(
+			static_cast<std::int64_t>(tapCount_),
+			(std::max)(std::int64_t(0), -firstSampleOffset)));
+		if (firstTap < tapCount_)
 		{
-			const std::int64_t sampleIndex = centerIndex +
-				static_cast<std::int64_t>(tap) -
-				static_cast<std::int64_t>(halfTapCount_);
-			if (sampleIndex < 0 || sampleIndex <
-				static_cast<std::int64_t>(bufferStartIndex_) ||
-				sampleIndex > lastAvailableIndex) continue;
-			const ComplexSample& sample = buffer_[static_cast<std::size_t>(
-				sampleIndex - static_cast<std::int64_t>(bufferStartIndex_))];
-			const float coefficient = coefficients_[coefficientBase + tap];
-			sumI += static_cast<double>(sample.i) * coefficient;
-			sumQ += static_cast<double>(sample.q) * coefficient;
+			const ComplexSample* sample = &buffer_[static_cast<std::size_t>(firstSampleOffset + firstTap)];
+			const float* coefficient = &coefficients_[coefficientBase + firstTap];
+			for (unsigned int tap = firstTap; tap < tapCount_; ++tap, ++sample, ++coefficient)
+			{
+				sumI += static_cast<double>(sample->i) * *coefficient;
+				sumQ += static_cast<double>(sample->q) * *coefficient;
+			}
 		}
 		ComplexSample filtered;
 		filtered.i = static_cast<float>(sumI);

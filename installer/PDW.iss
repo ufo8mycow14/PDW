@@ -9,10 +9,10 @@
 #endif
 
 #define AppIdValue "{{15A49948-1DBB-4F13-95C1-CB5CEB390E8B}"
-#define AppName "PDW v5.5.3 2026 Release"
-#define AppVersion "5.5.3"
-#define AppExeName "PDW v5.5.3 2026 Release.exe"
-#define SetupBaseName "PDW-v5.5.3-2026-Release-Setup"
+#define AppName "PDW v5.5.4 2026 Release"
+#define AppVersion "5.5.4"
+#define AppExeName "PDW v5.5.4 2026 Release.exe"
+#define SetupBaseName "PDW-v5.5.4-2026-Release-Setup"
 
 [Setup]
 AppId={#AppIdValue}
@@ -43,10 +43,10 @@ RestartApplications=no
 UsePreviousAppDir=yes
 UsePreviousGroup=yes
 UsePreviousTasks=yes
-VersionInfoVersion=5.5.3.0
-VersionInfoProductVersion=5.5.3.0
-VersionInfoDescription=PDW v5.5.3 2026 Release Setup
-VersionInfoProductName=PDW v5.5.3 2026 Release
+VersionInfoVersion=5.5.4.0
+VersionInfoProductVersion=5.5.4.0
+VersionInfoDescription=PDW v5.5.4 2026 Release Setup
+VersionInfoProductName=PDW v5.5.4 2026 Release
 VersionInfoCompany=PDW Open Source Project
 #ifdef SignToolName
 SignTool={#SignToolName}
@@ -111,7 +111,7 @@ Name: "{autodesktop}\PDW"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}";
 Name: "{userstartup}\PDW"; Filename: "{app}\{#AppExeName}"; Parameters: "/startup"; WorkingDir: "{app}"; Tasks: autostart
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Launch PDW v5.5.3 2026 Release"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "Launch PDW v5.5.4 2026 Release"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var

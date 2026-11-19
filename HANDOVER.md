@@ -1,6 +1,144 @@
-# PDW v5.5.3 2026 Release handover
+# PDW v5.5.4 2026 Release handover
 
-Updated: 16 September 2026
+Updated: 19 November 2026 (maintenance release preparation; historical evidence retains its dates below)
+
+## Active v5.5.4 release task - 19 November 2026
+
+The owner authorised repository repair, commit/push, a new release and a
+controlled installation on the target server. The source directory is now an
+independent Git checkout restored from the verified original history at
+`fc64303cda054867843b2bb635b755f38b1ca0e1`, matching GitHub master. All 359 tracked
+source-file hashes were preserved during the metadata repair. The canonical
+remote is `https://github.com/ufo8mycow14/PDW.git`; the parent workspace and its
+unrelated files were left intact. No provenance safeguard was weakened.
+
+Full fresh VS2022/v143 application builds succeeded on x64 and Win32. Both
+passed all 38 CTest tests, including native delayed-receiver startup recovery
+(x64 89.57 s; Win32 100.36 s), using the pre-refresh OpenSSL 3.5.8/curl 8.22.0
+set. This resolves the earlier missing-source-provenance blocker below.
+
+The v5.5.4 candidate carries the four ExpertMesh improvements and prepares
+OpenSSL 3.5.9, curl 8.23.0 and Inno Setup 6.7.4. Current metadata, manifest,
+installer, workflow, feedback form, Readme and roadmap are aligned. The previous
+CI run at `fc64303` failed only the gateway concurrency test: Win32 reported a
+locked database; both architectures reported an incomplete child event set.
+Local full-suite runs passed. The test now retries child startup and bounded
+contention for longer, reports open/append/child-exit failures, and bounds all
+children with a common deadline. Exact 384/4,200 event and unique-ID assertions
+and the production one-second busy timeout remain unchanged.
+
+Validation remaining on the final commit: VS2026/v145 dual build/test, device
+smoke compilation, portable/source-archive integrity, combined Setup and Defender,
+installer install/upgrade/uninstall, final native UI and hardware acceptance.
+This host has v143 only and lacks the Perl module required to rebuild the new
+OpenSSL sources; CI supplies the release toolchain. Dependency review, including
+OpenSSL advisory applicability and external-service limits, is recorded in
+`docs/DEPENDENCY_SECURITY.md`. Do not describe the old dependency test results
+as validation of the new pins.
+
+Stable publication requires trusted signing. No available local code-signing
+certificate was found. The documented unsigned prerelease exception requires
+explicit approval of the exact candidate after automated gates pass. Server
+SSH connectivity is currently unavailable; no server installation, tuner change
+or live message decoding has been observed. Local connection details and the
+remote deployment brief remain in ignored release evidence rather than public
+release artefacts. No prior hardware acceptance is substituted for this task.
+
+Current evidence: `out/validation-20261119-release554` contains the before-repair
+source hashes, full build/test logs, the previous failed CI log, dependency
+review, local operational handover and subsequent release results. Earlier
+component/benchmark evidence remains under `out/validation-20261119-expertmesh`.
+
+## Earlier assessment snapshot (before the authorised Git repair)
+
+## ExpertMesh assessment and improvements - 19 November 2026
+
+The requested assessment and four source improvements are complete within the
+available component-validation boundary. Work stayed in this `PDW-source`
+directory. ExpertMesh IT coordination and native debugging methods informed the
+assessment; two read-only reviewers covered capture/decoding and output/storage,
+then reviewed the selected changes. The parent agent was the only source writer.
+
+Implemented changes:
+
+- Capcode CSV merging uses ordered address indexes instead of repeatedly scanning
+  and lowercasing the full directory. Existing order/IDs, case-insensitive matching,
+  first existing duplicate, last imported duplicate, blank rows and import counts
+  are preserved. A 4,000-row regression exercises these behaviours.
+- FIR processing clips the leading padded taps once per output sample, then
+  accumulates the same samples and coefficients in the same order. It retains
+  filter coefficients, rates, buffering, discriminator and protocol behaviour.
+- WAV import validates the RIFF container and padded chunks against physical file
+  length before allocating. Format parsing reads only its required 16-byte prefix.
+  A capped-allocation regression reproduced the old failure without allocating
+  512 MiB; valid ordering, extensions, PCM8/PCM16, padding and trailing bytes are
+  covered alongside malformed lengths and existing SigMF tests.
+- Settings keyboard preprocessing accepts only its own window/children. With
+  Settings open, another PDW window now retains Ctrl+F and Tab; Settings search
+  continues to handle Ctrl+F. An isolated Win32 probe fails against the saved
+  baseline and passes against the change on both architectures.
+
+Assessment coverage and practical limits:
+
+| Area | Evidence and result | Remaining limit |
+| --- | --- | --- |
+| Architecture and legacy compatibility | One native source tree; existing capture, decoder, output and configuration boundaries retained; component builds on Win32 and x64 | Complete application build/startup blocked as described below |
+| Capture, radio and decoder reliability | Bounded worker, WASAPI, WinMM cleanup, RTL loopback/mock receiver, synthetic POCSAG and fragment/reassembly tests pass | No physical receiver, live-radio, hot-plug or Lounge acceptance performed |
+| Performance | Indexed import and FIR loop optimisation measured against saved source baselines | Synthetic elapsed-time measurements on this host, not an end-to-end UI or live-receiver benchmark |
+| Persistence and outputs | Archive, gateway, publishing recovery/delivery, SQLite, ODBC-disabled, Telnet and dashboard tests pass; import semantics retained | External SMTP/HTTPS/MQTT/FTP/ODBC services were not exercised |
+| Security and privacy | WAV pre-allocation bounds repaired; inspected bounded queues, prepared SQL and opt-in output controls; encrypted-backup tests pass | Targeted source review, not a full vulnerability scan or current dependency-advisory certification |
+| Interface and accessibility | Cross-window keyboard interception repaired and natively probed; existing navigation tests pass | Full visual, screen-reader, High Contrast, DPI and compact-layout acceptance remains open |
+| Configuration and recovery | INI preservation, release defaults, local audio profile, archive and publishing restart-state tests pass | Operator-owned settings/data were not read or modified |
+| Dependencies and release | Existing pins retained; static release audit passes | September advisory review requires refresh before release; v145, clean provenance, application startup, signing and packaging gates remain open |
+
+Measured medians of three interleaved baseline/current runs:
+
+| Synthetic workload | Architecture | Before | After | Result |
+| --- | --- | --- | --- | --- |
+| Merge 4,000 CSV rows into 4,000 existing rows (2,000 overlap) | x64 | 1,955.93 ms | 12.44 ms | 157.2x faster |
+| Same merge | Win32 | 1,725.71 ms | 11.01 ms | 156.8x faster |
+| Condition three seconds of 1.024 MHz IQ in 8,191-byte chunks | x64 | 162.09 ms | 138.83 ms | 14.4% less processing time |
+| Same conditioning | Win32 | 311.85 ms | 134.89 ms | 56.7% less processing time |
+
+Import output hashes and statistics matched. FIR comparison across 36 combinations
+per architecture (three IQ rates, two audio rates, two bandwidths, three chunk sizes)
+produced byte-for-byte identical 803,016-byte output streams, covering 200,718
+samples per architecture. These checks do not establish every possible input.
+
+Fresh component builds use MSVC 19.44.35230/v143 and Windows SDK 10.0.26100.0.
+Both architectures passed the 36-test component run (x64 46.11 s; Win32 56.27 s)
+and the separately added encrypted-backup check using the existing matching-bitness
+OpenSSL library (x64 3.86 s; Win32 8.12 s): 37 component tests per architecture,
+plus the keyboard probes and FIR comparisons. The only standard CTest case not
+executed is `receiver-startup-recovery`, which needs the full PDW executable.
+
+Full application build is blocked: this source has no `.git` entry or release
+source manifest. Git resolves to parent `pdw` at `fc64303` and reports `PDW-source`
+as untracked. Fresh application configure correctly refused this source at
+`validate-source-archive.cmake`; historical caches still refer to `C:/PDW Update`.
+The installed VS 2022/v143 is the documented local rollback toolchain; the
+VS 2026/v145 release toolchain is not installed. No Git metadata was reinitialised,
+provenance invented, release safeguard weakened, or old cache silently reused.
+The component-only harness reads the existing CMake test definitions and produces
+no PDW application, release marker or package.
+
+Evidence and rollback: `out/validation-20261119-expertmesh` contains selected
+pre-change files in `baseline`, the reviewable `expertmesh-changes.diff`,
+`verification.json`, `measurements.json`, before/after probes, build/test logs and
+the reproducible component harness. Reconcile against that baseline before any
+rollback; do not overwrite later work. No protocol was replaced, output enabled,
+dependency updated, commit made, build deployed or release published.
+
+Next dependency: restore the verified canonical checkout/provenance through a
+separately scoped repository repair, then build the complete application on both
+architectures and run its startup/UI acceptance. Release additionally needs the
+current dependency review, v145, physical acceptance, packaging and signing gates.
+
+## Local network setup record
+
+Machine-specific transfer and connection details are retained in the local
+ignored release evidence under out/validation-20261119-release554. They are
+not required to build or run the public source distribution.
 
 ## Active receiver-recovery task
 

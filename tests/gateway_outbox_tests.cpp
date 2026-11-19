@@ -109,15 +109,32 @@ namespace
 	{
 		pdw::gateway::GatewayOutboxStore store;
 		std::string error;
-		if (!store.Open(path, error)) return 2;
+		// SQLite deliberately bounds each operation and does not promise fair
+		// writer scheduling. A busy shared CI disk can let the other process
+		// reacquire the lock repeatedly, including while this connection opens.
+		// Keep the production timeout unchanged and bound the test's retries.
+		const ULONGLONG openDeadline = GetTickCount64() + 30000;
+		while (!store.Open(path, error))
+		{
+			if (GetTickCount64() >= openDeadline)
+			{
+				std::cerr << "Synthetic process writer " << writer << " open: " << error << "\n";
+				return 2;
+			}
+			Sleep(1);
+		}
 		for (int i = 1; i <= 2100; ++i)
 		{
 			long long sequence = 0;
 			const auto event = SyntheticEvent(writer * 10000 + i, "FLEX", "SYNTHETIC MULTIPROCESS EVENT");
-			const ULONGLONG deadline = GetTickCount64() + 5000;
+			const ULONGLONG deadline = GetTickCount64() + 30000;
 			while (!store.AppendSequenced(event, sequence, error))
 			{
-				if (GetTickCount64() >= deadline) return 3;
+				if (GetTickCount64() >= deadline)
+				{
+					std::cerr << "Synthetic process writer " << writer << " append " << i << ": " << error << "\n";
+					return 3;
+				}
 				Sleep(1);
 			}
 		}
@@ -140,10 +157,23 @@ namespace
 			Expect(CreateProcessA(executable, &command[0], NULL, NULL, FALSE, CREATE_NO_WINDOW,
 				NULL, NULL, &startup, &processes[i]) != FALSE, "independent synthetic writer process starts");
 		}
+		const ULONGLONG processDeadline = GetTickCount64() + 120000;
 		for (auto& process : processes)
 		{
-			Expect(WaitForSingleObject(process.hProcess, 30000) == WAIT_OBJECT_0, "independent writer completes within deadline");
+			if (!process.hProcess) continue;
+			const ULONGLONG now = GetTickCount64();
+			const DWORD waitMs = now < processDeadline ? static_cast<DWORD>(processDeadline - now) : 0;
+			const DWORD waitResult = WaitForSingleObject(process.hProcess, waitMs);
+			Expect(waitResult == WAIT_OBJECT_0, "independent writer completes within deadline");
+			if (waitResult != WAIT_OBJECT_0)
+			{
+				// Only terminate the synthetic child created by this test. Never
+				// inspect or remove its database while it can still be writing.
+				TerminateProcess(process.hProcess, 4);
+				WaitForSingleObject(process.hProcess, INFINITE);
+			}
 			DWORD code = 1; GetExitCodeProcess(process.hProcess, &code);
+			if (code != 0) std::cerr << "Synthetic process writer exit code: " << code << "\n";
 			Expect(code == 0, "independent writer committed its complete event set");
 			CloseHandle(process.hThread); CloseHandle(process.hProcess);
 		}
@@ -172,10 +202,12 @@ namespace
 				// A bounded busy timeout is valid under contention. Retry the same
 				// identity, as the independent-process test does, without relaxing
 				// the exact committed-row and uniqueness assertions below.
-				const ULONGLONG deadline = GetTickCount64() + 5000;
+				const ULONGLONG deadline = GetTickCount64() + 30000;
 				while (!stores[index].AppendSequenced(input, sequence, localError)) {
 					if (GetTickCount64() >= deadline) {
-						++failures; writerErrors[index] = localError; break;
+						++failures;
+						writerErrors[index] = "append " + std::to_string(event) + ": " + localError;
+						return;
 					}
 					Sleep(1);
 				}

@@ -86,17 +86,37 @@ bool ReadWavMono(const std::string& path, SignalRecording& recording, std::strin
 		return false;
 	}
 
+	// A chunk length is untrusted until both the RIFF container and the actual
+	// file contain its payload. Check before allocating from a declared size.
+	input.seekg(0, std::ios::end);
+	const std::streamoff fileBytes = input.tellg();
+	const std::uint64_t riffBytes = static_cast<std::uint64_t>(ReadLe32(riffHeader + 4)) + 8;
+	if (fileBytes < 12 || riffBytes < 12 || riffBytes > static_cast<std::uint64_t>(fileBytes))
+	{
+		error = "WAV RIFF length exceeds the file or is incomplete.";
+		return false;
+	}
+	input.seekg(sizeof(riffHeader), std::ios::beg);
+	std::uint64_t remainingBytes = riffBytes - sizeof(riffHeader);
+
 	std::uint16_t formatTag = 0;
 	std::uint16_t channels = 0;
 	std::uint16_t bitsPerSample = 0;
 	std::uint32_t sampleRate = 0;
 	std::vector<unsigned char> audioBytes;
 
-	while (input && (formatTag == 0 || audioBytes.empty()))
+	while (input && remainingBytes >= 8 && (formatTag == 0 || audioBytes.empty()))
 	{
 		unsigned char chunkHeader[8];
 		if (!ReadExact(input, chunkHeader, sizeof(chunkHeader))) break;
+		remainingBytes -= sizeof(chunkHeader);
 		const std::uint32_t chunkSize = ReadLe32(chunkHeader + 4);
+		const std::uint64_t paddedChunkSize = static_cast<std::uint64_t>(chunkSize) + (chunkSize & 1u);
+		if (paddedChunkSize > remainingBytes)
+		{
+			error = "WAV chunk extends beyond the RIFF data.";
+			return false;
+		}
 		if (chunkSize > MAX_RECORDING_BYTES)
 		{
 			error = "WAV chunk is too large.";
@@ -110,8 +130,8 @@ bool ReadWavMono(const std::string& path, SignalRecording& recording, std::strin
 				error = "WAV format chunk is incomplete.";
 				return false;
 			}
-			std::vector<unsigned char> formatBytes(chunkSize);
-			if (!ReadExact(input, &formatBytes[0], formatBytes.size()))
+			unsigned char formatBytes[16];
+			if (!ReadExact(input, formatBytes, sizeof(formatBytes)))
 			{
 				error = "Unable to read WAV format chunk.";
 				return false;
@@ -120,6 +140,7 @@ bool ReadWavMono(const std::string& path, SignalRecording& recording, std::strin
 			channels = ReadLe16(&formatBytes[2]);
 			sampleRate = ReadLe32(&formatBytes[4]);
 			bitsPerSample = ReadLe16(&formatBytes[14]);
+			input.seekg(static_cast<std::streamoff>(chunkSize - sizeof(formatBytes)), std::ios::cur);
 		}
 		else if (IsFourCc(chunkHeader, "data"))
 		{
@@ -135,6 +156,7 @@ bool ReadWavMono(const std::string& path, SignalRecording& recording, std::strin
 			input.seekg(static_cast<std::streamoff>(chunkSize), std::ios::cur);
 		}
 		if (chunkSize & 1u) input.seekg(1, std::ios::cur);
+		remainingBytes -= paddedChunkSize;
 	}
 
 	if (channels == 0 || sampleRate == 0 || audioBytes.empty())

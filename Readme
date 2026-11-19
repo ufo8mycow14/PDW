@@ -6,7 +6,7 @@
 
 A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
-![Version](https://img.shields.io/badge/version-v5.5.3%202026%20Release-2E74B5)
+![Version](https://img.shields.io/badge/version-v5.5.4%202026%20Release-2E74B5)
 ![Status](https://img.shields.io/badge/status-development%20candidate%20awaiting%20validation-F0A000)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
 ![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20Win32-555555)
@@ -20,10 +20,10 @@ A modernised native Windows decoder for POCSAG, FLEX, ERMES, ACARS and MOBITEX.
 
 ## About PDW
 
-I am validating the September audit follow-up and dependency security updates.
-The current development tree is not approved for Lounge installation or stable
-publication. I track exact build evidence and remaining acceptance gates in
-`HANDOVER.md` and `docs/DIRECT_RTL_SDR_STARVATION_REVIEW_HANDOFF.md`.
+I am preparing v5.5.4 with faster Capcode imports and signal conditioning,
+safer WAV import and corrected Settings keyboard routing. I track the current
+build, dependency, packaging and acceptance evidence in `HANDOVER.md`.
+Stable publication remains subject to the documented release and signing gates.
 
 PDW—Paging Decoder for Windows—is a native Windows application for receiving, decoding, displaying, filtering, logging and securely routing supported digital radio messages.
 
@@ -73,10 +73,10 @@ Configuration and decoder behaviour are shared between the builds. Native DLLs m
 
 ## Install on Windows
 
-I am validating **PDW v5.5.3 2026 Release** as a local receiver-recovery candidate.
+I am validating **PDW v5.5.4 2026 Release** as the next maintenance candidate.
 There is no approved public download for this candidate. Trusted signing and
 the complete release/physical acceptance gates remain required for publication.
-The candidate installer is **PDW-v5.5.3-2026-Release-Setup.exe**. The guided Setup contains both
+The candidate installer is **PDW-v5.5.4-2026-Release-Setup.exe**. The guided Setup contains both
 architectures, keeps the executable, `PDW.INI`, Capcode Directory database, any
 existing legacy `filters.ini` recovery file, receivers, WAV files and logs
 together in one PDW folder, creates normal Windows shortcuts, preserves
@@ -92,7 +92,7 @@ uninstall. Use **Settings > General
 > I record current build, package and device evidence in `HANDOVER.md`; earlier
 > release results do not certify this candidate. Direct RTL-SDR needs no SDRSharp
 > or Airspy application. Content-free feedback can use
-> [the feedback form](https://github.com/ufo8mycow14/PDW/issues/new?template=pdw-v5.5.3-feedback.yml); never attach private
+> [the feedback form](https://github.com/ufo8mycow14/PDW/issues/new?template=pdw-v5.5.4-feedback.yml); never attach private
 > pager traffic, recordings, credentials, endpoint IDs or operator settings.
 
 Setup enforces Windows build 10586 as the technical API floor. Production use
@@ -299,15 +299,16 @@ PDW is being modernised conservatively.
 
 ## Release History
 
-### Current receiver-recovery candidate
+### Current maintenance candidate
 
-I prepared v5.5.3 to accept the RTL-SDR driver's unchanged zero-PPM result and
-retry late receiver availability without a blocking startup dialog. It includes
-the September capture/decoder/persistence fixes and OpenSSL 3.5.8/curl 8.22.0
-source pins. Local rollout validation is separate from a public stable release.
+I prepared v5.5.4 to retain receiver recovery while improving import and FIR
+performance, rejecting truncated WAV allocations and fixing cross-window
+keyboard handling. Local rollout validation is separate from public release
+approval and from evidence of physical radio reception.
 
 | Version | Status | Highlights |
 | --- | --- | --- |
+| **PDW v5.5.4 2026 Release** | **Maintenance candidate; validation in progress** | Faster Capcode imports and FIR processing, bounded WAV import and Settings keyboard routing. |
 | **PDW v5.5.3 2026 Release** | **Local recovery candidate; acceptance in progress** | Direct RTL-SDR zero-PPM startup, automatic receiver recovery, retained audit repairs and security dependency refresh. |
 
 ### Historical v5.5.2 candidate record

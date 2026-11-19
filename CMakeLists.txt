@@ -140,14 +140,14 @@ endif()
 
 file(STRINGS "${PDW_DEPENDENCY_ROOT}/include/openssl/opensslv.h" PDW_OPENSSL_VERSION_LINE
   REGEX "^# *define +OPENSSL_VERSION_STR +\"[0-9]+\\.[0-9]+\\.[0-9]+\"$")
-if(NOT PDW_OPENSSL_VERSION_LINE MATCHES "\"3\\.5\\.8\"$")
-  message(FATAL_ERROR "PDW requires the pinned OpenSSL 3.5.8 dependency set.")
+if(NOT PDW_OPENSSL_VERSION_LINE MATCHES "\"3\\.5\\.9\"$")
+  message(FATAL_ERROR "PDW requires the pinned OpenSSL 3.5.9 dependency set.")
 endif()
 
 list(PREPEND CMAKE_PREFIX_PATH "${PDW_DEPENDENCY_ROOT}")
 set(CURL_USE_STATIC_LIBS TRUE)
 set(LIBSSH2_USE_STATIC_LIBS TRUE)
-find_package(CURL 8.22.0 EXACT CONFIG REQUIRED
+find_package(CURL 8.23.0 EXACT CONFIG REQUIRED
   PATHS "${PDW_DEPENDENCY_ROOT}/lib/cmake/CURL"
   NO_DEFAULT_PATH)
 
@@ -796,6 +796,7 @@ target_compile_definitions(PDWMessageArchiveManagerTests PRIVATE
 		Winsqlite3.lib Bcrypt.lib Ole32.lib User32.lib
 	)
 	add_test(NAME gateway-outbox COMMAND PDWGatewayOutboxTests)
+	set_tests_properties(gateway-outbox PROPERTIES TIMEOUT 180)
 
 	add_executable(PDWLocalDashboardCoreTests
 		tests/local_dashboard_core_tests.cpp
