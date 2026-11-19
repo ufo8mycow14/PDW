@@ -26,6 +26,10 @@ Local full-suite runs passed. The test now retries child startup and bounded
 contention for longer, reports open/append/child-exit failures, and bounds all
 children with a common deadline. Exact 384/4,200 event and unique-ID assertions
 and the production one-second busy timeout remain unchanged.
+The updated gateway test passes locally on both architectures (21.37 s x64,
+21.56 s Win32). Initial push `cb997db` passed CodeQL. The subsequent CI compiler
+acquisition correction uses the verified upstream Inno Setup 6.7.4 installer
+because WinGet has not yet indexed that patch; both hash and publisher are pinned.
 
 Validation remaining on the final commit: VS2026/v145 dual build/test, device
 smoke compilation, portable/source-archive integrity, combined Setup and Defender,

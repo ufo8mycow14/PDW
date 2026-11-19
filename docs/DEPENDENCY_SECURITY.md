@@ -22,6 +22,14 @@ the complete Win32 and x64 gates and preserves legacy support.
 
 ## November applicability and validation
 
+Inno Setup 6.7.4 is not yet present in the WinGet catalogue. CI downloads the
+official `jrsoftware/issrc` release asset directly and checks its pinned SHA-256
+and trusted Authenticode signer before executing it. The archive hash
+`A549929319F9120716677C685535CA4671E4B937B5FDC87E2585F32D8EB30E8C` matched the
+official GitHub asset digest and release attestation; Windows verified publisher
+Pyrsys B.V. (`E0AB19C8D38CBF9C44709925122A7A02F8C70CB7`). No compiler installation
+was performed on the development host for this check.
+
 The OpenSSL 17 November advisory schedules fixed releases for 1 December 2026;
 3.5.10 is not yet downloadable. The reviewed affected paths are:
 
