@@ -105,6 +105,16 @@ void RequireSafeOutputs(const IniValues& values)
 	RequireZero(values, "WindowsToast", "Enable");
 	RequireZero(values, "PDW", "FlexFragmentReassembly");
 	RequireZero(values, "PDW", "RtlSignalConditioner");
+	RequireZero(values, "PDW", "RtlDemodulation");
+	Require(Value(values, "PDW", "RtlBandwidthHz") == "12500", "packaged NFM bandwidth must be 12500 Hz");
+	RequireZero(values, "PDW", "RtlSquelch");
+	RequireZero(values, "PDW", "RtlDeEmphasis");
+	RequireZero(values, "PDW", "RtlSpeechFilter");
+	RequireZero(values, "PDW", "RtlNoiseReduction");
+	RequireZero(values, "PDW", "RtlDcBlock");
+	RequireZero(values, "PDW", "RtlAudioGainEnabled");
+	RequireZero(values, "PDW", "RtlAudioAgc");
+	RequireZero(values, "PDW", "RtlAudioLimiter");
 	RequireZero(values, "MessageArchive", "EnableHistory");
 	RequireZero(values, "MessageArchive", "IncludeMessage");
 	RequireZero(values, "LiveDashboard", "Enable");

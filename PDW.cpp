@@ -310,6 +310,7 @@
 #include "headers\sigind.h"
 #include "headers\decode.h"
 #include "headers\sound_in.h"
+#include "headers\startup.h"
 #include "headers\printer.h"
 #include "headers\misc.h"
 #include "headers\menu.h"
@@ -344,7 +345,7 @@
 #define MIN_X_WIN_SIZE		444		// Smallest main win X size can be (was 444)
 #define MIN_Y_WIN_SIZE		261		// Smallest main win Y size can be (was 261)
 
-#define TOOLBAR_SIZE		PDW_COMMAND_BAR_HEIGHT
+#define TOOLBAR_SIZE		ToolbarHeight(ghWnd)
 #define WIN_DIVIDER_SIZE	19		// Pane1/Pane2 seperator size (was 56)
 #define PANE1_SIZE			1000	// Pane1 default scrollback size
 #define PANE2_SIZE			200		// Pane2 default scrollback size
@@ -648,6 +649,9 @@ bool MigrateLegacyFiltersToDirectory()
 
 int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLine, int nCmdShow)
 {
+	int watchExit = 0;
+	if (RunReceiverWatchMode(lpszCmdLine, watchExit)) return watchExit;
+	const unsigned recoveryAttempt = ReceiverRecoveryAttempt(lpszCmdLine);
 	// Delay only automatic sign-in launches. Starting PDW manually remains immediate.
 	if (lpszCmdLine != NULL && strstr(lpszCmdLine, "/startup") != NULL)
 		Sleep(5000);
@@ -883,9 +887,10 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	Profile.rtlAudioSampleRate	= 48000;
 	Profile.rtlGainTenthsDb		= 0;
 	Profile.rtlFrequencyCorrectionPpm = 0;
-	Profile.rtlBandwidthHz		= 12000;
+	Profile.rtlBandwidthHz		= pdw::signal::DefaultNfmBandwidthHz;
 	Profile.rtlAutomaticGain	= 1;
 	Profile.rtlSignalConditionerEnabled = 0;
+	Profile.rtlProcessing = pdw::signal::DefaultRadioProcessingSettings();
 	Profile.rtlDeviceIndex		= 0;
 	strcpy(Profile.rtlReceiverId, "rtl-sdr-standard");
 	memset(Profile.audioThreshold, 0, sizeof(Profile.audioThreshold));
@@ -930,10 +935,12 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdLi
 	if (GetLastError() == ERROR_ALREADY_EXISTS)	// Shut down, as an instance of PDW is
 	{											// already running in this folder
 		CloseHandle(instanceMutex);
-		MessageBox(ghWnd, "PDW is already running", "Warning", MB_ICONINFORMATION);
+		if (!recoveryAttempt) MessageBox(ghWnd, "PDW is already running", "Warning", MB_ICONINFORMATION);
 		return (FALSE);
 	}
 
+	if (!channelWorker && Profile.audioEnabled && !Profile.comPortEnabled && Profile.audioSource != AUDIO_SOURCE_LOCAL)
+		ArmReceiverRecovery(recoveryAttempt);
 	if ((ghWnd = InitInstance(hInstance, nCmdShow)) == NULL)
 	{
 		ErrorMessageBox(TEXT("InitInstance() Failed"),
@@ -1081,7 +1088,11 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			return 0;
 
 		case WM_TIMER: // Decode POCSAG/FLEX with comport or sound card.
-		if (wParam == SECOND_TIMER) FtpSchedulerTick();
+		if (wParam == SECOND_TIMER)
+		{
+			PublishReceiverHealthIfRequested();
+			FtpSchedulerTick();
+		}
 		if (wParam == PDW_TIMER) SignalSourceService();
 
 		if (!bPauseFlag)
@@ -1949,6 +1960,10 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 										 hWnd, (DLGPROC) AboutDlgProc, 0L);
 				break;
 
+				case IDM_UPDATES:
+					ShowUpdatesAndVersions(hWnd);
+				break;
+
 				case IDM_KEYBOARD_SHORTCUTS:
 					MessageBoxA(hWnd,
 						"Ctrl+,    Open or focus Settings\n"
@@ -2125,6 +2140,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		case WM_DPICHANGED:
 		{
+			PdwThemeApplyToMainWindow(hWnd, hToolbar);
 			if (lParam)
 			{
 				RECT* suggested = reinterpret_cast<RECT*>(lParam);
@@ -2281,6 +2297,7 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 
 		case WM_DESTROY:
 		{
+			DisarmReceiverRecovery();
 			KillTimer(ghWnd, PDW_TIMER);
 			KillTimer(ghWnd, MINUTE_TIMER);
 			KillTimer(ghWnd, SECOND_TIMER);
@@ -2371,6 +2388,10 @@ LRESULT FAR PASCAL PDWWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			}
 			break;
 		}
+
+		case WM_ENDSESSION:
+			if (wParam) DisarmReceiverRecovery();
+			return DefWindowProc(hWnd, uMsg, wParam, lParam);
 
 		case WM_CLOSE:
 
@@ -10491,6 +10512,15 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	pProfile->rtlBandwidthHz			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlBandwidthHz"), pProfile->rtlBandwidthHz, lpszIniPathName);
 	pProfile->rtlAutomaticGain			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlAutomaticGain"), pProfile->rtlAutomaticGain, lpszIniPathName);
 	pProfile->rtlSignalConditionerEnabled = (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlSignalConditioner"), pProfile->rtlSignalConditionerEnabled, lpszIniPathName);
+	{
+		std::size_t count = 0;
+		const pdw::signal::RadioSetting* fields = pdw::signal::RadioSettings(count);
+		for (std::size_t index = 0; index < count; ++index)
+			pProfile->rtlProcessing.*(fields[index].member) = static_cast<int>(
+				GetPrivateProfileIntA(lpszAppTitle, fields[index].key,
+					fields[index].defaultValue, lpszIniPathName));
+		pdw::signal::NormalizeRadioProcessingSettings(pProfile->rtlProcessing);
+	}
 	pProfile->rtlDeviceIndex			= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("RtlDeviceIndex"), pProfile->rtlDeviceIndex, lpszIniPathName);
 	GetPrivateProfileString(lpszAppTitle, TEXT("RtlReceiverId"), "rtl-sdr-standard", pProfile->rtlReceiverId, sizeof(pProfile->rtlReceiverId), lpszIniPathName);
 	pProfile->audioThreshold[INDEX512]	= (INT) GetPrivateProfileInt(lpszAppTitle, TEXT("Threshold512"), pProfile->audioThreshold[INDEX512], lpszIniPathName);
@@ -10515,7 +10545,7 @@ BOOL GetPrivateProfileSettings(LPCTSTR lpszAppTitle, LPCTSTR lpszIniPathName, PP
 	if (pProfile->rtlAudioSampleRate < 8000 || pProfile->rtlAudioSampleRate > 192000 ||
 		pProfile->rtlAudioSampleRate > pProfile->rtlSampleRate) pProfile->rtlAudioSampleRate = 48000;
 	if (pProfile->rtlDeviceIndex < 0) pProfile->rtlDeviceIndex = 0;
-	if (pProfile->rtlBandwidthHz < 5000 || pProfile->rtlBandwidthHz > 25000) pProfile->rtlBandwidthHz = 12000;
+	if (pProfile->rtlBandwidthHz < 5000 || pProfile->rtlBandwidthHz > 25000) pProfile->rtlBandwidthHz = pdw::signal::DefaultNfmBandwidthHz;
 	pProfile->rtlSignalConditionerEnabled = pProfile->rtlSignalConditionerEnabled ? 1 : 0;
 	if (!pProfile->rtlReceiverId[0]) strcpy(pProfile->rtlReceiverId, "rtl-sdr-standard");
 	for (int audioIndex = 0; audioIndex < AUDIO_CUSTOM_RATE_COUNT; audioIndex++)
@@ -11232,6 +11262,13 @@ bool TryWriteSettings()
 		fprintf(pFile, "RtlBandwidthHz=%i\n",			Profile.rtlBandwidthHz);
 		fprintf(pFile, "RtlAutomaticGain=%i\n",		Profile.rtlAutomaticGain);
 		fprintf(pFile, "RtlSignalConditioner=%i\n",	Profile.rtlSignalConditionerEnabled);
+		{
+			std::size_t count = 0;
+			const pdw::signal::RadioSetting* fields = pdw::signal::RadioSettings(count);
+			for (std::size_t index = 0; index < count; ++index)
+				fprintf(pFile, "%s=%i\n", fields[index].key,
+					Profile.rtlProcessing.*(fields[index].member));
+		}
 		fprintf(pFile, "RtlDeviceIndex=%i\n",			Profile.rtlDeviceIndex);
 		fprintf(pFile, "RtlReceiverId=%s\n",			Profile.rtlReceiverId);
 		fprintf(pFile, "Threshold512=%i\n",				Profile.audioThreshold[INDEX512]);

@@ -26,6 +26,19 @@ int LegacyPcm8Value(std::uint8_t sample)
 	return static_cast<int>(sample) - 128;
 }
 
+double ResyncSymbolClock(double wantedCentre, double currentCentre,
+	double symbolPeriod, bool trackLockedFrame)
+{
+	if (!trackLockedFrame || currentCentre == -1 || symbolPeriod <= 0)
+		return wantedCentre;
+	// Compare phase modulo one symbol: an edge can refer to the centre
+	// after the pending sample. Never jump a full symbol or follow one
+	// noisy crossing all the way away from the established sampling eye.
+	double error = wantedCentre - currentCentre;
+	error -= std::floor(error / symbolPeriod + 0.5) * symbolPeriod;
+	return currentCentre + 0.08 * error;
+}
+
 unsigned char HybridFourLevelSymbol(unsigned char legacyTwoLevelSymbol,
 	unsigned char enhancedFourLevelSymbol)
 {
@@ -46,7 +59,12 @@ float ClampNormalized(float sample)
 }
 
 AdaptiveSlicerConfig::AdaptiveSlicerConfig()
-	: dcTrackingRate(0.001f),
+	// At the decoder's 44.1 kHz reference rate, a 0.001 tracker follows the
+	// mean of only about 36 FLEX symbols. Random data then shifts the centre
+	// far enough to confuse inner and outer levels on a clean four-level
+	// waveform. Track slow DC drift over about 227 ms instead; the legacy
+	// sign/timing decision remains the authority for phases A/C.
+	: dcTrackingRate(0.0001f),
 	  envelopeAttackRate(0.08f),
 	  envelopeReleaseRate(0.001f),
 	  minimumEnvelope(0.02f)
@@ -67,17 +85,19 @@ void AdaptiveSlicer::Reset()
 	state_.confidence = 0.0f;
 }
 
-AdaptiveSlicerState AdaptiveSlicer::Observe(float sample)
+AdaptiveSlicerState AdaptiveSlicer::Observe(float sample, bool track)
 {
 	sample = ClampNormalized(sample);
-	state_.dcOffset += config_.dcTrackingRate * (sample - state_.dcOffset);
-
-	const float magnitude = std::fabs(sample - state_.dcOffset);
-	const float rate = magnitude > state_.envelope
-		? config_.envelopeAttackRate
-		: config_.envelopeReleaseRate;
-	state_.envelope += rate * (magnitude - state_.envelope);
-	state_.envelope = std::max(config_.minimumEnvelope, state_.envelope);
+	if (track)
+	{
+		state_.dcOffset += config_.dcTrackingRate * (sample - state_.dcOffset);
+		const float magnitude = std::fabs(sample - state_.dcOffset);
+		const float rate = magnitude > state_.envelope
+			? config_.envelopeAttackRate
+			: config_.envelopeReleaseRate;
+		state_.envelope += rate * (magnitude - state_.envelope);
+		state_.envelope = std::max(config_.minimumEnvelope, state_.envelope);
+	}
 
 	state_.normalizedLevel = Clamp((sample - state_.dcOffset) / state_.envelope, -1.5f, 1.5f);
 	state_.confidence = Clamp((state_.envelope - config_.minimumEnvelope) /

@@ -6,6 +6,7 @@
 
 #include "headers/pdw.h"
 #include "headers/misc.h"
+#include "headers/sound_in.h"
 #include "headers/helper_funcs.h"
 #include "pocsag_test_environment.h"
 
@@ -20,6 +21,9 @@ PaneStruct Pane2;
 int pocsag_baud_rate = STAT_POCSAG1200;
 int pocbit = 0;
 char ob[32] = { 0 };
+unsigned int bch[1025] = {}, ecs[25] = {};
+char high_audio = DEFAULT_HI_AUDIO, low_audio = DEFAULT_LO_AUDIO, atb_bit = 0;
+int sync_bit = DEFAULT_LO_AUDIO;
 
 unsigned long hourly_stat[NUM_STAT][2] = { 0 };
 unsigned long hourly_char[NUM_STAT][2] = { 0 };
@@ -47,24 +51,6 @@ namespace
 	bool g_invalidCodeword = false;
 	bool g_changedPolarity = false;
 
-	unsigned int EccContribution(unsigned int index)
-	{
-		unsigned int shift = 0x3B4;
-		for (unsigned int current = 0; current < index; ++current)
-			shift = (shift & 1u) ? ((shift >> 1) ^ 0x3B4u) : (shift >> 1);
-		return shift;
-	}
-
-	int TenBitOnes(unsigned int value)
-	{
-		int count = 0;
-		for (int bit = 0; bit < 10; ++bit)
-		{
-			if (value & 1u) ++count;
-			value >>= 1;
-		}
-		return count;
-	}
 }
 
 namespace pdw_test
@@ -89,6 +75,9 @@ namespace pdw_test
 		Profile.pocsag_fnu = 1;
 		Profile.pocsag_showboth = 0;
 		Profile.invert = 0;
+		high_audio = DEFAULT_HI_AUDIO;
+		low_audio = DEFAULT_LO_AUDIO;
+		setupecc();
 		pocsag_baud_rate = STAT_POCSAG1200;
 		pocbit = 0;
 		g_payload.clear();
@@ -119,60 +108,15 @@ namespace pdw_test
 	}
 }
 
-int nOnes(int value)
+static void CountPagingBchWord(int errors)
 {
-	unsigned int bits = static_cast<unsigned int>(value);
-	int count = 0;
-	for (int bit = 0; bit < 16; ++bit)
-	{
-		if (bits & 1u) ++count;
-		bits >>= 1;
-	}
-	return count;
-}
-
-int ecd()
-{
-	unsigned int calculatedEcc = 0;
-	unsigned int receivedEcc = 0;
-	int parity = 0;
-
-	for (unsigned int bit = 0; bit <= 20; ++bit)
-	{
-		if (ob[bit] == 1)
-		{
-			calculatedEcc ^= EccContribution(bit);
-			parity ^= 1;
-		}
-	}
-	for (unsigned int bit = 21; bit <= 30; ++bit)
-	{
-		receivedEcc <<= 1;
-		if (ob[bit] == 1) receivedEcc ^= 1u;
-	}
-
-	int errors = 0;
-	if ((calculatedEcc ^ receivedEcc) != 0)
-	{
-		// These fixtures deliberately cover only clean codewords. Marking a
-		// syndrome as uncorrectable prevents this test shim from masquerading as
-		// production BCH correction evidence.
-		g_invalidCodeword = true;
-		errors = 3;
-	}
-	else
-	{
-		parity = (parity + TenBitOnes(calculatedEcc)) & 1;
-		if (parity != ob[31])
-		{
-			g_invalidCodeword = true;
-			errors = 1;
-		}
-	}
-
+	if (errors >= 3) g_invalidCodeword = true;
 	CountBiterrors(errors);
-	return errors;
 }
+
+#define InvertData InvertFixturePolarity
+#include "bch.inc"
+#undef InvertData
 
 void CountBiterrors(int errors)
 {
@@ -181,7 +125,7 @@ void CountBiterrors(int errors)
 
 void InvertData(void)
 {
-	Profile.invert ^= 1u;
+	InvertFixturePolarity();
 	g_changedPolarity = true;
 }
 

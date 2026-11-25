@@ -16,6 +16,11 @@ float NormalizePcm16(std::int16_t sample);
 float ClampNormalized(float sample);
 int LegacyPcm8Value(std::uint8_t sample);
 
+// Track crossing jitter only after a validated frame has locked. Acquisition
+// and legacy inputs retain their immediate edge-based clock placement.
+double ResyncSymbolClock(double wantedCentre, double currentCentre,
+	double symbolPeriod, bool trackLockedFrame);
+
 // Combines PDW's field-tested two-level sign decision with the enhanced
 // slicer's inner/outer decision. This keeps legacy FLEX phases A/C on their
 // original bit path while enabling four-level phases B/D alongside them.
@@ -49,7 +54,9 @@ public:
 	explicit AdaptiveSlicer(const AdaptiveSlicerConfig& config = AdaptiveSlicerConfig());
 
 	void Reset();
-	AdaptiveSlicerState Observe(float sample);
+	// A validated FLEX header trains the thresholds at the outer levels.
+	// Hold them during its payload so biased data cannot become a DC estimate.
+	AdaptiveSlicerState Observe(float sample, bool track = true);
 	unsigned char SliceTwoLevel(float sample);
 	unsigned char SliceFourLevel(float sample);
 	unsigned char CurrentTwoLevelSymbol() const;

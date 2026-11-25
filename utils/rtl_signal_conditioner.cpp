@@ -251,7 +251,7 @@ unsigned int PolyphaseFirResampler::phaseCount() const
 }
 
 RtlSignalConditioner::RtlSignalConditioner()
-	: iqSampleRate_(1024000), audioSampleRate_(48000), nfmCutoffHz_(12000),
+	: iqSampleRate_(1024000), audioSampleRate_(48000), nfmCutoffHz_(DefaultNfmBandwidthHz),
 	  demodulatorSampleRate_(96000), havePreviousIq_(false)
 {
 	previousIq_.i = 0.0f;
@@ -271,13 +271,18 @@ RtlSignalConditioner::RtlSignalConditioner(std::uint32_t iqSampleRate,
 }
 
 void RtlSignalConditioner::Configure(std::uint32_t iqSampleRate,
-	std::uint32_t audioSampleRate, std::uint32_t nfmCutoffHz)
+	std::uint32_t audioSampleRate, std::uint32_t nfmCutoffHz,
+	const RadioProcessingSettings& processing)
 {
+	processing_ = processing;
+	NormalizeRadioProcessingSettings(processing_);
 	iqSampleRate_ = iqSampleRate ? iqSampleRate : 1024000;
 	audioSampleRate_ = audioSampleRate && audioSampleRate <= iqSampleRate_
 		? audioSampleRate : 48000;
 	nfmCutoffHz_ = (std::max)(static_cast<std::uint32_t>(5000),
 		(std::min)(static_cast<std::uint32_t>(25000), nfmCutoffHz));
+	if (processing_.demodulation == RADIO_WFM) nfmCutoffHz_ = processing_.wfmCutoffHz;
+	if (processing_.demodulation == RADIO_AM) nfmCutoffHz_ = processing_.amCutoffHz;
 	demodulatorSampleRate_ = ChooseDemodulatorRate(iqSampleRate_,
 		audioSampleRate_, nfmCutoffHz_);
 
@@ -286,9 +291,12 @@ void RtlSignalConditioner::Configure(std::uint32_t iqSampleRate,
 	iqResampler_.Configure(iqSampleRate_, demodulatorSampleRate_, iqCutoff);
 	const std::uint32_t limitingAudioRate = (std::min)(demodulatorSampleRate_,
 		audioSampleRate_);
-	const float audioCutoff = (std::min)(static_cast<float>(nfmCutoffHz_),
+	const float audioCutoff = (std::min)(processing_.demodulation == RADIO_WFM
+		? 15000.0f : static_cast<float>(nfmCutoffHz_),
 		static_cast<float>(limitingAudioRate) * 0.42f);
 	audioResampler_.Configure(demodulatorSampleRate_, audioSampleRate_, audioCutoff);
+	audioProcessor_.Configure(audioSampleRate_, processing_);
+	squelch_.Configure(demodulatorSampleRate_, processing_);
 	Reset();
 }
 
@@ -301,6 +309,9 @@ void RtlSignalConditioner::Reset()
 	havePreviousIq_ = false;
 	havePendingI_ = false;
 	pendingI_ = 0;
+	amCarrier_ = 0.0f;
+	audioProcessor_.Reset();
+	squelch_.Reset();
 }
 
 void RtlSignalConditioner::ProcessUnsignedIq(const unsigned char* iqBytes,
@@ -334,6 +345,7 @@ void RtlSignalConditioner::ProcessUnsignedIq(const unsigned char* iqBytes,
 	for (std::vector<ComplexSample>::const_iterator sample = filteredIqScratch_.begin();
 		sample != filteredIqScratch_.end(); ++sample)
 	{
+		const bool gateOpen = squelch_.Observe(sample->i, sample->q);
 		if (havePreviousIq_)
 		{
 			const float cross = previousIq_.i * sample->q - previousIq_.q * sample->i;
@@ -346,7 +358,16 @@ void RtlSignalConditioner::ProcessUnsignedIq(const unsigned char* iqBytes,
 				(2.0 * static_cast<double>(nfmCutoffHz_));
 			demodulated.i = static_cast<float>(
 				std::atan2(cross, dot) / PI * frequencyScale);
-			demodulated.q = 0.0f;
+			if (processing_.demodulation == RADIO_AM)
+			{
+				const float envelope = std::sqrt(sample->i * sample->i + sample->q * sample->q);
+				const float alpha = 1.0f - std::exp(-2.0f * static_cast<float>(PI) * 20.0f /
+					static_cast<float>(demodulatorSampleRate_));
+				amCarrier_ += alpha * (envelope - amCarrier_);
+				demodulated.i = envelope - amCarrier_;
+			}
+			// Carry gate timing through the same resampler as the audio.
+			demodulated.q = processing_.squelchEnabled && gateOpen ? 1.0f : 0.0f;
 			discriminatorScratch_.push_back(demodulated);
 		}
 		previousIq_ = *sample;
@@ -363,6 +384,10 @@ void RtlSignalConditioner::ProcessUnsignedIq(const unsigned char* iqBytes,
 	for (std::vector<ComplexSample>::const_iterator sample = resampledAudioScratch_.begin();
 		sample != resampledAudioScratch_.end(); ++sample)
 		audio.push_back(ClampNormalized(sample->i));
+	audioProcessor_.Process(audio);
+	if (processing_.squelchEnabled)
+		for (std::size_t index = 0; index < audio.size(); ++index)
+			if (resampledAudioScratch_[index].q < 0.5f) audio[index] = 0.0f;
 }
 
 std::uint32_t RtlSignalConditioner::demodulatorSampleRate() const

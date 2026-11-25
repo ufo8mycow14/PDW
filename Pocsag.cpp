@@ -169,7 +169,7 @@ void POCSAG::process_word(int fn2)
 	static unsigned int du;
 	int i, errl = ecd();		// run error correcting routine
 
-	if (errl < 2) pocbit = 170;
+	if (errl <= 2) pocbit = 170;
 
 	if (ob[MSB] == 1)	// MSB=1 means message
 	{

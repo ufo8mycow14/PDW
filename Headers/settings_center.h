@@ -21,6 +21,7 @@ void ShowSettingsCenter(HWND owner, int page = PDW_SETTINGS_GENERAL);
 BOOL SettingsCenterIsDialogMessage(MSG* message);
 void SettingsCenterNotifyThemeChanged(void);
 void SettingsCenterClose(void);
+void ShowUpdatesAndVersions(HWND owner);
 HWND SettingsCenterWindow(void);
 
 #endif

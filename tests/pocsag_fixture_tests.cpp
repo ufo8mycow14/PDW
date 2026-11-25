@@ -8,6 +8,7 @@
 #include "pocsag_test_environment.h"
 #include "utils/decoder_audio_adapter.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
@@ -103,6 +104,16 @@ namespace
 				"] but received [" + actual + "]");
 	}
 
+	std::vector<int> DamageMessageWords(std::vector<int> bits)
+	{
+		for (std::size_t word = 2; word + 1 < bits.size() / 32; ++word)
+		{
+			bits[word * 32 + 2] ^= 1;
+			bits[word * 32 + 12] ^= 1;
+		}
+		return bits;
+	}
+
 	void RunFixture(const std::string& fixtureDirectory, const char* fixtureName,
 		std::size_t expectedWordCount)
 	{
@@ -152,8 +163,6 @@ namespace
 		// boundaries so one batch cannot influence the next case.
 		decoder.frame(-1);
 		// Sample the same synthetic codewords at every supported reference case.
-		// This exercises the production FIR and POCSAG frame decoder; acquisition
-		// timing in the application remains a separate native integration gate.
 		for (const unsigned rate : {8000u, 44100u, 48000u, 96000u, 192000u})
 		{
 			std::vector<float> audio((bits.size() * static_cast<std::uint64_t>(rate) + 1199) / 1200);
@@ -180,16 +189,52 @@ namespace
 				"rate-adapted synthetic recording retains exact decoded identity and text");
 			decoder.frame(-1);
 		}
+		for (unsigned baud : {512u, 1200u, 2400u}) for (bool reversed : {false, true})
+		{
+			pdw_test::RunPocsagAudio(bits, baud, reversed ? 44100u : 48000u, reversed ? 997u : 32768u, reversed);
+			const auto& rows = pdw_test::CapturedPocsagMessages();
+			const std::string scenario = baseName + " at " + std::to_string(baud) + (reversed ? " reversed" : " normal");
+			Expect(rows.size() == 1, scenario + " must produce exactly one row through IQ and the paging slicer");
+			Expect(rows[0].payload == expected.payload && rows[0].address == expected.address &&
+				rows[0].messageType == expected.messageType && rows[0].mode == expected.mode &&
+				std::stoi(rows[0].bitrate) == static_cast<int>(baud), scenario + " must reproduce the exact expected row");
+			const auto& checks = pdw_test::PocsagBitErrorObservations();
+			Expect(checks.size() == expectedWordCount - 1 && std::all_of(checks.begin(), checks.end(),
+				[](int errors) { return errors == 0; }), scenario + " clean IQ must require no repairs");
+		}
+		if (baseName == "synthetic-basic-1200")
+		{
+			const auto damaged = DamageMessageWords(bits);
+			pdw_test::RunPocsagAudio(damaged, 1200, 48000, 997, false);
+			const auto& rows = pdw_test::CapturedPocsagMessages();
+			const auto& checks = pdw_test::PocsagBitErrorObservations();
+			Expect(rows.size() == 1 && rows[0].payload == expected.payload && rows[0].address == expected.address,
+				"Seven consecutive correctable two-bit words must retain lock and exact POCSAG text");
+			Expect(!pdw_test::PocsagFixtureHadInvalidCodeword() && std::count(checks.begin(), checks.end(), 2) == 7,
+				"All seven injected two-bit checks must be reported, not suppressed");
+		}
 	}
 }
 
 int main(int argc, char* argv[])
 {
+	if (argc == 4 && (std::string(argv[1]) == "--append-native-iq" || std::string(argv[1]) == "--append-truncated-iq"))
+	{
+		auto bits = DamageMessageWords(ReadBits(JoinPath(argv[2], "synthetic-basic-1200.bits")));
+		const std::vector<int> idleWord(bits.end() - 32, bits.end());
+		if (std::string(argv[1]) == "--append-native-iq")
+			while (bits.size() < 17 * 32) bits.insert(bits.end(), idleWord.begin(), idleWord.end());
+		const auto iq = pdw_test::SyntheticPocsagIq(bits, 1200, false);
+		std::ofstream output(argv[3], std::ios::binary | std::ios::app);
+		output.write(reinterpret_cast<const char*>(iq.data()), static_cast<std::streamsize>(iq.size()));
+		output.close();
+		return output ? 0 : 1;
+	}
 	if (argc != 2) Fail("usage: PDWPocsagFixtureTests <fixture-directory>");
 	const std::string fixtureDirectory = argv[1];
 	RunFixture(fixtureDirectory, "synthetic-basic-1200", 10);
 	RunFixture(fixtureDirectory, "synthetic-numeric-1200", 4);
 	RunFixture(fixtureDirectory, "synthetic-tone-1200", 3);
-	std::cout << "synthetic POCSAG alpha/numeric/tone fixture regression passed\n";
+	std::cout << "18 clean 12500 Hz IQ-to-row cases and one seven-word BCH recovery passed (POCSAG alpha/numeric/tone).\n";
 	return 0;
 }

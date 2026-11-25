@@ -4,6 +4,7 @@
 // Keep the command-bar and pane layout on one shared geometry contract. The
 // common toolbar control must not substitute its legacy single-line height.
 enum { PDW_COMMAND_BAR_HEIGHT = 54 };
+int ToolbarHeight(HWND window);
 
 HWND ShowMakeToolBar(HWND parent_hwnd,HINSTANCE hThisInstance);
 BOOL GetToolBarImages(HINSTANCE hThisInstance);

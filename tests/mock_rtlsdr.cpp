@@ -1,5 +1,7 @@
 #include <cstdint>
 #include <cstddef>
+#include <cstdio>
+#include <cstring>
 #include <windows.h>
 
 namespace
@@ -11,6 +13,18 @@ namespace
 	volatile LONG g_allowCancelReturn = 0;
 	volatile LONG g_readAsyncReturning = 0;
 	volatile LONG g_closeCount = 0;
+	volatile LONG g_ignoreOneCancel = 0;
+
+	BOOL CALLBACK CloseOwnFixtureWindow(HWND window, LPARAM)
+	{
+		DWORD owner = 0;
+		GetWindowThreadProcessId(window, &owner);
+		wchar_t name[64];
+		if (owner != GetCurrentProcessId() || !GetClassNameW(window, name, 64) ||
+			lstrcmpW(name, L"WinPDWWndClass") != 0) return TRUE;
+		PostMessageW(window, WM_CLOSE, 0, 0);
+		return FALSE;
+	}
 }
 
 extern "C"
@@ -51,6 +65,7 @@ extern "C"
 	__declspec(dllexport) int __cdecl rtlsdr_set_center_freq(void*, std::uint32_t frequency)
 	{
 		InterlockedExchange(&g_endCaptureEarly, frequency == 148812501 ? 1 : 0);
+		InterlockedExchange(&g_ignoreOneCancel, frequency == 148812502 ? 1 : 0);
 		return 0;
 	}
 	__declspec(dllexport) int __cdecl rtlsdr_set_sample_rate(void*, std::uint32_t) { return 0; }
@@ -67,18 +82,69 @@ extern "C"
 		std::uint32_t, std::uint32_t)
 	{
 		unsigned char iq[32768];
+		wchar_t stallFile[MAX_PATH] = {}, closeFile[MAX_PATH] = {}, crashFile[MAX_PATH] = {};
+		const bool lifecycle = GetEnvironmentVariableW(L"PDW_TEST_RTL_CLOSE_REQUEST", closeFile, MAX_PATH) > 0 &&
+			GetEnvironmentVariableW(L"PDW_TEST_RTL_CRASH_REQUEST", crashFile, MAX_PATH) > 0;
+		if (lifecycle && GetEnvironmentVariableW(L"PDW_TEST_RTL_STALL_ONCE", stallFile, MAX_PATH))
+		{
+			HANDLE first = CreateFileW(stallFile, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+			if (first != INVALID_HANDLE_VALUE)
+			{
+				CloseHandle(first);
+				while (!InterlockedCompareExchange(&g_cancelRequested, 0, 0))
+				{
+					if (callback) callback(NULL, 0, context);
+					Sleep(16);
+				}
+				return 0;
+			}
+			wchar_t lateStall[MAX_PATH] = {};
+			if (GetEnvironmentVariableW(L"PDW_TEST_RTL_STALL_AFTER_IQ", lateStall, MAX_PATH) && DeleteFileW(lateStall))
+			{
+				std::memset(iq, 128, sizeof(iq));
+				if (callback) callback(iq, sizeof(iq), context);
+				while (!InterlockedCompareExchange(&g_cancelRequested, 0, 0)) Sleep(10);
+				return 0;
+			}
+		}
+		wchar_t fixturePath[MAX_PATH] = {};
+		const DWORD pathLength = GetEnvironmentVariableW(L"PDW_TEST_RTL_SYNTHETIC_IQ", fixturePath, MAX_PATH);
+		if (pathLength && pathLength < MAX_PATH && callback)
+		{
+			HANDLE fixture = CreateFileW(fixturePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+			if (fixture == INVALID_HANDLE_VALUE) return -1;
+			DWORD bytes = 0;
+			wchar_t timing[16] = {};
+			GetEnvironmentVariableW(L"PDW_TEST_RTL_CADENCE", timing, 16);
+			const DWORD callbackDelay = lstrcmpW(timing, L"delayed") == 0 ? 32 : lstrcmpW(timing, L"fast") == 0 ? 4 : 16;
+			while (InterlockedCompareExchange(&g_cancelRequested, 0, 0) == 0 &&
+				ReadFile(fixture, iq, sizeof(iq), &bytes, NULL) && bytes)
+			{
+				callback(iq, bytes, context);
+				Sleep(callbackDelay);
+			}
+			CloseHandle(fixture);
+		}
 		for (std::size_t index = 0; index < sizeof(iq); index += 2)
 		{
 			iq[index] = static_cast<unsigned char>(96 + ((index / 2) % 64));
 			iq[index + 1] = static_cast<unsigned char>(159 - ((index / 2) % 64));
 		}
+		if (lifecycle) std::memset(iq, 128, sizeof(iq));
 		if (callback) callback(iq, static_cast<std::uint32_t>(sizeof(iq)), context);
 		char markerPath[MAX_PATH] = {};
 		if (GetEnvironmentVariableA("PDW_TEST_RTL_CALLBACK_MARKER", markerPath, MAX_PATH))
 		{
 			HANDLE marker = CreateFileA(markerPath, GENERIC_WRITE, FILE_SHARE_READ,
 				NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-			if (marker != INVALID_HANDLE_VALUE) CloseHandle(marker);
+			if (marker != INVALID_HANDLE_VALUE)
+			{
+				char text[32];
+				const int length = sprintf_s(text, "%lu", GetCurrentProcessId());
+				DWORD written = 0;
+				if (length > 0) WriteFile(marker, text, static_cast<DWORD>(length), &written, NULL);
+				CloseHandle(marker);
+			}
 		}
 		if (InterlockedCompareExchange(&g_endCaptureEarly, 0, 0) != 0)
 		{
@@ -86,12 +152,22 @@ extern "C"
 			InterlockedExchange(&g_readAsyncReturning, 1);
 			return 0;
 		}
-		while (InterlockedCompareExchange(&g_cancelRequested, 0, 0) == 0) Sleep(5);
+		while (InterlockedCompareExchange(&g_cancelRequested, 0, 0) == 0)
+		{
+			if (lifecycle)
+			{
+				if (DeleteFileW(crashFile)) TerminateProcess(GetCurrentProcess(), EXCEPTION_ACCESS_VIOLATION);
+				if (DeleteFileW(closeFile)) EnumWindows(CloseOwnFixtureWindow, 0);
+				if (callback) callback(iq, sizeof(iq), context);
+			}
+			Sleep(lifecycle ? 16 : 5);
+		}
 		InterlockedExchange(&g_readAsyncReturning, 1);
 		return 0;
 	}
 	__declspec(dllexport) int __cdecl rtlsdr_cancel_async(void*)
 	{
+		if (InterlockedExchange(&g_ignoreOneCancel, 0)) return -2;
 		InterlockedExchange(&g_cancelRequested, 1);
 		if (InterlockedCompareExchange(&g_blockCancelReturn, 0, 0) != 0)
 		{

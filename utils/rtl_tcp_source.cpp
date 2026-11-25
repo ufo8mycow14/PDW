@@ -6,6 +6,7 @@
 #include "audio_signal_core.h"
 
 #include <cmath>
+#include <algorithm>
 #include <cstring>
 
 namespace pdw
@@ -82,22 +83,25 @@ void SetRtlStopThreadWaitFunctionForTesting(RtlStopThreadWaitFunction waitFuncti
 RtlTcpConfig::RtlTcpConfig()
 	: host("127.0.0.1"), port(1234), frequencyHz(148000000),
 	  sampleRate(1024000), audioSampleRate(48000), gainTenthsDb(0),
-	  frequencyCorrectionPpm(0), nfmBandwidthHz(12000), automaticGain(true),
-	  signalConditionerEnabled(false)
+	  frequencyCorrectionPpm(0), nfmBandwidthHz(DefaultNfmBandwidthHz), automaticGain(true),
+	  signalConditionerEnabled(false), processing(DefaultRadioProcessingSettings())
 {
 }
 
 RtlFmDemodulator::RtlFmDemodulator(std::uint32_t iqSampleRate,
 	std::uint32_t audioSampleRate, std::uint32_t nfmBandwidthHz,
-	bool signalConditionerEnabled)
+	bool signalConditionerEnabled, const RadioProcessingSettings& processing)
 {
 	Configure(iqSampleRate, audioSampleRate, nfmBandwidthHz,
-		signalConditionerEnabled);
+		signalConditionerEnabled, processing);
 }
 
 void RtlFmDemodulator::Configure(std::uint32_t iqSampleRate, std::uint32_t audioSampleRate,
-	std::uint32_t nfmBandwidthHz, bool signalConditionerEnabled)
+	std::uint32_t nfmBandwidthHz, bool signalConditionerEnabled,
+	const RadioProcessingSettings& processing)
 {
+	processing_ = processing;
+	NormalizeRadioProcessingSettings(processing_);
 	iqSampleRate_ = iqSampleRate ? iqSampleRate : 1024000;
 	audioSampleRate_ = audioSampleRate && audioSampleRate <= iqSampleRate_
 		? audioSampleRate : 48000;
@@ -107,9 +111,13 @@ void RtlFmDemodulator::Configure(std::uint32_t iqSampleRate, std::uint32_t audio
 		static_cast<float>(iqSampleRate_) * 0.45f);
 	lowPassAlpha_ = 1.0f - std::exp(-2.0f * 3.14159265358979323846f * cutoff /
 		static_cast<float>(iqSampleRate_));
-	signalConditionerEnabled_ = signalConditionerEnabled;
+	// AM and WFM require channel filtering before demodulation. The NFM
+	// compatibility path is preserved exactly when optional processing is off.
+	signalConditionerEnabled_ = signalConditionerEnabled || processing_.demodulation != RADIO_NFM;
 	if (signalConditionerEnabled_)
-		signalConditioner_.Configure(iqSampleRate_, audioSampleRate_, nfmBandwidthHz_);
+		signalConditioner_.Configure(iqSampleRate_, audioSampleRate_, nfmBandwidthHz_, processing_);
+	audioProcessor_.Configure(audioSampleRate_, processing_);
+	squelch_.Configure(iqSampleRate_, processing_);
 	Reset();
 }
 
@@ -125,6 +133,8 @@ void RtlFmDemodulator::Reset()
 	pendingI_ = 0;
 	lowPassState_ = 0.0f;
 	signalConditioner_.Reset();
+	audioProcessor_.Reset();
+	squelch_.Reset();
 }
 
 void RtlFmDemodulator::ProcessUnsignedIq(const unsigned char* iqBytes,
@@ -138,6 +148,7 @@ void RtlFmDemodulator::ProcessUnsignedIq(const unsigned char* iqBytes,
 	}
 
 	audio.clear();
+	squelchMask_.clear();
 	if (!iqBytes || !byteCount) return;
 	audio.reserve((byteCount / 2) * audioSampleRate_ / iqSampleRate_ + 2);
 	for (std::size_t byte = 0; byte < byteCount;)
@@ -147,6 +158,7 @@ void RtlFmDemodulator::ProcessUnsignedIq(const unsigned char* iqBytes,
 		const float currentI = (static_cast<int>(pendingI_) - 127.5f) / 128.0f;
 		const float currentQ = (static_cast<int>(iqBytes[byte++]) - 127.5f) / 128.0f;
 		havePendingI_ = false;
+		const bool gateOpen = squelch_.Observe(currentI, currentQ);
 		if (havePrevious_)
 		{
 			const float cross = previousI_ * currentQ - previousQ_ * currentI;
@@ -160,6 +172,7 @@ void RtlFmDemodulator::ProcessUnsignedIq(const unsigned char* iqBytes,
 			{
 				resamplePhase_ -= iqSampleRate_;
 				audio.push_back(ClampNormalized(accumulator_ / accumulatorCount_));
+				if (processing_.squelchEnabled) squelchMask_.push_back(gateOpen ? 1 : 0);
 				accumulator_ = 0.0f;
 				accumulatorCount_ = 0;
 			}
@@ -168,6 +181,10 @@ void RtlFmDemodulator::ProcessUnsignedIq(const unsigned char* iqBytes,
 		previousQ_ = currentQ;
 		havePrevious_ = true;
 	}
+	audioProcessor_.Process(audio);
+	if (processing_.squelchEnabled)
+		for (std::size_t index = 0; index < audio.size(); ++index)
+			if (!squelchMask_[index]) audio[index] = 0.0f;
 }
 
 RtlTcpSource::RtlTcpSource()
@@ -188,6 +205,12 @@ bool RtlTcpSource::Start(const RtlTcpConfig& config, AudioSampleSink* sink)
 	if (!sink || config.host.empty() || config.port == 0 || config.sampleRate < 48000)
 		return false;
 	if (!Stop()) return false;
+	std::string processingError;
+	if (!ValidateRadioProcessingSettings(config.processing, config.audioSampleRate, processingError))
+	{
+		SetState(RTL_TCP_FAILED, processingError.c_str());
+		return false;
+	}
 	config_ = config;
 	sink_ = sink;
 	stopEvent_ = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -420,7 +443,7 @@ bool RtlTcpSource::ConnectAndReceive()
 	SetState(RTL_TCP_RUNNING, NULL);
 	SetEvent(readyEvent_);
 	RtlFmDemodulator demodulator(config_.sampleRate, config_.audioSampleRate,
-		config_.nfmBandwidthHz, config_.signalConditionerEnabled);
+		config_.nfmBandwidthHz, config_.signalConditionerEnabled, config_.processing);
 	std::vector<unsigned char> iqBytes(32768);
 	std::vector<float> audio;
 	bool discontinuity = true;
@@ -484,7 +507,8 @@ namespace
 RtlSdrSource::RtlSdrSource()
 	: stopEvent_(NULL), readyEvent_(NULL), thread_(NULL), library_(NULL),
 	  device_(NULL), cancelFunction_(NULL), deviceIndex_(0), sink_(NULL),
-	  demodulator_(1024000, 48000), state_(RTL_TCP_STOPPED), lastIqCallbackTick_(0)
+	  demodulator_(1024000, 48000), state_(RTL_TCP_STOPPED), lastIqCallbackTick_(0),
+	  midrailBlock_(false), pendingGap_(false)
 {
 	InitializeCriticalSection(&lock_);
 }
@@ -499,12 +523,19 @@ bool RtlSdrSource::Start(const RtlTcpConfig& config, unsigned int deviceIndex, A
 {
 	if (!sink || config.sampleRate < 48000) return false;
 	if (!Stop()) return false;
+	std::string processingError;
+	if (!ValidateRadioProcessingSettings(config.processing, config.audioSampleRate, processingError))
+	{
+		SetState(RTL_TCP_FAILED, processingError.c_str());
+		return false;
+	}
 	config_ = config;
 	deviceIndex_ = deviceIndex;
 	sink_ = sink;
 	InterlockedExchange(&lastIqCallbackTick_, 0);
+	midrailBlock_ = pendingGap_ = false;
 	demodulator_.Configure(config.sampleRate, config.audioSampleRate,
-		config.nfmBandwidthHz, config.signalConditionerEnabled);
+		config.nfmBandwidthHz, config.signalConditionerEnabled, config.processing);
 	callbackAudio_.clear();
 	callbackAudio_.reserve((32768u / 2u) * config.audioSampleRate /
 		config.sampleRate + 2u);
@@ -538,10 +569,9 @@ bool RtlSdrSource::Start(const RtlTcpConfig& config, unsigned int deviceIndex, A
 bool RtlSdrSource::Stop()
 {
 	if (stopEvent_) SetEvent(stopEvent_);
-	RequestDeviceCancellation();
 	if (thread_)
 	{
-		const DWORD waitResult = WaitForSourceThread(thread_, 5000);
+		const DWORD waitResult = WaitForDeviceStop(5000);
 		if (!RtlThreadResourcesMayBeReleased(waitResult))
 		{
 			SetState(RTL_TCP_FAILED,
@@ -559,17 +589,30 @@ bool RtlSdrSource::Stop()
 void RtlSdrSource::FinalizeForShutdown()
 {
 	if (stopEvent_) SetEvent(stopEvent_);
-	RequestDeviceCancellation();
 	if (thread_)
 	{
 		OutputDebugStringA(
 			"PDW RTL-SDR source is finalizing; waiting for a safe device-thread exit.\n");
-		const DWORD waitResult = WaitForSingleObject(thread_, INFINITE);
+		const DWORD waitResult = WaitForDeviceStop(INFINITE);
 		if (!RtlThreadResourcesMayBeReleased(waitResult))
 			RaiseFailFastException(NULL, NULL, 0);
 	}
 	CleanupStoppedThread();
 	if (state() != RTL_TCP_FAILED) SetState(RTL_TCP_STOPPED, NULL);
+}
+
+DWORD RtlSdrSource::WaitForDeviceStop(DWORD timeout)
+{
+	const DWORD start = GetTickCount();
+	for (;;)
+	{
+		RequestDeviceCancellation();
+		const DWORD elapsed = GetTickCount() - start;
+		if (timeout != INFINITE && elapsed >= timeout) return WaitForSourceThread(thread_, 0);
+		const DWORD slice = timeout == INFINITE || timeout - elapsed > 200 ? 200 : timeout - elapsed;
+		const DWORD result = timeout == INFINITE ? WaitForSingleObject(thread_, slice) : WaitForSourceThread(thread_, slice);
+		if (result != WAIT_TIMEOUT) return result;
+	}
 }
 
 void RtlSdrSource::RequestDeviceCancellation()
@@ -635,12 +678,23 @@ DWORD WINAPI RtlSdrSource::ThreadEntry(LPVOID context)
 void __cdecl RtlSdrSource::ReadCallback(unsigned char* buffer, std::uint32_t length, void* context)
 {
 	RtlSdrSource* source = static_cast<RtlSdrSource*>(context);
-	if (!source || StopRequested(source->stopEvent_)) return;
+	if (!source || !buffer || !length || StopRequested(source->stopEvent_)) return;
 	InterlockedExchange(&source->lastIqCallbackTick_, static_cast<LONG>(GetTickCount()));
+	const bool midrail = length >= 512 && std::all_of(buffer, buffer + length,
+		[](unsigned char value) { return value == 128; });
+	if (midrail != source->midrailBlock_)
+	{
+		source->midrailBlock_ = midrail;
+		source->pendingGap_ = true;
+		source->demodulator_.Reset();
+	}
 	source->demodulator_.ProcessUnsignedIq(buffer, length, source->callbackAudio_);
 	if (source->sink_ && !source->callbackAudio_.empty())
+	{
 		source->sink_->OnAudioSamples(&source->callbackAudio_[0],
-			source->callbackAudio_.size(), source->config_.audioSampleRate, false);
+			source->callbackAudio_.size(), source->config_.audioSampleRate, source->pendingGap_);
+		source->pendingGap_ = false;
+	}
 }
 
 DWORD RtlSdrSource::DeviceThread()

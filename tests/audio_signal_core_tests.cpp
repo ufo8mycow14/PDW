@@ -20,6 +20,33 @@ void Warm(pdw::signal::AdaptiveSlicer& slicer, float value, int count = 200)
 {
 	for (int i = 0; i < count; ++i) slicer.Observe(value);
 }
+
+// Exercise symbol-duration runs, rather than one sample per alternating level.
+// Tracking the random data's short-term mean as DC corrupts the inner/outer
+// decision even when the waveform has no noise and the sign bit is correct.
+unsigned FourLevelSequenceErrors(unsigned baud, float dc)
+{
+	pdw::signal::AdaptiveSlicer slicer;
+	const double samplesPerSymbol = 44100.0 / baud;
+	const float levels[] = { 0.375f, 0.125f, -0.125f, -0.375f };
+	std::uint32_t random = 554;
+	unsigned errors = 0;
+	for (unsigned symbol = 0; symbol < 4352; ++symbol)
+	{
+		random = random * 1664525u + 1013904223u;
+		const unsigned expected = symbol < 256 ? (symbol & 1 ? 0 : 3) : random >> 30;
+		const unsigned start = static_cast<unsigned>(symbol * samplesPerSymbol);
+		const unsigned end = static_cast<unsigned>((symbol + 1) * samplesPerSymbol);
+		const float value = levels[expected] + dc;
+		for (unsigned sample = start; sample < end; ++sample)
+		{
+			slicer.Observe(value);
+			if (symbol >= 256 && sample == (start + end) / 2 &&
+				slicer.CurrentFourLevelSymbol() != expected) ++errors;
+		}
+	}
+	return errors;
+}
 }
 
 int main()
@@ -37,6 +64,19 @@ int main()
 			"hybrid symbol must preserve the negative legacy phase bit");
 	}
 	using namespace pdw::signal;
+
+	Expect(ResyncSymbolClock(29, 15, 28, false) == 29,
+		"legacy and acquisition timing retain immediate edge placement");
+	Expect(ResyncSymbolClock(29, -1, 28, true) == 29,
+		"an uninitialised clock acquires directly");
+	Expect(std::fabs(ResyncSymbolClock(43, 15, 28, true) - 15) < 1e-9,
+		"a whole-symbol phase difference must not skip a symbol");
+	Expect(std::fabs(ResyncSymbolClock(47, 15, 28, true) -
+		ResyncSymbolClock(19, 15, 28, true)) < 1e-9,
+		"locked timing correction is independent of the edge's symbol number");
+	Expect(ResyncSymbolClock(26, 15, 28, true) > 15 &&
+		ResyncSymbolClock(26, 15, 28, true) < 16,
+		"a noisy late edge must not pull the sample outside the established eye");
 
 	Expect(std::fabs(NormalizePcm8(0) + 1.0f) < 0.0001f, "PCM8 minimum");
 	Expect(std::fabs(NormalizePcm8(128)) < 0.0001f, "PCM8 midpoint");
@@ -75,6 +115,14 @@ int main()
 	resetTest.Reset();
 	Expect(resetTest.state().dcOffset == 0.0f, "reset DC offset");
 	Expect(resetTest.state().confidence == 0.0f, "reset confidence");
+	for (unsigned baud : { 1600u, 3200u })
+		for (float offset : { -0.05f, 0.0f, 0.05f })
+		{
+			const unsigned errors = FourLevelSequenceErrors(baud, offset);
+			if (errors) std::cerr << "Four-level clean sequence: baud=" << baud
+				<< " DC=" << offset << " symbol errors=" << errors << '\n';
+			Expect(errors == 0, "clean four-level data must not move its own decision thresholds");
+		}
 
 	std::cout << "audio signal core tests passed\n";
 	return 0;

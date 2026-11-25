@@ -2417,6 +2417,8 @@ int bit10(int gin)
 }
 
 
+static void CountPagingBchWord(int errors);
+
 int ecd()
 {
 	int synd, b1, b2, i;
@@ -2456,18 +2458,22 @@ int ecd()
 			{
 				ob[b2] = ob[b2] ^ 0x01;
 				ecc = ecc ^ ecs[b2];
+				parity ^= 0x01;
 			}
 
 			if (b1 != 0x1f)
 			{
 				ob[b1] = ob[b1] ^ 0x01;
 				ecc = ecc ^ ecs[b1];
+				parity ^= 0x01;
 			}
 			errors = bch[synd] >> 12;
 		}
 		else errors = 3;
 
-		if (errors == 1) parity = parity ^ 0x01;
+		// parity tracks the information bits. Only a correction to an
+		// information bit changes it; errors also counts ECC-bit damage.
+		// Toggling for errors == 1 falsely rejected data+ECC error pairs.
 	}
 
 	// check parity ....
@@ -2477,7 +2483,7 @@ int ecd()
 
 	if (errors > 3) errors = 3;
 
-	CountBiterrors(errors);
+	CountPagingBchWord(errors);
 
 	return(errors);
 }
@@ -2760,7 +2766,7 @@ void WriteStatFileDaily(FILE *fp)
 }
 
 
-void CountBiterrors(int errors)
+static void CountDecodeCheck(int errors, bool pagingBch)
 {
 	extern double dRX_Quality;
 	static int nErrors=5, nErrorChecks=100, noerrors=0, count=0;
@@ -2791,7 +2797,17 @@ void CountBiterrors(int errors)
 		noerrors=0;
 	}
 	dRX_Quality = 100 - ((double)(nErrors*100)/nErrorChecks);
-	SignalDiagnosticsRecordDecodeResult(errors);
+	SignalDiagnosticsRecordDecodeResult(errors, pagingBch);
+}
+
+void CountBiterrors(int errors)
+{
+	CountDecodeCheck(errors, false);
+}
+
+static void CountPagingBchWord(int errors)
+{
+	CountDecodeCheck(errors, true);
 }
 
 
@@ -2820,8 +2836,16 @@ void Get_Date_Time(void)
 
 void InvertData(void)
 {
+	extern char atb_bit;
+	extern int sync_bit;
+
 	Profile.invert ^= 0x01; // Flip receive polarity
 
 	low_audio  = Profile.invert ? DEFAULT_HI_AUDIO : DEFAULT_LO_AUDIO;
 	high_audio = Profile.invert ? DEFAULT_LO_AUDIO : DEFAULT_HI_AUDIO;
+	// The latches describe the same physical sample under the new polarity.
+	// Leaving them unchanged invents an edge on the next sample and can
+	// reschedule the clock half a symbol early immediately after sync.
+	atb_bit ^= 0x01;
+	sync_bit ^= 0x01;
 }

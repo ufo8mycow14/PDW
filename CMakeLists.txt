@@ -324,6 +324,7 @@ set_source_files_properties(
   utils/publishing_delivery_state.cpp
   utils/publishing_job_store.cpp
 	utils/rtl_signal_conditioner.cpp
+  utils/radio_processing.cpp
   PROPERTIES COMPILE_OPTIONS "/W4;/WX"
 )
 
@@ -492,14 +493,18 @@ if(BUILD_TESTING)
 	# Compile the established POCSAG implementation unchanged against a
 	# synthetic raw-codeword fixture. Test-only globals capture its output
 	# without linking the Win32 presentation or network destinations.
+	include(tests/extract_decoder_functions.cmake)
 	add_executable(PDWPocsagFixtureTests
 		tests/pocsag_fixture_tests.cpp
+		tests/pocsag_audio_fixture.cpp
 		tests/pocsag_test_environment.cpp
 		utils/rtl_signal_conditioner.cpp
+		utils/radio_processing.cpp
 		utils/audio_signal_core.cpp
 		Pocsag.cpp
 	)
 	target_include_directories(PDWPocsagFixtureTests PRIVATE
+		"${fixture_dir}"
 		"${CMAKE_CURRENT_SOURCE_DIR}"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Headers"
 		"${CMAKE_CURRENT_SOURCE_DIR}/tests"
@@ -512,6 +517,19 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME pocsag-fixture-regression COMMAND PDWPocsagFixtureTests
 		"${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/pocsag")
+
+	add_executable(PDWFlexIqFixtureTests tests/flex_iq_fixture_tests.cpp
+		utils/rtl_signal_conditioner.cpp utils/radio_processing.cpp utils/audio_signal_core.cpp
+		utils/flex_fragment_reassembly_core.cpp)
+	target_include_directories(PDWFlexIqFixtureTests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}" "${fixture_dir}")
+	target_compile_definitions(PDWFlexIqFixtureTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+	# Keep the original decoder's legacy conversions; new harness code uses
+	# the same diagnostics as the established decoder fixture target.
+	target_compile_options(PDWFlexIqFixtureTests PRIVATE /W4 /WX /EHsc /wd4244 /wd4101)
+	add_test(NAME flex-iq-fixture-regression COMMAND PDWFlexIqFixtureTests)
+	add_test(NAME paging-stream-boundaries COMMAND PDWFlexIqFixtureTests --stream-boundaries)
+	set_tests_properties(flex-iq-fixture-regression PROPERTIES TIMEOUT 180)
 
 	add_executable(PDWSignalRecordingTests
 		tests/signal_recording_core_tests.cpp
@@ -589,6 +607,7 @@ if(BUILD_TESTING)
 
 	add_executable(PDWRtlTcpTests
 		tests/rtl_tcp_source_tests.cpp
+		utils/radio_processing.cpp
 		utils/audio_signal_core.cpp
 		utils/rtl_signal_conditioner.cpp
 		utils/rtl_tcp_source.cpp
@@ -612,6 +631,14 @@ if(BUILD_TESTING)
 		tests/mock_rtlsdr.cpp
 	)
 	add_dependencies(PDWRtlTcpTests PDWMockRtlSdr)
+	add_executable(PDWRadioProcessingTests tests/radio_processing_tests.cpp
+		utils/radio_processing.cpp utils/rtl_tcp_source.cpp
+		utils/rtl_signal_conditioner.cpp utils/audio_signal_core.cpp)
+	target_include_directories(PDWRadioProcessingTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/utils")
+	target_compile_definitions(PDWRadioProcessingTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+	target_compile_options(PDWRadioProcessingTests PRIVATE /W4 /WX /EHsc)
+	target_link_libraries(PDWRadioProcessingTests PRIVATE Ws2_32.lib)
+	add_test(NAME radio-processing COMMAND PDWRadioProcessingTests)
 	set_target_properties(PDWMockRtlSdr PROPERTIES PREFIX "")
 	target_compile_options(PDWMockRtlSdr PRIVATE /W4 /WX)
 	find_program(PDW_TEST_POWERSHELL NAMES pwsh powershell REQUIRED)
@@ -622,6 +649,20 @@ if(BUILD_TESTING)
 		-MockReceiver $<TARGET_FILE:PDWMockRtlSdr>
 		-TestRoot "${CMAKE_CURRENT_BINARY_DIR}/receiver-startup-smoke")
 	set_tests_properties(receiver-startup-recovery PROPERTIES TIMEOUT 60)
+	add_test(NAME receiver-native-exact-text
+		COMMAND "${PDW_TEST_POWERSHELL}" -NoProfile -File
+		"${CMAKE_CURRENT_SOURCE_DIR}/tests/receiver_startup_smoke.ps1"
+		-Executable $<TARGET_FILE:PDW> -MockReceiver $<TARGET_FILE:PDWMockRtlSdr>
+		-FlexFixture $<TARGET_FILE:PDWFlexIqFixtureTests> -PocsagFixture $<TARGET_FILE:PDWPocsagFixtureTests>
+		-TestRoot "${CMAKE_CURRENT_BINARY_DIR}/receiver-native-text")
+	set_tests_properties(receiver-native-exact-text PROPERTIES TIMEOUT 60)
+	add_test(NAME receiver-restart-and-crash-decoding
+		COMMAND "${PDW_TEST_POWERSHELL}" -NoProfile -File
+		"${CMAKE_CURRENT_SOURCE_DIR}/tests/receiver_startup_smoke.ps1" -RecoveryCycle
+		-Executable $<TARGET_FILE:PDW> -MockReceiver $<TARGET_FILE:PDWMockRtlSdr>
+		-FlexFixture $<TARGET_FILE:PDWFlexIqFixtureTests> -PocsagFixture $<TARGET_FILE:PDWPocsagFixtureTests>
+		-TestRoot "${CMAKE_CURRENT_BINARY_DIR}/receiver-restart")
+	set_tests_properties(receiver-restart-and-crash-decoding PROPERTIES TIMEOUT 100)
 
 	add_executable(PDWReceiverCatalogTests
 		tests/receiver_catalog_tests.cpp

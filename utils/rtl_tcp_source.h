@@ -32,6 +32,7 @@ struct RtlTcpConfig
 	std::uint32_t nfmBandwidthHz;
 	bool automaticGain;
 	bool signalConditionerEnabled;
+	RadioProcessingSettings processing;
 	std::string receiverLibraryPath;
 
 	RtlTcpConfig();
@@ -42,13 +43,15 @@ class RtlFmDemodulator
 public:
 	RtlFmDemodulator(std::uint32_t iqSampleRate = 1024000,
 		std::uint32_t audioSampleRate = 48000,
-		std::uint32_t nfmBandwidthHz = 12000,
-		bool signalConditionerEnabled = false);
+		std::uint32_t nfmBandwidthHz = DefaultNfmBandwidthHz,
+		bool signalConditionerEnabled = false,
+		const RadioProcessingSettings& processing = DefaultRadioProcessingSettings());
 
 	void Reset();
 	void Configure(std::uint32_t iqSampleRate, std::uint32_t audioSampleRate,
-		std::uint32_t nfmBandwidthHz = 12000,
-		bool signalConditionerEnabled = false);
+		std::uint32_t nfmBandwidthHz = DefaultNfmBandwidthHz,
+		bool signalConditionerEnabled = false,
+		const RadioProcessingSettings& processing = DefaultRadioProcessingSettings());
 	void ProcessUnsignedIq(const unsigned char* iqBytes,
 		std::size_t byteCount,
 		std::vector<float>& audio);
@@ -69,6 +72,10 @@ private:
 	float lowPassState_;
 	bool signalConditionerEnabled_;
 	RtlSignalConditioner signalConditioner_;
+	RadioProcessingSettings processing_;
+	RadioAudioProcessor audioProcessor_;
+	RadioSquelch squelch_;
+	std::vector<unsigned char> squelchMask_;
 };
 
 enum RtlTcpState
@@ -152,6 +159,7 @@ private:
 	DWORD DeviceThread();
 	void CleanupStoppedThread();
 	void RequestDeviceCancellation();
+	DWORD WaitForDeviceStop(DWORD timeout);
 	void SetState(RtlTcpState state, const char* error);
 
 	mutable CRITICAL_SECTION lock_;
@@ -169,6 +177,8 @@ private:
 	RtlTcpState state_;
 	std::string lastError_;
 	volatile LONG lastIqCallbackTick_;
+	bool midrailBlock_;
+	bool pendingGap_;
 };
 
 // Optional in-process support is loaded dynamically so absence of rtlsdr.dll

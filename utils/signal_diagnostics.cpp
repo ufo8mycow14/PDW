@@ -25,10 +25,10 @@ namespace
 SignalMetrics::SignalMetrics()
 	: rmsLevel(0.0f), peakLevel(0.0f), dcOffset(0.0f), noiseLevel(0.0f),
 	  clippingPercent(0.0f), eyeOpening(0.0f), signalQuality(0.0f),
-	  multipathRisk(0.0f), sampleCount(0), correctedErrors(0),
-	  uncorrectableErrors(0), lastCycle(-1), lastFrame(-1)
+	  multipathRisk(0.0f), sampleCount(0), correctedBchBits(0), correctedBchWords(0),
+	  uncorrectableBchWords(0), otherFlaggedChecks(0), lastCycle(-1), lastFrame(-1)
 {
-	std::memset(phaseErrors, 0, sizeof(phaseErrors));
+	std::memset(phaseFlaggedWords, 0, sizeof(phaseFlaggedWords));
 }
 
 CalibrationResult::CalibrationResult()
@@ -38,10 +38,11 @@ CalibrationResult::CalibrationResult()
 }
 
 SignalDiagnostics::SignalDiagnostics()
-	: waveform_(512, 0.0f), waveformPosition_(0), waveformWrapped_(false),
+	: haveMeasuredWindow_(false), waveform_(512, 0.0f), waveformPosition_(0), waveformWrapped_(false),
 	  spectrum_(64, 0.0f), spectrumSamplesPending_(0)
 {
 	InitializeCriticalSection(&lock_);
+	pendingSamples_.reserve(4096);
 }
 
 SignalDiagnostics::~SignalDiagnostics()
@@ -53,6 +54,8 @@ void SignalDiagnostics::Reset()
 {
 	EnterCriticalSection(&lock_);
 	metrics_ = SignalMetrics();
+	pendingSamples_.clear();
+	haveMeasuredWindow_ = false;
 	std::fill(waveform_.begin(), waveform_.end(), 0.0f);
 	waveformPosition_ = 0;
 	waveformWrapped_ = false;
@@ -66,6 +69,28 @@ void SignalDiagnostics::Reset()
 void SignalDiagnostics::Observe(const float* samples, std::size_t sampleCount)
 {
 	if (!samples || sampleCount == 0) return;
+	// Measurement windows and smoothing must depend on samples, not USB,
+	// replay or audio callback sizes. Tiny blocks formerly reported a much
+	// lower score for precisely the same signal and could suppress spectra.
+	EnterCriticalSection(&lock_);
+	metrics_.sampleCount += sampleCount;
+	while (sampleCount)
+	{
+		const std::size_t take = (std::min)(sampleCount, 4096 - pendingSamples_.size());
+		pendingSamples_.insert(pendingSamples_.end(), samples, samples + take);
+		samples += take;
+		sampleCount -= take;
+		if (pendingSamples_.size() == 4096)
+		{
+			ObserveWindowLocked(pendingSamples_.data(), pendingSamples_.size());
+			pendingSamples_.clear();
+		}
+	}
+	LeaveCriticalSection(&lock_);
+}
+
+void SignalDiagnostics::ObserveWindowLocked(const float* samples, std::size_t sampleCount)
+{
 	double sum = 0.0, squares = 0.0, differenceSquares = 0.0;
 	float peak = 0.0f;
 	std::size_t clipped = 0;
@@ -91,8 +116,8 @@ void SignalDiagnostics::Observe(const float* samples, std::size_t sampleCount)
 	const float quality = 100.0f * Clamp01(levelScore * 0.35f + eye * 0.50f + clippingScore * 0.15f);
 	const float multipath = 100.0f * Clamp01((noise / ((std::max)(rms, 0.01f)) - 0.45f) / 0.9f);
 
-	EnterCriticalSection(&lock_);
-	const float blend = metrics_.sampleCount ? 0.20f : 1.0f;
+	const float blend = haveMeasuredWindow_ ? 0.20f : 1.0f;
+	haveMeasuredWindow_ = true;
 	metrics_.rmsLevel += blend * (rms - metrics_.rmsLevel);
 	metrics_.peakLevel += blend * (peak - metrics_.peakLevel);
 	metrics_.dcOffset += blend * (dc - metrics_.dcOffset);
@@ -101,7 +126,6 @@ void SignalDiagnostics::Observe(const float* samples, std::size_t sampleCount)
 	metrics_.eyeOpening += blend * (eye * 100.0f - metrics_.eyeOpening);
 	metrics_.signalQuality += blend * (quality - metrics_.signalQuality);
 	metrics_.multipathRisk += blend * (multipath - metrics_.multipathRisk);
-	metrics_.sampleCount += sampleCount;
 	spectrumSamplesPending_ += sampleCount;
 	const std::size_t stride = (std::max)(static_cast<std::size_t>(1), sampleCount / 128);
 	for (std::size_t index = 0; index < sampleCount; index += stride)
@@ -140,17 +164,23 @@ void SignalDiagnostics::Observe(const float* samples, std::size_t sampleCount)
 		waterfall_.insert(waterfall_.end(), spectrum_.begin(), spectrum_.end());
 		spectrumSamplesPending_ = 0;
 	}
-	LeaveCriticalSection(&lock_);
 }
 
-void SignalDiagnostics::RecordDecodeResult(int errors, int flexPhase, int cycle,
+void SignalDiagnostics::RecordDecodeResult(int errors, bool pagingBch, int flexPhase, int cycle,
 	int frame, float decoderQuality)
 {
 	EnterCriticalSection(&lock_);
-	if (errors >= 3) metrics_.uncorrectableErrors++;
-	else if (errors > 0) metrics_.correctedErrors += static_cast<std::uint64_t>(errors);
-	if (errors > 0 && flexPhase >= 0 && flexPhase < 4)
-		metrics_.phaseErrors[flexPhase] += static_cast<std::uint64_t>(errors);
+	if (errors > 0 && pagingBch)
+	{
+		if (errors >= 3) ++metrics_.uncorrectableBchWords;
+		else
+		{
+			++metrics_.correctedBchWords;
+			metrics_.correctedBchBits += static_cast<std::uint64_t>(errors);
+		}
+		if (flexPhase >= 0 && flexPhase < 4) ++metrics_.phaseFlaggedWords[flexPhase];
+	}
+	else if (errors > 0) ++metrics_.otherFlaggedChecks;
 	metrics_.lastCycle = cycle;
 	metrics_.lastFrame = frame;
 	if (decoderQuality >= 0.0f)

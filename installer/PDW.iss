@@ -41,6 +41,7 @@ MinVersion=10.0.10586
 CloseApplications=yes
 RestartApplications=no
 UsePreviousAppDir=yes
+DisableDirPage=no
 UsePreviousGroup=yes
 UsePreviousTasks=yes
 VersionInfoVersion=5.5.4.0
@@ -89,6 +90,7 @@ Type: files; Name: "{app}\PDW v5.4 2026 Release.exe"
 Type: files; Name: "{app}\PDW v5.5 2026 Release.exe"
 Type: files; Name: "{app}\PDW v5.5.1 2026 Release.exe"
 Type: files; Name: "{app}\PDW v5.5.2 2026 Release.exe"
+Type: files; Name: "{app}\PDW v5.5.3 2026 Release.exe"
 
 ; Runtime filenames are architecture-neutral. Remove the complete reviewed
 ; allowlist before copying the selected architecture so an x64-only runtime
@@ -458,6 +460,24 @@ begin
     (RequestedArchitecture = '') and
     (CompareText(ArchitectureSelectionDirectory, WizardDirValue) <> 0) then
     RefreshArchitectureSelectionFromDirectory;
+end;
+
+function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo,
+  MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+begin
+  if FileExists(AddBackslash(WizardDirValue) + 'PDW.INI') then
+    Result := 'Update or reinstall PDW in this folder' + NewLine +
+      Space + 'Install version {#AppVersion}; keep existing settings, filters and data.' + NewLine +
+      Space + 'No uninstall is needed. Back up before switching to an older version.' + NewLine + NewLine
+  else
+    Result := 'Install PDW version {#AppVersion}' + NewLine + NewLine;
+  Result := Result + MemoDirInfo + NewLine + NewLine;
+  if InstallX64 then
+    Result := Result + 'Architecture: x64' + NewLine
+  else
+    Result := Result + 'Architecture: Win32 compatibility' + NewLine;
+  if MemoGroupInfo <> '' then Result := Result + NewLine + MemoGroupInfo + NewLine;
+  if MemoTasksInfo <> '' then Result := Result + NewLine + MemoTasksInfo;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

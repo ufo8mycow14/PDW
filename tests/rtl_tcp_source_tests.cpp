@@ -397,11 +397,16 @@ int main(int argc, char** argv)
 	Expect(std::fabs(average - phaseStep / 3.14159265358979323846) < 0.001,
 		"FM discriminator preserves phase direction and magnitude");
 	const std::vector<float> legacyReference = LegacyReferenceDemodulate(iq,
-		iqRate, audioRate, 12000);
+		iqRate, audioRate, 12500);
 	Expect(audio.size() == legacyReference.size(), "legacy bypass preserves output length");
 	for (std::size_t index = 0; index < audio.size(); ++index)
 		Expect(audio[index] == legacyReference[index],
 			"disabled conditioner is bit-identical to legacy RTL demodulation");
+	RtlFmDemodulator savedBandwidth(iqRate, audioRate, 12000);
+	std::vector<float> savedAudio;
+	savedBandwidth.ProcessUnsignedIq(iq.data(), iq.size(), savedAudio);
+	Expect(savedAudio == LegacyReferenceDemodulate(iq, iqRate, audioRate, 12000),
+		"explicit 12000 Hz remains bit-identical to the legacy demodulator at 12000 Hz");
 
 	demodulator.Reset();
 	demodulator.ProcessUnsignedIq(NULL, 0, audio);
@@ -493,6 +498,10 @@ int main(int argc, char** argv)
 		Expect(source.state() == RTL_TCP_FAILED, "unexpected async end is reported as failed");
 		Expect(source.lastError().find("ended unexpectedly") != std::string::npos,
 			"unexpected async end retains an actionable error");
+		RtlTcpConfig earlyClose = config;
+		earlyClose.frequencyHz = 148812502;
+		Expect(source.Start(earlyClose, 0, &sink), "receiver starts before the cancellation race");
+		Expect(source.Stop(), "a cancellation issued before the async read is ready is retried");
 
 		const bool started = source.Start(config, 0, &sink);
 		if (!started) std::cerr << "RTL-SDR start error: " << source.lastError() << '\n';

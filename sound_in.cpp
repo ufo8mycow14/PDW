@@ -113,6 +113,7 @@ int skipped_sc = 0;
 extern POCSAG pocsag;
 extern int pocsag_baud_rate, pocbit;
 extern bool bMode_IDLE;
+extern bool bFlexActive;
 extern bool bPauseFlag;
 extern int nDriverLoaded;
 
@@ -152,6 +153,8 @@ namespace
 	std::string g_lastReceiverError;
 	std::string g_receiverStatus = "Not started";
 	DWORD g_lastModernStartAttempt = 0;
+	DWORD g_directReceiverOpened = 0;
+	DWORD g_lastReceiverStopAttempt = 0;
 	bool g_suppressCaptureError = false;
 	std::size_t g_winmmPreparedHeaderCount = 0;
 	pdw::signal::SignalRecording g_diagnosticRecording;
@@ -219,9 +222,10 @@ namespace
 	thread_local bool g_referenceRateInput = false;
 	pdw::signal::DecoderAudioAdapter g_decoderAudioAdapter;
 	std::vector<float> g_referenceAudio;
+	void ServiceDecoderProtocolTimers();
 
 	void FeedNormalizedSamples(const float* samples, std::size_t sampleCount, bool discontinuity = false,
-		bool endOfStream = false)
+		bool endOfStream = false, std::size_t* pagingTickSamples = NULL)
 	{
 		if (!samples || sampleCount == 0) return;
 		PdwSignalDecoderStateGuard decoderGuard;
@@ -243,6 +247,7 @@ namespace
 		}
 		if (reset)
 		{
+			if (pagingTickSamples) *pagingTickSamples = 0;
 			// Reset the stream, not just its sample clock: no pre-gap frame may
 			// consume post-gap samples or emit a stale partial message.
 			pd_reset_all();
@@ -261,7 +266,23 @@ namespace
 			if (value > 255) value = 255;
 			g_pcm8Scratch[index] = static_cast<char>(static_cast<unsigned char>(value));
 		}
-		if (Profile.monitor_paging)
+		if (Profile.monitor_paging && pagingTickSamples)
+		{
+			const std::size_t tickSamples = pdw::signal::DecoderAudioAdapter::ReferenceRate / 10;
+			for (std::size_t offset = 0; offset < sampleCount;)
+			{
+				const std::size_t count = (std::min)(sampleCount - offset, tickSamples - *pagingTickSamples);
+				Audio_To_Bits(g_pcm8Scratch.data() + offset, static_cast<long>(count));
+				offset += count;
+				*pagingTickSamples += count;
+				if (*pagingTickSamples == tickSamples)
+				{
+					*pagingTickSamples = 0;
+					ServiceDecoderProtocolTimers();
+				}
+			}
+		}
+		else if (Profile.monitor_paging)
 			Audio_To_Bits(&g_pcm8Scratch[0], static_cast<long>(g_pcm8Scratch.size()));
 		else if (Profile.monitor_acars)
 			ACARS_To_Bits(&g_pcm8Scratch[0], static_cast<long>(g_pcm8Scratch.size()));
@@ -302,7 +323,7 @@ namespace
 	class PdwModernDecodeConsumer : public pdw::signal::AudioDecodeConsumer
 	{
 	public:
-		PdwModernDecodeConsumer() : paused_(false) {}
+		PdwModernDecodeConsumer() : paused_(false), pagingTickSamples_(0), lastRadioAudioTick_(0) {}
 
 		void OnDecodeAudioBlock(const float* samples, std::size_t sampleCount,
 			std::uint32_t sampleRate, bool discontinuity)
@@ -323,19 +344,29 @@ namespace
 				g_activeAudioSampleRate = sampleRate;
 			}
 			AppendDiagnosticSamples(samples, sampleCount, sampleRate);
-			FeedNormalizedSamples(samples, sampleCount, discontinuity);
+			const bool radioPaging = UsesRadioPagingClock();
+			FeedNormalizedSamples(samples, sampleCount, discontinuity, false, radioPaging ? &pagingTickSamples_ : NULL);
+			if (radioPaging) lastRadioAudioTick_ = GetTickCount64();
 		}
 
 		void OnDecodeServiceTick()
 		{
 			PdwSignalDecoderStateGuard decoderGuard;
 			if (bPauseFlag) return;
-			ServiceDecoderProtocolTimers();
+			if (!UsesRadioPagingClock()) ServiceDecoderProtocolTimers();
+			else if (lastRadioAudioTick_ && GetTickCount64() - lastRadioAudioTick_ >= 2000 && !bMode_IDLE)
+				display_showmo(MODE_IDLE);
 			check_save_data();
 		}
 
 	private:
+		static bool UsesRadioPagingClock()
+		{
+			return Profile.monitor_paging && (Profile.audioSource == AUDIO_SOURCE_RTL_SDR || Profile.audioSource == AUDIO_SOURCE_RTL_TCP);
+		}
 		bool paused_;
+		std::size_t pagingTickSamples_;
+		ULONGLONG lastRadioAudioTick_;
 	};
 
 	PdwModernDecodeConsumer g_modernDecodeConsumer;
@@ -513,6 +544,7 @@ namespace
 		config.nfmBandwidthHz = static_cast<std::uint32_t>(Profile.rtlBandwidthHz);
 		config.automaticGain = Profile.rtlAutomaticGain != 0;
 		config.signalConditionerEnabled = Profile.rtlSignalConditionerEnabled != 0;
+		config.processing = Profile.rtlProcessing;
 		g_activeAudioSampleRate = config.audioSampleRate;
 		Reset_ATB();
 		if (!StartModernDecodeWorker(g_receiverStartError)) return false;
@@ -560,6 +592,7 @@ namespace
 		config.nfmBandwidthHz = static_cast<std::uint32_t>(Profile.rtlBandwidthHz);
 		config.automaticGain = Profile.rtlAutomaticGain != 0;
 		config.signalConditionerEnabled = Profile.rtlSignalConditionerEnabled != 0;
+		config.processing = Profile.rtlProcessing;
 		g_activeAudioSampleRate = config.audioSampleRate;
 		Reset_ATB();
 		if (!StartModernDecodeWorker(g_receiverStartError)) return false;
@@ -652,6 +685,47 @@ void Debug_MSG(char *msg);
 BOOL Test_Sync(int next_bit);
 void Debug_BIT_MSG(char *msg_bit);
 #endif
+
+void PublishReceiverHealthIfRequested()
+{
+	char name[64];
+	snprintf(name, sizeof(name), "Local\\PDW.ReceiverHealth.%lu", GetCurrentProcessId());
+	HANDLE section = OpenFileMappingA(FILE_MAP_WRITE, FALSE, name);
+	if (!section) return;
+	char* view = static_cast<char*>(MapViewOfFile(section, FILE_MAP_WRITE, 0, 0, 1024));
+	if (view)
+	{
+		const auto worker = g_modernDecodeWorker.Snapshot();
+		const auto signal = g_signalDiagnostics.Snapshot();
+		const DWORD iq = g_rtlSdrSource.lastIqCallbackTick();
+		const LONG rows = InterlockedCompareExchange(&g_acceptedDecodeRows, 0, 0);
+		const DWORD lastRow = static_cast<DWORD>(InterlockedCompareExchange(&g_lastAcceptedDecodeTick, 0, 0));
+		const DWORD now = GetTickCount();
+		static DWORD sequence = 0;
+		sequence += 2;
+		if (!sequence) sequence = 2;
+		volatile LONG* stamp = reinterpret_cast<volatile LONG*>(view);
+		InterlockedExchange(stamp, static_cast<LONG>(sequence - 1));
+		snprintf(view + sizeof(LONG), 1024 - sizeof(LONG),
+			"{\"pid\":%lu,\"source\":%d,\"capture\":%d,\"paused\":%d,\"iqSeen\":%d,\"iqAgeMs\":%lu,"
+			"\"worker\":%d,\"quarantined\":%d,\"samples\":%llu,\"queue\":%zu,\"drops\":%llu,"
+			"\"resetDiscard\":%llu,\"lagMs\":%llu,\"maxLagMs\":%llu,\"rows\":%lu,\"rowAgeMs\":%lu,"
+			"\"correctedWords\":%llu,\"uncorrectableWords\":%llu}",
+			GetCurrentProcessId(), g_modernCaptureKind, bCapturing ? 1 : 0, bPauseFlag ? 1 : 0,
+			iq ? 1 : 0, iq ? now - iq : 0, worker.running ? 1 : 0,
+			worker.quarantined || g_modernCaptureQuarantined ? 1 : 0,
+			static_cast<unsigned long long>(worker.decodedSamples), worker.queueDepth,
+			static_cast<unsigned long long>(worker.droppedBlocks),
+			static_cast<unsigned long long>(worker.resetDiscardedBlocks),
+			static_cast<unsigned long long>(worker.currentDecoderLagMs),
+			static_cast<unsigned long long>(worker.maximumDecoderLagMs), static_cast<unsigned long>(rows),
+			lastRow ? now - lastRow : 0, static_cast<unsigned long long>(signal.correctedBchWords),
+			static_cast<unsigned long long>(signal.uncorrectableBchWords));
+		InterlockedExchange(stamp, static_cast<LONG>(sequence));
+		UnmapViewOfFile(view);
+	}
+	CloseHandle(section);
+}
 
 bool SignalDiagnosticsGetLiveSnapshot(PdwLiveSignalSnapshot* snapshot)
 {
@@ -843,6 +917,7 @@ BOOL Start_Capturing(void)
 		g_receiverStatus = "Opening configured RTL-SDR receiver";
 		if (TryStartRtlSdr())
 		{
+			g_directReceiverOpened = GetTickCount();
 			g_lastReceiverError.clear();
 			g_receiverStatus = "RTL-SDR receiver running";
 			TraceReceiverStartup(true, std::string());
@@ -1081,13 +1156,25 @@ void SignalSourceService(void)
 		 (Profile.audioSource == AUDIO_SOURCE_RTL_TCP && g_modernCaptureKind == 2));
 	if (configuredCaptureActive)
 	{
-		if (receiverState == pdw::signal::RTL_TCP_RUNNING) return;
-		const std::string error = ConfiguredReceiverError();
+		bool stalled = false;
+		if (receiverState == pdw::signal::RTL_TCP_RUNNING && !g_modernCaptureQuarantined)
+		{
+			if (Profile.audioSource != AUDIO_SOURCE_RTL_SDR) return;
+			const DWORD lastIq = g_rtlSdrSource.lastIqCallbackTick();
+			if (GetTickCount() - (lastIq ? lastIq : g_directReceiverOpened) < 8000) return;
+			stalled = true;
+		}
+		const std::string error = stalled ? "No USB IQ callbacks for eight seconds." : ConfiguredReceiverError();
 		if (!error.empty()) g_lastReceiverError = error;
 		g_receiverStatus = std::string(ReceiverSourceName()) +
 			" capture stopped; retry scheduled";
 		TraceReceiverStartup(false, g_lastReceiverError);
-		Stop_Capturing();
+		if (g_modernCaptureQuarantined && GetTickCount() - g_lastReceiverStopAttempt < 2000) return;
+		if (!Stop_Capturing())
+		{
+			g_lastReceiverStopAttempt = GetTickCount();
+			return;
+		}
 	}
 
 	if (bCapturing) return;
@@ -1500,15 +1587,16 @@ bool SignalDiagnosticIsReplaying(void)
 	return g_diagnosticReplayActive;
 }
 
-void SignalDiagnosticsRecordDecodeResult(int errors)
+void SignalDiagnosticsRecordDecodeResult(int errors, bool pagingBch)
 {
 	extern double dRX_Quality;
 	extern char phase;
 	extern int iCurrentCycle;
 	extern int iCurrentFrame;
 	int phaseIndex = -1;
-	if (flex_timer && phase >= 'A' && phase <= 'D') phaseIndex = phase - 'A';
-	g_signalDiagnostics.RecordDecodeResult(errors, phaseIndex, iCurrentCycle,
+	extern int flex_blk;
+	if (pagingBch && bFlexActive && flex_blk > 0 && !pocbit && phase >= 'A' && phase <= 'D') phaseIndex = phase - 'A';
+	g_signalDiagnostics.RecordDecodeResult(errors, pagingBch, phaseIndex, iCurrentCycle,
 		iCurrentFrame, static_cast<float>(dRX_Quality));
 }
 
@@ -1534,6 +1622,9 @@ void Reset_ATB(void)
 	nSamples = 0;
 	flex_cnt_1600 = 0;
 	WatchCtr = -1;
+	atb_len = 0;
+	crossing = 0;
+	sync_bit = low_audio;
 	atb_bit = low_audio;
 	config_index=INDEX1600;
 	cross_over = 0;
@@ -1606,7 +1697,11 @@ void Audio_To_Bits(char *lpAudioBuffer, long LenAudioBuffer)
 		// Get a sample and correct it.
 		val = pdw::signal::LegacyPcm8Value(
 			static_cast<unsigned char>(lpAudioBuffer[atb_ctr]));
-		g_enhancedAudioSlicer.Observe(static_cast<float>(val) / 128.0f);
+		// The two-level sync trains the four-level thresholds. Payloads can
+		// legitimately favour just two of the four levels for a whole frame;
+		// treating that imbalance as DC corrupts otherwise clean B/D data.
+		g_enhancedAudioSlicer.Observe(static_cast<float>(val) / 128.0f,
+			!bFlexActive || level != 4);
 
 		// ****** Need to find preamble!.  ***************
 
@@ -1732,8 +1827,11 @@ void Audio_To_Bits(char *lpAudioBuffer, long LenAudioBuffer)
 				if ((atb_len < WatchStep * 2) && ((atb_len / WatchStep) > clkt_lo) && ((atb_len / WatchStep) < clkt_hi))
 				{
 					// center of bit == 1/2 data bit.
-					WatchCtr = atb_ctr + (WatchStep / 2);
-					WatchCtr += atb_sample_offset[config_index];
+					WatchCtr = pdw::signal::ResyncSymbolClock(
+						atb_ctr + (WatchStep / 2) + atb_sample_offset[config_index],
+						WatchCtr, WatchStep, bFlexActive && !pocbit &&
+						Profile.rtlSignalConditionerEnabled &&
+						(g_modernCaptureKind == 2 || g_modernCaptureKind == 3));
 				}
 			}             
 			atb_len=0;
@@ -1745,8 +1843,11 @@ void Audio_To_Bits(char *lpAudioBuffer, long LenAudioBuffer)
 			if ((atb_len < WatchStep * 2) && ((atb_len / WatchStep) > clkt_lo) && ((atb_len / WatchStep) < clkt_hi))
 			{
 				// center of bit == 1/2 data bit.
-				WatchCtr = atb_ctr + (WatchStep / 2);
-				WatchCtr += atb_sample_offset[config_index];
+				WatchCtr = pdw::signal::ResyncSymbolClock(
+					atb_ctr + (WatchStep / 2) + atb_sample_offset[config_index],
+					WatchCtr, WatchStep, bFlexActive && !pocbit &&
+					Profile.rtlSignalConditionerEnabled &&
+					(g_modernCaptureKind == 2 || g_modernCaptureKind == 3));
 			}
 			atb_len=0;
 		}
@@ -1757,7 +1858,13 @@ void Audio_To_Bits(char *lpAudioBuffer, long LenAudioBuffer)
 		if (cross_over)
 		{                
 			if (skipped_sc < 39) frame_flex(3);		// If skipping unreadable data, still need to keep flex routines happy!
-			if (skipped_sc < 1080)					// Works out to around 40 "1600 bits" or 80 "3200 bits".
+			// The crossover is raised at the centre of the first Sync-2
+			// 1600-sps interval. Wait the remaining 39.5 intervals of its
+			// 25 ms duration, then sample half a 3200-sps symbol into data.
+			// The old 1080-sample delay could consume one Sync-2 symbol as
+			// payload, swapping A/C and B/D despite mostly clean BCH words.
+			const int crossoverSamples = static_cast<int>(ActiveAudioSampleRate() * 79u / 3200u);
+			if (skipped_sc < crossoverSamples)
 			{
 				skipped_sc++;
 				continue;
@@ -1783,7 +1890,7 @@ void Audio_To_Bits(char *lpAudioBuffer, long LenAudioBuffer)
 				if (pocbit == 0)	// If pocbit==0, end of pocsag signal.
 				{
 					display_showmo(MODE_IDLE);
-					pocsag.frame('X');      // Reset pocsag routine.
+					pocsag.frame(-1);
 					BaudRate = 1600;        // Allow flex sync-ups again.
 					config_index=INDEX1600;
 				}
@@ -1817,7 +1924,7 @@ void Audio_To_Bits(char *lpAudioBuffer, long LenAudioBuffer)
 			WatchCtr += WatchStep;
 		}
 	} // endof main "for" loop.
-	WatchCtr = WatchCtr - (double)LenAudioBuffer;
+	if (WatchCtr != -1) WatchCtr -= static_cast<double>(LenAudioBuffer);
 }
 
 /* MOBITEX To Bits
@@ -2244,6 +2351,8 @@ namespace
 	struct ReceiverDialogState
 	{
 		std::vector<pdw::signal::ReceiverPackage> packages;
+		pdw::signal::RadioProcessingSettings processing;
+		ReceiverDialogState() : processing(Profile.rtlProcessing) {}
 	};
 
 	bool GetIntegerControl(HWND dialog, int control, long minimum, long maximum,
@@ -2379,6 +2488,133 @@ namespace
 		return true;
 	}
 
+	struct RadioProcessingDialogState
+	{
+		pdw::signal::RadioProcessingSettings settings;
+		std::uint32_t audioRate;
+	};
+	bool IsRadioCheckbox(int control)
+	{
+		switch (control)
+		{
+			case IDC_RADIO_SQUELCHENABLED:
+			case IDC_RADIO_SPEECHENABLED:
+			case IDC_RADIO_NOISEREDUCTIONENABLED:
+			case IDC_RADIO_DCBLOCKENABLED:
+			case IDC_RADIO_AUDIOGAINENABLED:
+			case IDC_RADIO_AGCENABLED:
+			case IDC_RADIO_LIMITERENABLED:
+				return true;
+			default: return false;
+		}
+	}
+	void EnableRadioProcessingControls(HWND dialog)
+	{
+		const int mode = static_cast<int>(SendDlgItemMessage(dialog, IDC_RADIO_DEMODULATION, CB_GETCURSEL, 0, 0));
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_WFMCUTOFFHZ), mode == pdw::signal::RADIO_WFM);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_AMCUTOFFHZ), mode == pdw::signal::RADIO_AM);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_SQUELCHTHRESHOLDDBFS), IsDlgButtonChecked(dialog, IDC_RADIO_SQUELCHENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_SQUELCHHYSTERESISDB), IsDlgButtonChecked(dialog, IDC_RADIO_SQUELCHENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_SQUELCHHANGMS), IsDlgButtonChecked(dialog, IDC_RADIO_SQUELCHENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_SPEECHHIGHPASSHZ), IsDlgButtonChecked(dialog, IDC_RADIO_SPEECHENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_SPEECHLOWPASSHZ), IsDlgButtonChecked(dialog, IDC_RADIO_SPEECHENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_NOISETHRESHOLDDBFS), IsDlgButtonChecked(dialog, IDC_RADIO_NOISEREDUCTIONENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_NOISEREDUCTIONDB), IsDlgButtonChecked(dialog, IDC_RADIO_NOISEREDUCTIONENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_NOISEATTACKMS), IsDlgButtonChecked(dialog, IDC_RADIO_NOISEREDUCTIONENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_NOISERELEASEMS), IsDlgButtonChecked(dialog, IDC_RADIO_NOISEREDUCTIONENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_AUDIOGAINDB), IsDlgButtonChecked(dialog, IDC_RADIO_AUDIOGAINENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_AGCTARGETDBFS), IsDlgButtonChecked(dialog, IDC_RADIO_AGCENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_AGCMAXGAINDB), IsDlgButtonChecked(dialog, IDC_RADIO_AGCENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_AGCATTACKMS), IsDlgButtonChecked(dialog, IDC_RADIO_AGCENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_AGCRELEASEMS), IsDlgButtonChecked(dialog, IDC_RADIO_AGCENABLED) == BST_CHECKED);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_LIMITERCEILINGDBFS), IsDlgButtonChecked(dialog, IDC_RADIO_LIMITERENABLED) == BST_CHECKED);
+	}
+	void PopulateRadioProcessingControls(HWND dialog, const pdw::signal::RadioProcessingSettings& settings)
+	{
+		std::size_t count = 0;
+		const pdw::signal::RadioSetting* fields = pdw::signal::RadioSettings(count);
+		for (std::size_t index = 0; index < count; ++index)
+		{
+			const int control = IDC_RADIO_DEMODULATION + static_cast<int>(index);
+			const int value = settings.*(fields[index].member);
+			if (IsRadioCheckbox(control)) CheckDlgButton(dialog, control, value ? BST_CHECKED : BST_UNCHECKED);
+			else if (control == IDC_RADIO_DEMODULATION || control == IDC_RADIO_DEEMPHASIS)
+				SendDlgItemMessage(dialog, control, CB_SETCURSEL, value, 0);
+			else SetDlgItemInt(dialog, control, value, TRUE);
+		}
+		EnableRadioProcessingControls(dialog);
+	}
+	INT_PTR CALLBACK RadioProcessingDlgProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
+	{
+		RadioProcessingDialogState* state = reinterpret_cast<RadioProcessingDialogState*>(
+			GetWindowLongPtr(dialog, GWLP_USERDATA));
+		if (message == WM_INITDIALOG)
+		{
+			state = reinterpret_cast<RadioProcessingDialogState*>(lParam);
+			SetWindowLongPtr(dialog, GWLP_USERDATA, lParam);
+			for (int mode = 0; mode <= pdw::signal::RADIO_AM; ++mode)
+				SendDlgItemMessage(dialog, IDC_RADIO_DEMODULATION, CB_ADDSTRING, 0,
+					reinterpret_cast<LPARAM>(pdw::signal::RadioDemodulationName(mode)));
+			const char* emphasis[] = { "Off", "50 microseconds", "75 microseconds" };
+			for (const char* label : emphasis)
+				SendDlgItemMessage(dialog, IDC_RADIO_DEEMPHASIS, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
+			PopulateRadioProcessingControls(dialog, state->settings);
+			CenterWindow(dialog);
+			PdwThemeApplyToWindow(dialog);
+			return TRUE;
+		}
+		if (message == WM_COMMAND && state)
+		{
+			const int control = LOWORD(wParam);
+			if (control == IDCANCEL) { EndDialog(dialog, IDCANCEL); return TRUE; }
+			if (control == IDC_RADIO_DEFAULTS)
+			{
+				PopulateRadioProcessingControls(dialog, pdw::signal::DefaultRadioProcessingSettings());
+				return TRUE;
+			}
+			if (control == IDOK)
+			{
+				auto draft = state->settings;
+				std::size_t count = 0;
+				const pdw::signal::RadioSetting* fields = pdw::signal::RadioSettings(count);
+				for (std::size_t index = 0; index < count; ++index)
+				{
+					const int item = IDC_RADIO_DEMODULATION + static_cast<int>(index);
+					long value = 0;
+					if (IsRadioCheckbox(item)) value = IsDlgButtonChecked(dialog, item) == BST_CHECKED ? 1 : 0;
+					else if (item == IDC_RADIO_DEMODULATION || item == IDC_RADIO_DEEMPHASIS)
+						value = static_cast<long>(SendDlgItemMessage(dialog, item, CB_GETCURSEL, 0, 0));
+					else if (!GetIntegerControl(dialog, item, fields[index].minimum, fields[index].maximum,
+						value, fields[index].label)) return TRUE;
+					draft.*(fields[index].member) = static_cast<int>(value);
+				}
+				std::string error;
+				if (!pdw::signal::ValidateRadioProcessingSettings(draft, state->audioRate, error))
+				{
+					MessageBoxA(dialog, error.c_str(), "PDW Radio Processing", MB_ICONERROR);
+					return TRUE;
+				}
+				state->settings = draft;
+				EndDialog(dialog, IDOK);
+				return TRUE;
+			}
+			if (IsRadioCheckbox(control) || control == IDC_RADIO_DEMODULATION)
+				EnableRadioProcessingControls(dialog);
+		}
+		return FALSE;
+	}
+	void UpdateRadioProcessingSummary(HWND dialog)
+	{
+		const ReceiverDialogState* state = GetReceiverDialogState(dialog);
+		if (!state) return;
+		char summary[160];
+		snprintf(summary, sizeof(summary), "%s | Squelch %s | Audio processing %s",
+			pdw::signal::RadioDemodulationName(state->processing.demodulation),
+			state->processing.squelchEnabled ? "ON" : "OFF",
+			pdw::signal::RadioAudioProcessingEnabled(state->processing) ? "ON" : "OFF");
+		SetDlgItemTextA(dialog, IDC_RADIO_SUMMARY, summary);
+	}
+
 	void EnableRtlControls(HWND dialog, int source)
 	{
 		const BOOL rtlTcp = source == AUDIO_SOURCE_RTL_TCP;
@@ -2397,6 +2633,7 @@ namespace
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_PPM), rtlAny);
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_BANDWIDTH), rtlAny);
 		EnableWindow(GetDlgItem(dialog, IDC_RTL_SIGNAL_CONDITIONER), rtlAny);
+		EnableWindow(GetDlgItem(dialog, IDC_RADIO_PROCESSING), rtlAny);
 	}
 
 	bool ReadRtlDialog(HWND dialog, pdw::signal::RtlTcpConfig& config, int& deviceIndex)
@@ -2431,6 +2668,13 @@ namespace
 		config.automaticGain = IsDlgButtonChecked(dialog, IDC_RTL_AUTOMATIC_GAIN) != 0;
 		config.signalConditionerEnabled =
 			IsDlgButtonChecked(dialog, IDC_RTL_SIGNAL_CONDITIONER) != 0;
+		config.processing = GetReceiverDialogState(dialog)->processing;
+		std::string processingError;
+		if (!pdw::signal::ValidateRadioProcessingSettings(config.processing, config.audioSampleRate, processingError))
+		{
+			MessageBoxA(dialog, processingError.c_str(), "PDW Radio Processing", MB_ICONERROR);
+			return false;
+		}
 		return true;
 	}
 
@@ -2528,18 +2772,21 @@ namespace
 			snprintf(acceptedDetail, sizeof(acceptedDetail), "%lu ms ago",
 				receiver.lastAcceptedDecodeAgeMs);
 		else lstrcpyA(acceptedDetail, "none since startup");
-		char text[1536];
+		char text[2048];
 		snprintf(text, sizeof(text),
-			"Level %.0f%%  Noise %.0f%%  Clip %.2f%%  Eye %.0f%%  Signal %.0f%%  Errors %llu/%llu  FLEX A:%llu B:%llu C:%llu D:%llu%s\r\n"
+			"Level %.0f%%  Noise %.0f%%  Clip %.2f%%  Eye %.0f%%  Audio score %.0f%%%s\r\n"
+			"Paging BCH: %llu corrected bits in %llu words; %llu uncorrectable words. Other flagged checks: %llu. FLEX payload words with errors: A:%llu B:%llu C:%llu D:%llu\r\n"
 			"Decoder queue %u/%u (high-water %u; %llu bytes fixed), drops %llu blocks/%llu samples, reset-discard %llu/%llu, lag %llu ms (max %llu), decoded %llu samples, worker %s/%s%s, stop timeouts %llu. Threads %llu started/%llu stopped; worker handles %llu created/%llu closed/%u owned. Accepted rows %lu; latest %s. Process handles %lu, GDI %lu, USER %lu. Meter paints %lu, skipped %lu, suspended %lu, tooltips %lu, backbuffer objects %lu (%lu created/%lu deleted).",
 			metrics.rmsLevel * 100.0f, metrics.noiseLevel * 100.0f,
-			metrics.clippingPercent, metrics.eyeOpening, metrics.signalQuality,
-			static_cast<unsigned long long>(metrics.correctedErrors),
-			static_cast<unsigned long long>(metrics.uncorrectableErrors),
-			static_cast<unsigned long long>(metrics.phaseErrors[0]),
-			static_cast<unsigned long long>(metrics.phaseErrors[1]),
-			static_cast<unsigned long long>(metrics.phaseErrors[2]),
-			static_cast<unsigned long long>(metrics.phaseErrors[3]), receiverDetail,
+			metrics.clippingPercent, metrics.eyeOpening, metrics.signalQuality, receiverDetail,
+			static_cast<unsigned long long>(metrics.correctedBchBits),
+			static_cast<unsigned long long>(metrics.correctedBchWords),
+			static_cast<unsigned long long>(metrics.uncorrectableBchWords),
+			static_cast<unsigned long long>(metrics.otherFlaggedChecks),
+			static_cast<unsigned long long>(metrics.phaseFlaggedWords[0]),
+			static_cast<unsigned long long>(metrics.phaseFlaggedWords[1]),
+			static_cast<unsigned long long>(metrics.phaseFlaggedWords[2]),
+			static_cast<unsigned long long>(metrics.phaseFlaggedWords[3]),
 			receiver.decodeQueueDepth, receiver.decodeQueueCapacity,
 			receiver.decodeQueueHighWater, receiver.decodeQueuePreallocatedBytes,
 			receiver.decodeQueueDrops, receiver.decodeDroppedSamples,
@@ -2560,7 +2807,14 @@ namespace
 			receiver.meterTooltipUpdateCount,
 			receiver.meterActiveBackbufferObjects,
 			receiver.meterBackbufferCreateCount, receiver.meterBackbufferDeleteCount);
+		const LRESULT firstLine = SendDlgItemMessage(dialog, IDC_SIGNAL_METRICS, EM_GETFIRSTVISIBLELINE, 0, 0);
+		DWORD selectionStart = 0, selectionEnd = 0;
+		SendDlgItemMessage(dialog, IDC_SIGNAL_METRICS, EM_GETSEL,
+			reinterpret_cast<WPARAM>(&selectionStart), reinterpret_cast<LPARAM>(&selectionEnd));
 		SetDlgItemText(dialog, IDC_SIGNAL_METRICS, text);
+		SendDlgItemMessage(dialog, IDC_SIGNAL_METRICS, EM_SETSEL, selectionStart, selectionEnd);
+		SendDlgItemMessage(dialog, IDC_SIGNAL_METRICS, EM_LINESCROLL, 0, firstLine -
+			SendDlgItemMessage(dialog, IDC_SIGNAL_METRICS, EM_GETFIRSTVISIBLELINE, 0, 0));
 		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_WAVEFORM), NULL, FALSE);
 		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_QUALITY_HISTORY), NULL, FALSE);
 		InvalidateRect(GetDlgItem(dialog, IDC_SIGNAL_SPECTRUM), NULL, FALSE);
@@ -2895,6 +3149,7 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 				Profile.rtlSignalConditionerEnabled ? BST_CHECKED : BST_UNCHECKED);
 			RefreshReceiverPackages(hDlg, Profile.rtlReceiverId);
 			EnableRtlControls(hDlg, Profile.audioSource);
+			UpdateRadioProcessingSummary(hDlg);
 			SetDlgItemText(hDlg, IDC_SIGNAL_RECORD_PATH, "PDW-signal.wav");
 			SetDlgItemText(hDlg, IDC_SIGNAL_REPLAY_PATH, "PDW-signal.wav");
 			UpdateDiagnosticControls(hDlg);
@@ -2905,6 +3160,21 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 		case WM_COMMAND:
 			switch (LOWORD(wParam))
 			{
+				case IDC_RADIO_PROCESSING:
+				{
+					long audioRate = 0;
+					if (!GetIntegerControl(hDlg, IDC_RTL_AUDIO_RATE, 8000, 192000,
+						audioRate, "Audio sample rate")) return TRUE;
+					RadioProcessingDialogState draft = { GetReceiverDialogState(hDlg)->processing,
+						static_cast<std::uint32_t>(audioRate) };
+					if (GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(RADIO_PROCESSING_DLGBOX), hDlg,
+						RadioProcessingDlgProc, reinterpret_cast<LPARAM>(&draft)) == IDOK)
+					{
+						GetReceiverDialogState(hDlg)->processing = draft.settings;
+						UpdateRadioProcessingSummary(hDlg);
+					}
+					return TRUE;
+				}
 				case IDC_AUDIO_PROFILE_APPLY:
 					return ApplyAdelaideFlexFromDialog(hDlg) ? TRUE : FALSE;
 
@@ -3056,8 +3326,10 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 					CalibrateReplayRecording(hDlg);
 					return TRUE;
 
+				case IDC_RADIO_APPLY:
 				case IDOK:
 				{
+					const bool closeAfterApply = LOWORD(wParam) == IDOK;
 					const int source = static_cast<int>(SendDlgItemMessage(hDlg, IDC_SIGNAL_SOURCE, CB_GETCURSEL, 0, 0));
 					pdw::signal::RtlTcpConfig config;
 					int deviceIndex = Profile.rtlDeviceIndex;
@@ -3101,6 +3373,7 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 						Profile.rtlAutomaticGain = config.automaticGain ? 1 : 0;
 						Profile.rtlSignalConditionerEnabled =
 							config.signalConditionerEnabled ? 1 : 0;
+						Profile.rtlProcessing = config.processing;
 						Profile.rtlDeviceIndex = deviceIndex;
 						if (source == AUDIO_SOURCE_RTL_SDR)
 						{
@@ -3153,7 +3426,12 @@ BOOL FAR PASCAL SignalSourceDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 						return TRUE;
 					}
 					SetTimer(ghWnd, PDW_TIMER, 100, (TIMERPROC)NULL);
-					EndDialog(hDlg, TRUE);
+					if (closeAfterApply) EndDialog(hDlg, TRUE);
+					else
+					{
+						SetDlgItemTextA(hDlg, IDC_RTL_STATUS, "Settings applied.");
+						UpdateLiveDiagnostics(hDlg);
+					}
 					return TRUE;
 				}
 

@@ -192,7 +192,7 @@ namespace
 		const float db = DbValue(state.snapshot.rmsLevel);
 		char updatedText[sizeof(state.tooltipText)];
 		snprintf(updatedText, sizeof(updatedText),
-			"%s - %s, level %.0f dBFS, quality %.0f%%, clipping %.2f%%. %s%s%s"
+			"%s - %s, level %.0f dBFS, audio score %.0f%%, clipping %.2f%%. Not RF strength or message accuracy. %s%s%s"
 			"Click to open Signal & radio settings.",
 			state.stateText, state.sourceText, db, state.snapshot.signalQuality,
 			state.snapshot.clippingPercent,
@@ -364,6 +364,13 @@ namespace
 		}
 		HDC memory = state.backbufferDc;
 		const int savedDc = SaveDC(memory);
+		const int pixelWidth = bounds.right, pixelHeight = bounds.bottom;
+		const UINT dpi = PdwWindowDpi(window);
+		SetMapMode(memory, MM_ANISOTROPIC);
+		SetWindowExtEx(memory, 96, 96, NULL);
+		SetViewportExtEx(memory, dpi, dpi, NULL);
+		bounds.right = MulDiv(pixelWidth, 96, dpi);
+		bounds.bottom = MulDiv(pixelHeight, 96, dpi);
 		const COLORREF panelColour = state.hovered ?
 			BlendColour(PdwThemeSurfaceColor(), PdwThemeAccentColor(), 12) :
 			PdwThemeSurfaceColor();
@@ -484,17 +491,15 @@ namespace
 		RoundRect(memory, peakFill.left, peakFill.top, peakFill.right,
 			peakFill.bottom, 4, 4);
 
-		BitBlt(dc, 0, 0, bounds.right, bounds.bottom, memory, 0, 0, SRCCOPY);
 		RestoreDC(memory, savedDc);
+		BitBlt(dc, 0, 0, pixelWidth, pixelHeight, memory, 0, 0, SRCCOPY);
 		InterlockedIncrement(&g_paintCount);
 		EndPaint(window, &paint);
 	}
 
 	void OpenSignalSettings(HWND window)
 	{
-		HWND mainWindow = GetParent(GetParent(window));
-		if (!mainWindow) mainWindow = ghWnd;
-		ShowSettingsCenter(mainWindow, PDW_SETTINGS_SIGNAL);
+		ShowSettingsCenter(ghWnd, PDW_SETTINGS_SIGNAL);
 	}
 
 	LRESULT CALLBACK MeterWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)

@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <uxtheme.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <cctype>
@@ -26,6 +27,7 @@
 namespace
 {
 	const char kSettingsClass[] = "PDWSettingsCenterWindow";
+	const char kContentClass[] = "PDWSettingsContentWindow";
 
 	enum ControlId
 	{
@@ -67,7 +69,7 @@ namespace
 		{ "Filters", "Control which decoded messages are highlighted or routed." },
 		{ "Data outputs", "Configure email, notifications and approved decoded-output destinations." },
 		{ "Health & diagnostics", "Check decoder statistics, diagnostics and delivery health." },
-		{ "About me", "PDW version, credits and help." }
+		{ "About me", "PDW version, updates, credits and help." }
 	};
 
 	const SettingAction kActions[] =
@@ -93,10 +95,12 @@ namespace
 		{ PDW_SETTINGS_HEALTH, IDM_OUTPUT_HEALTH, "Delivery health", "Review destination state, failures and pending alerts." },
 		{ PDW_SETTINGS_HEALTH, IDM_MONSTAT, "Decoder statistics", "Review message counts, errors and current decoder activity." },
 		{ PDW_SETTINGS_HEALTH, IDM_DEBUG, "Diagnostics", "Open PDW's diagnostic information and troubleshooting view." },
-		{ PDW_SETTINGS_ABOUT, IDM_ABOUT, "About PDW", "View the PDW version, architecture, capabilities, credits and project links." }
+		{ PDW_SETTINGS_ABOUT, IDM_ABOUT, "About PDW", "View the PDW version, architecture, capabilities, credits and project links." },
+		{ PDW_SETTINGS_ABOUT, IDM_UPDATES, "Updates and versions", "Upgrade this installation, reinstall or choose another published version while retaining your settings." }
 	};
 
 	HWND g_window = NULL;
+	HWND g_content = NULL;
 	HWND g_nav = NULL;
 	HWND g_title = NULL;
 	HWND g_subtitle = NULL;
@@ -126,6 +130,10 @@ namespace
 	BOOL g_appliedStartup = FALSE;
 	bool g_dirty = false;
 	int g_dpi = 96;
+	int g_scrollY = 0;
+	int g_contentHeight = 0;
+	int g_headerBottom = 0;
+	int g_wheelRemainder = 0;
 	RECT g_directCard = { 0, 0, 0, 0 };
 
 	int Scale(int value)
@@ -332,7 +340,7 @@ namespace
 		cardText += kActions[actionIndex].description;
 		HWND card = CreateWindowExA(0, "BUTTON", cardText.c_str(), WS_CHILD | WS_VISIBLE |
 			WS_TABSTOP | BS_OWNERDRAW,
-			0, 0, 0, 0, g_window,
+			0, 0, 0, 0, g_content,
 			reinterpret_cast<HMENU>(static_cast<INT_PTR>(controlId)), ghInstance, NULL);
 		if (!card)
 		{
@@ -350,30 +358,127 @@ namespace
 		{
 			g_startup = CreateWindowExA(0, "BUTTON", "Start PDW with Windows",
 				WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-				0, 0, 0, 0, g_window,
+				0, 0, 0, 0, g_content,
 				reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SC_STARTUP)), ghInstance, NULL);
 			g_startupStatus = CreateWindowExA(0, "STATIC", "", WS_CHILD | WS_VISIBLE,
-				0, 0, 0, 0, g_window,
+				0, 0, 0, 0, g_content,
 				reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SC_STARTUP_STATUS)), ghInstance, NULL);
 		}
 		else if (g_selectedPage == PDW_SETTINGS_APPEARANCE)
 		{
 			g_theme = CreateWindowExA(0, "COMBOBOX", "",
 				WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-				0, 0, 0, 0, g_window,
+				0, 0, 0, 0, g_content,
 				reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SC_THEME)), ghInstance, NULL);
 			SendMessageA(g_theme, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>("Follow Windows"));
 			SendMessageA(g_theme, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>("Light"));
 			SendMessageA(g_theme, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>("Dark"));
 			g_themeStatus = CreateWindowExA(0, "STATIC", "", WS_CHILD | WS_VISIBLE,
-				0, 0, 0, 0, g_window,
+				0, 0, 0, 0, g_content,
 				reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SC_THEME_STATUS)), ghInstance, NULL);
 		}
 		else if (g_selectedPage == PDW_SETTINGS_SIGNAL)
 		{
-			g_signalPreview = LiveSignalMeterCreate(g_window, IDC_SC_SIGNAL_PREVIEW);
+			g_signalPreview = LiveSignalMeterCreate(g_content, IDC_SC_SIGNAL_PREVIEW);
 		}
 		RefreshDraftControls();
+	}
+
+	int WrappedHeight(HDC dc, HFONT font, const char* text, int width)
+	{
+		HGDIOBJ oldFont = SelectObject(dc, font);
+		RECT bounds = { 0, 0, (std::max)(1, width), 0 };
+		DrawTextA(dc, text, -1, &bounds, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+		SelectObject(dc, oldFont);
+		return bounds.bottom;
+	}
+
+	int CardHeight(HDC dc, const SettingAction& action, int width)
+	{
+		const int textWidth = (std::max)(1, width - Scale(112));
+		return (std::max)(Scale(72), Scale(28) +
+			WrappedHeight(dc, g_cardTitleFont, action.title, textWidth) +
+			WrappedHeight(dc, g_bodyFont, action.description, textWidth));
+	}
+
+	void LayoutContent()
+	{
+		if (!g_content) return;
+		RECT client;
+		GetClientRect(g_content, &client);
+		const int width = (std::max)(1, static_cast<int>(client.right) - Scale(8));
+		HDC dc = GetDC(g_content);
+		int directHeight = 0;
+		int statusHeight = 0;
+		if (g_startup || g_theme)
+		{
+			char status[160] = { 0 };
+			GetWindowTextA(g_startup ? g_startupStatus : g_themeStatus, status, sizeof(status));
+			statusHeight = WrappedHeight(dc, g_bodyFont, status, width - Scale(32));
+			directHeight = Scale(58) + statusHeight;
+		}
+		std::vector<int> cardHeights;
+		int total = directHeight ? directHeight + Scale(8) : 0;
+		if (g_signalPreview) total += Scale(88);
+		for (std::size_t index = 0; index < g_cards.size(); ++index)
+		{
+			cardHeights.push_back(CardHeight(dc, kActions[g_visibleActions[index]], width));
+			total += cardHeights.back() + Scale(8);
+		}
+		ReleaseDC(g_content, dc);
+		g_contentHeight = total;
+		g_scrollY = (std::max)(0, (std::min)(g_scrollY,
+			total - static_cast<int>(client.bottom)));
+		SCROLLINFO scroll = { sizeof(scroll), SIF_RANGE | SIF_PAGE | SIF_POS | SIF_DISABLENOSCROLL };
+		scroll.nMax = (std::max)(0, total - 1);
+		scroll.nPage = static_cast<UINT>(client.bottom);
+		scroll.nPos = g_scrollY;
+		SetScrollInfo(g_content, SB_VERT, &scroll, TRUE);
+		int y = -g_scrollY;
+		SetRectEmpty(&g_directCard);
+		if (directHeight)
+		{
+			SetRect(&g_directCard, 0, y, width, y + directHeight);
+			if (g_startup)
+				MoveWindow(g_startup, Scale(16), y + Scale(12), width - Scale(32), Scale(28), TRUE);
+			if (g_theme)
+				MoveWindow(g_theme, Scale(16), y + Scale(12),
+					(std::min)(Scale(240), width - Scale(32)), Scale(220), TRUE);
+			MoveWindow(g_startup ? g_startupStatus : g_themeStatus, Scale(16), y + Scale(46),
+				width - Scale(32), statusHeight, TRUE);
+			y += directHeight + Scale(8);
+		}
+		if (g_signalPreview)
+		{
+			MoveWindow(g_signalPreview, 0, y, width, Scale(80), TRUE);
+			y += Scale(88);
+		}
+		for (std::size_t index = 0; index < g_cards.size(); ++index)
+		{
+			MoveWindow(g_cards[index], 0, y, width, cardHeights[index], TRUE);
+			y += cardHeights[index] + Scale(8);
+		}
+		RedrawWindow(g_content, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+	}
+
+	void ScrollContent(int position)
+	{
+		g_scrollY = position;
+		LayoutContent();
+	}
+
+	void RevealFocusedControl()
+	{
+		HWND focus = GetFocus();
+		if (!g_content || !focus || !IsChild(g_content, focus)) return;
+		RECT bounds, client;
+		GetWindowRect(focus, &bounds);
+		MapWindowPoints(NULL, g_content, reinterpret_cast<POINT*>(&bounds), 2);
+		GetClientRect(g_content, &client);
+		if (bounds.top < 0) ScrollContent(g_scrollY + bounds.top);
+		else if (bounds.bottom > client.bottom)
+			ScrollContent(g_scrollY + (std::min)(static_cast<int>(bounds.top),
+				static_cast<int>(bounds.bottom - client.bottom)));
 	}
 
 	void LayoutControls()
@@ -384,10 +489,10 @@ namespace
 		const int width = client.right;
 		const int height = client.bottom;
 		const bool narrow = width < Scale(860);
-		const int navWidth = narrow ? Scale(196) : Scale(244);
-		const int margin = Scale(26);
+		const int navWidth = narrow ? Scale(212) : Scale(244);
+		const int margin = Scale(20);
 		const int contentLeft = navWidth + margin;
-		const int contentWidth = (std::max)(Scale(300), width - contentLeft - margin);
+		const int contentWidth = (std::max)(1, width - contentLeft - margin);
 		const int navTop = Scale(108);
 		const int availableNavHeight = (std::max)(Scale(380), height - navTop);
 		const int navRowHeight = (std::min)(Scale(42),
@@ -396,60 +501,30 @@ namespace
 		MoveWindow(g_search, Scale(12), Scale(64), navWidth - Scale(24), Scale(34), TRUE);
 		MoveWindow(g_nav, 0, navTop, navWidth, height - navTop, TRUE);
 		SendMessage(g_nav, LB_SETITEMHEIGHT, 0, navRowHeight);
-		MoveWindow(g_title, contentLeft, Scale(22),
-			narrow ? contentWidth : contentWidth - Scale(232), Scale(30), TRUE);
-		MoveWindow(g_subtitle, contentLeft, Scale(53), contentWidth, Scale(24), TRUE);
-		if (narrow)
-		{
-			MoveWindow(g_revert, width - margin - Scale(200), Scale(94),
-				Scale(80), Scale(36), TRUE);
-			MoveWindow(g_apply, width - margin - Scale(112), Scale(94),
-				Scale(112), Scale(36), TRUE);
-		}
-		else
-		{
-			MoveWindow(g_revert, width - margin - Scale(200), Scale(22), Scale(80), Scale(34), TRUE);
-			MoveWindow(g_apply, width - margin - Scale(112), Scale(22), Scale(112), Scale(34), TRUE);
-		}
-
-		int y = narrow ? Scale(168) : Scale(124);
-		if (g_startup || g_theme)
-		{
-			SetRect(&g_directCard, contentLeft, y, contentLeft + contentWidth, y + Scale(80));
-			if (g_startup)
-			{
-				MoveWindow(g_startup, contentLeft + Scale(16), y + Scale(12), Scale(260), Scale(26), TRUE);
-				MoveWindow(g_startupStatus, contentLeft + Scale(16), y + Scale(43),
-					contentWidth - Scale(32), Scale(24), TRUE);
-			}
-			if (g_theme)
-			{
-				MoveWindow(g_theme, contentLeft + Scale(16), y + Scale(14), Scale(190), Scale(220), TRUE);
-				MoveWindow(g_themeStatus, contentLeft + Scale(224), y + Scale(18),
-					contentWidth - Scale(240), Scale(24), TRUE);
-			}
-			y += Scale(88);
-		}
-		if (g_signalPreview)
-		{
-			MoveWindow(g_signalPreview, contentLeft, y, contentWidth, Scale(74), TRUE);
-			y += Scale(80);
-		}
-
-		const int cardHeight = Scale(64);
-		const int cardGap = Scale(6);
-		for (std::size_t index = 0; index < g_cards.size(); ++index)
-		{
-			MoveWindow(g_cards[index], contentLeft, y, contentWidth, cardHeight, TRUE);
-			RedrawWindow(g_cards[index], NULL, NULL,
-				RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW);
-			y += cardHeight + cardGap;
-		}
+		char title[160] = { 0 }, subtitle[320] = { 0 };
+		GetWindowTextA(g_title, title, sizeof(title));
+		GetWindowTextA(g_subtitle, subtitle, sizeof(subtitle));
+		HDC dc = GetDC(g_window);
+		const int titleHeight = WrappedHeight(dc, g_titleFont, title, contentWidth);
+		const int subtitleHeight = WrappedHeight(dc, g_bodyFont, subtitle, contentWidth);
+		ReleaseDC(g_window, dc);
+		MoveWindow(g_title, contentLeft, Scale(18), contentWidth, titleHeight, TRUE);
+		MoveWindow(g_subtitle, contentLeft, Scale(24) + titleHeight, contentWidth, subtitleHeight, TRUE);
+		const int actionsTop = Scale(36) + titleHeight + subtitleHeight;
+		MoveWindow(g_revert, contentLeft, actionsTop, Scale(80), Scale(36), TRUE);
+		MoveWindow(g_apply, contentLeft + Scale(88), actionsTop, Scale(124), Scale(36), TRUE);
+		g_headerBottom = actionsTop + Scale(48);
+		const int contentTop = g_headerBottom + Scale(32);
+		MoveWindow(g_content, contentLeft, contentTop, contentWidth,
+			(std::max)(1, height - contentTop - Scale(12)), TRUE);
+		LayoutContent();
 	}
 
 	void RenderPage()
 	{
 		DestroyDynamicControls();
+		g_scrollY = 0;
+		g_wheelRemainder = 0;
 		char queryText[160] = { 0 };
 		GetWindowTextA(g_search, queryText, sizeof(queryText));
 		const std::string query = Lower(queryText);
@@ -459,17 +534,12 @@ namespace
 			SetWindowTextA(g_title, "Search results");
 			std::string subtitle = "Settings matching \"" + std::string(queryText) + "\"";
 			SetWindowTextA(g_subtitle, subtitle.c_str());
-			RECT client;
-			GetClientRect(g_window, &client);
-			const int contentTop = client.right < Scale(860) ? Scale(168) : Scale(124);
-			const int maxCards = (std::max)(1,
-				(static_cast<int>(client.bottom) - contentTop) / (std::max)(1, Scale(70)));
 			for (int index = 0; index < static_cast<int>(_countof(kActions)); ++index)
 			{
-				if (ContainsText(kActions[index], query) &&
-					static_cast<int>(g_visibleActions.size()) < maxCards)
+				if (ContainsText(kActions[index], query))
 					AddCard(index);
 			}
+			if (g_cards.empty()) SetWindowTextA(g_subtitle, "No matching settings. Try a shorter search or choose a category.");
 		}
 		else
 		{
@@ -498,19 +568,15 @@ namespace
 	{
 		if (visibleIndex < 0 || visibleIndex >= static_cast<int>(g_visibleActions.size())) return;
 		const SettingAction& action = kActions[g_visibleActions[visibleIndex]];
-		char queryText[2] = { 0 };
-		GetWindowTextA(g_search, queryText, sizeof(queryText));
-		if (queryText[0])
-		{
-			SelectPage(action.page);
-			return;
-		}
+		const HWND previousFocus = GetFocus();
 		EnableWindow(g_window, FALSE);
 		SendMessage(ghWnd, WM_COMMAND, MAKEWPARAM(action.command, 0), 0);
 		if (g_window)
 		{
 			EnableWindow(g_window, TRUE);
 			SetForegroundWindow(g_window);
+			if (IsWindow(previousFocus)) SetFocus(previousFocus);
+			RevealFocusedControl();
 		}
 	}
 
@@ -591,7 +657,7 @@ namespace
 			item->itemID >= PDW_SETTINGS_PAGE_COUNT) return;
 		RECT bounds = item->rcItem;
 		const bool selected = (item->itemState & ODS_SELECTED) != 0;
-		const COLORREF background = selected ?
+		const COLORREF background = selected && PdwThemeIsHighContrast() ? GetSysColor(COLOR_HIGHLIGHT) : selected ?
 			(PdwThemeIsDark() ? RGB(18, 58, 75) : RGB(229, 243, 255)) :
 			PdwThemeHeaderColor();
 		HBRUSH brush = CreateSolidBrush(background);
@@ -606,8 +672,10 @@ namespace
 			DeleteObject(brush);
 		}
 		SetBkMode(item->hDC, TRANSPARENT);
-		SetTextColor(item->hDC, PdwThemeTextColor());
+		SetTextColor(item->hDC, selected && PdwThemeIsHighContrast() ?
+			GetSysColor(COLOR_HIGHLIGHTTEXT) : PdwThemeTextColor());
 		DrawNavigationIcon(item->hDC, static_cast<int>(item->itemID), bounds,
+			selected && PdwThemeIsHighContrast() ? GetSysColor(COLOR_HIGHLIGHTTEXT) :
 			selected ? PdwThemeAccentColor() : PdwThemeMutedTextColor());
 		SelectObject(item->hDC, g_navFont);
 		bounds.left += Scale(43);
@@ -641,25 +709,27 @@ namespace
 		SetBkMode(item->hDC, TRANSPARENT);
 		SetTextColor(item->hDC, PdwThemeTextColor());
 		SelectObject(item->hDC, g_cardTitleFont);
-		RECT openButton = { bounds.right - Scale(80), bounds.top + Scale(15),
-			bounds.right - Scale(14), bounds.bottom - Scale(15) };
+		const int buttonTop = bounds.top + (bounds.bottom - bounds.top - Scale(34)) / 2;
+		RECT openButton = { bounds.right - Scale(80), buttonTop,
+			bounds.right - Scale(14), buttonTop + Scale(34) };
 		RECT title = bounds;
 		title.left += Scale(16);
-		title.top += Scale(7);
+		title.top += Scale(12);
 		title.right = openButton.left - Scale(12);
-		title.bottom = title.top + Scale(20);
+		title.bottom = title.top + WrappedHeight(item->hDC, g_cardTitleFont,
+			action.title, title.right - title.left);
 		DrawTextA(item->hDC, action.title, -1, &title,
-			DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+			DT_WORDBREAK | DT_NOPREFIX);
 
 		SetTextColor(item->hDC, PdwThemeMutedTextColor());
 		SelectObject(item->hDC, g_bodyFont);
 		RECT description = bounds;
 		description.left += Scale(16);
-		description.top += Scale(27);
+		description.top = title.bottom + Scale(4);
 		description.right = openButton.left - Scale(12);
-		description.bottom -= Scale(5);
+		description.bottom -= Scale(12);
 		DrawTextA(item->hDC, action.description, -1, &description,
-			DT_WORDBREAK | DT_END_ELLIPSIS | DT_NOPREFIX);
+			DT_WORDBREAK | DT_NOPREFIX);
 
 		HBRUSH openBrush = CreateSolidBrush(PdwThemeHeaderColor());
 		HPEN openPen = CreatePen(PS_SOLID, 1, PdwThemeBorderColor());
@@ -714,7 +784,7 @@ namespace
 		DeleteObject(border);
 		SetBkMode(item->hDC, TRANSPARENT);
 		SetTextColor(item->hDC, PdwThemeTextColor());
-		SelectObject(item->hDC, PdwThemeUiFont());
+		SelectObject(item->hDC, g_bodyFont);
 		RECT textBounds = bounds;
 		textBounds.left += Scale(25);
 		DrawTextA(item->hDC, "Start PDW with Windows", -1, &textBounds,
@@ -737,7 +807,7 @@ namespace
 		DeleteObject(background);
 
 		const bool narrow = client.right < Scale(860);
-		const int navWidth = narrow ? Scale(196) : Scale(244);
+		const int navWidth = narrow ? Scale(212) : Scale(244);
 		RECT navArea = { 0, 0, navWidth, client.bottom };
 		HBRUSH navBrush = CreateSolidBrush(PdwThemeHeaderColor());
 		FillRect(memory, &navArea, navBrush);
@@ -760,8 +830,8 @@ namespace
 		DrawTextA(memory, PDW_DISPLAY_VERSION, -1, &version,
 			DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
 
-		const int contentLeft = navWidth + Scale(26);
-		const int headerBottom = narrow ? Scale(136) : Scale(88);
+		const int contentLeft = navWidth + Scale(20);
+		const int headerBottom = g_headerBottom;
 		HPEN headerDivider = CreatePen(PS_SOLID, 1, PdwThemeBorderColor());
 		oldPen = SelectObject(memory, headerDivider);
 		MoveToEx(memory, contentLeft, headerBottom, NULL);
@@ -772,7 +842,7 @@ namespace
 		SelectObject(memory, g_smallFont);
 		RECT draft = { contentLeft + Scale(23), headerBottom + Scale(7),
 			client.right - Scale(26), headerBottom + Scale(31) };
-		DrawTextA(memory, "Draft changes are kept while you move between pages.", -1,
+		DrawTextA(memory, "Apply saves startup and appearance. Each opened dialog saves its own changes.", -1,
 			&draft, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
 		HPEN infoPen = CreatePen(PS_SOLID, 1, PdwThemeMutedTextColor());
 		oldPen = SelectObject(memory, infoPen);
@@ -785,21 +855,6 @@ namespace
 		RECT infoText = { contentLeft + Scale(2), headerBottom + Scale(9),
 			contentLeft + Scale(16), headerBottom + Scale(25) };
 		DrawTextA(memory, "i", -1, &infoText, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
-
-		if (!IsRectEmpty(&g_directCard))
-		{
-			HBRUSH card = CreateSolidBrush(PdwThemeSurfaceColor());
-			FillRect(memory, &g_directCard, card);
-			DeleteObject(card);
-			HPEN cardBorder = CreatePen(PS_SOLID, 1, PdwThemeBorderColor());
-			oldPen = SelectObject(memory, cardBorder);
-			HGDIOBJ oldBrush = SelectObject(memory, GetStockObject(NULL_BRUSH));
-			RoundRect(memory, g_directCard.left, g_directCard.top, g_directCard.right,
-				g_directCard.bottom, Scale(8), Scale(8));
-			SelectObject(memory, oldBrush);
-			SelectObject(memory, oldPen);
-			DeleteObject(cardBorder);
-		}
 
 		BitBlt(dc, 0, 0, client.right, client.bottom, memory, 0, 0, SRCCOPY);
 		SelectObject(memory, oldBitmap);
@@ -821,6 +876,70 @@ namespace
 		return true;
 	}
 
+	LRESULT CALLBACK ContentWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+	{
+		switch (message)
+		{
+			case WM_COMMAND:
+			case WM_DRAWITEM:
+			case WM_CTLCOLORSTATIC:
+			case WM_CTLCOLORBTN:
+			case WM_CTLCOLOREDIT:
+			case WM_CTLCOLORLISTBOX:
+				return SendMessage(GetParent(window), message, wParam, lParam);
+			case WM_VSCROLL:
+			{
+				SCROLLINFO info = { sizeof(info), SIF_ALL };
+				GetScrollInfo(window, SB_VERT, &info);
+				int position = g_scrollY;
+				switch (LOWORD(wParam))
+				{
+					case SB_TOP: position = 0; break;
+					case SB_BOTTOM: position = g_contentHeight; break;
+					case SB_LINEUP: position -= Scale(32); break;
+					case SB_LINEDOWN: position += Scale(32); break;
+					case SB_PAGEUP: position -= info.nPage; break;
+					case SB_PAGEDOWN: position += info.nPage; break;
+					case SB_THUMBTRACK:
+					case SB_THUMBPOSITION: position = info.nTrackPos; break;
+				}
+				ScrollContent(position);
+				return 0;
+			}
+			case WM_MOUSEWHEEL:
+			{
+				UINT lines = 3;
+				SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, &lines, 0);
+				g_wheelRemainder += GET_WHEEL_DELTA_WPARAM(wParam);
+				const int steps = g_wheelRemainder / WHEEL_DELTA;
+				g_wheelRemainder %= WHEEL_DELTA;
+				RECT client;
+				GetClientRect(window, &client);
+				const int distance = lines == WHEEL_PAGESCROLL ? static_cast<int>(client.bottom) :
+					Scale(24) * static_cast<int>((std::min)(lines, 100u));
+				if (steps) ScrollContent(g_scrollY - steps * distance);
+				return 0;
+			}
+			case WM_ERASEBKGND: return TRUE;
+			case WM_PAINT:
+			{
+				PAINTSTRUCT paint;
+				HDC dc = BeginPaint(window, &paint);
+				FillRect(dc, &paint.rcPaint, g_backgroundControlBrush);
+				if (!IsRectEmpty(&g_directCard))
+				{
+					FillRect(dc, &g_directCard, g_surfaceControlBrush);
+					HBRUSH border = CreateSolidBrush(PdwThemeBorderColor());
+					FrameRect(dc, &g_directCard, border);
+					DeleteObject(border);
+				}
+				EndPaint(window, &paint);
+				return 0;
+			}
+		}
+		return DefWindowProc(window, message, wParam, lParam);
+	}
+
 	LRESULT CALLBACK SettingsWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		switch (message)
@@ -833,9 +952,13 @@ namespace
 				g_appliedStartup = g_draftStartup = IsStartWithWindowsEnabled();
 				PdwThemeApplyToWindow(window);
 				RefreshControlBrushes();
+				g_content = CreateWindowExA(WS_EX_CONTROLPARENT, kContentClass, "Settings options",
+					WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_VSCROLL,
+					0, 0, 0, 0, window, NULL, ghInstance, NULL);
+				if (!g_content) return -1;
 
 				g_nav = CreateWindowExA(0, "LISTBOX", "", WS_CHILD | WS_VISIBLE |
-					WS_TABSTOP | LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_NOINTEGRALHEIGHT,
+					WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_NOINTEGRALHEIGHT,
 					0, 0, 0, 0, window,
 					reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SC_NAV)), ghInstance, NULL);
 				for (int index = 0; index < PDW_SETTINGS_PAGE_COUNT; ++index)
@@ -863,6 +986,8 @@ namespace
 					reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SC_APPLY)), ghInstance, NULL);
 				RefreshFonts();
 				ApplyChildThemes();
+				SetWindowPos(g_content, HWND_BOTTOM, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 				SetDirty(false);
 				SelectPage(g_selectedPage);
 				return 0;
@@ -887,14 +1012,19 @@ namespace
 						SWP_NOZORDER | SWP_NOACTIVATE);
 				}
 				RefreshFonts();
-				RenderPage();
+				LayoutControls();
+				RevealFocusedControl();
 				return 0;
 
 			case WM_GETMINMAXINFO:
 			{
 				MINMAXINFO* limits = reinterpret_cast<MINMAXINFO*>(lParam);
-				limits->ptMinTrackSize.x = Scale(720);
-				limits->ptMinTrackSize.y = Scale(560);
+				MONITORINFO monitor = { sizeof(monitor) };
+				GetMonitorInfo(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor);
+				limits->ptMinTrackSize.x = (std::min)(Scale(720),
+					static_cast<int>(monitor.rcWork.right - monitor.rcWork.left));
+				limits->ptMinTrackSize.y = (std::min)(Scale(560),
+					static_cast<int>(monitor.rcWork.bottom - monitor.rcWork.top));
 				return 0;
 			}
 
@@ -955,6 +1085,14 @@ namespace
 				}
 				if (id == IDC_SC_APPLY) { ApplyDraft(window); return 0; }
 				if (id == IDC_SC_REVERT) { RevertDraft(); return 0; }
+				if (id == IDCANCEL) { SendMessage(window, WM_CLOSE, 0, 0); return 0; }
+				if (id == IDOK)
+				{
+					HWND focus = GetFocus();
+					for (std::size_t index = 0; index < g_cards.size(); ++index)
+						if (focus == g_cards[index]) { LaunchAction(static_cast<int>(index)); return 0; }
+					return 0;
+				}
 				if (id >= IDC_SC_CARD_FIRST && id < IDC_SC_CARD_FIRST + 32)
 				{
 					LaunchAction(static_cast<int>(id - IDC_SC_CARD_FIRST));
@@ -1036,6 +1174,7 @@ namespace
 				g_surfaceControlBrush = NULL;
 				g_headerControlBrush = NULL;
 				g_window = NULL;
+				g_content = NULL;
 				g_nav = NULL;
 				g_title = NULL;
 				g_subtitle = NULL;
@@ -1059,8 +1198,11 @@ namespace
 		windowClass.hIconSm = windowClass.hIcon;
 		windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
 		windowClass.lpszClassName = kSettingsClass;
-		if (RegisterClassExA(&windowClass)) return true;
-		return GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+		if (!RegisterClassExA(&windowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
+		windowClass.lpszClassName = kContentClass;
+		windowClass.lpfnWndProc = ContentWindowProc;
+		windowClass.hIcon = windowClass.hIconSm = NULL;
+		return RegisterClassExA(&windowClass) || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
 	}
 }
 
@@ -1077,8 +1219,9 @@ void ShowSettingsCenter(HWND owner, int page)
 	}
 	if (!RegisterSettingsClass()) return;
 
-	RECT workArea;
-	SystemParametersInfo(SPI_GETWORKAREA, 0, &workArea, 0);
+	MONITORINFO monitor = { sizeof(monitor) };
+	GetMonitorInfo(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &monitor);
+	const RECT workArea = monitor.rcWork;
 	const int dpi = ReadWindowDpi(owner);
 	const int workWidth = static_cast<int>(workArea.right - workArea.left);
 	const int workHeight = static_cast<int>(workArea.bottom - workArea.top);
@@ -1096,7 +1239,7 @@ void ShowSettingsCenter(HWND owner, int page)
 		(std::min)(y, static_cast<int>(workArea.bottom) - height));
 	g_selectedPage = page;
 	g_window = CreateWindowExA(WS_EX_APPWINDOW, kSettingsClass, "PDW Settings",
-		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX,
+		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_CLIPCHILDREN,
 		x, y, width, height, owner, NULL, ghInstance, NULL);
 	if (!g_window) return;
 	ShowWindow(g_window, SW_SHOW);
@@ -1116,7 +1259,23 @@ BOOL SettingsCenterIsDialogMessage(MSG* message)
 		SendMessage(g_search, EM_SETSEL, 0, -1);
 		return TRUE;
 	}
-	return IsDialogMessage(g_window, message);
+	if (message->message == WM_KEYDOWN && IsChild(g_content, message->hwnd) &&
+		message->hwnd != g_theme)
+	{
+		int command = -1;
+		if (message->wParam == VK_PRIOR) command = SB_PAGEUP;
+		if (message->wParam == VK_NEXT) command = SB_PAGEDOWN;
+		if (message->wParam == VK_HOME) command = SB_TOP;
+		if (message->wParam == VK_END) command = SB_BOTTOM;
+		if (command >= 0)
+		{
+			SendMessage(g_content, WM_VSCROLL, command, 0);
+			return TRUE;
+		}
+	}
+	const BOOL handled = IsDialogMessage(g_window, message);
+	if (handled) RevealFocusedControl();
+	return handled;
 }
 
 void SettingsCenterNotifyThemeChanged(void)
@@ -1133,6 +1292,7 @@ void SettingsCenterNotifyThemeChanged(void)
 	LiveSignalMeterRefreshTheme(g_signalPreview);
 	ApplyChildThemes();
 	RefreshFonts();
+	LayoutControls();
 	RedrawWindow(g_window, NULL, NULL,
 		RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
 }
@@ -1145,4 +1305,60 @@ void SettingsCenterClose(void)
 HWND SettingsCenterWindow(void)
 {
 	return g_window;
+}
+
+namespace
+{
+	INT_PTR CALLBACK UpdatesDlgProc(HWND window, UINT message, WPARAM wParam, LPARAM)
+	{
+		if (message == WM_INITDIALOG)
+		{
+			CenterWindow(window);
+#ifdef _WIN64
+			SetDlgItemTextA(window, IDC_UPDATE_VERSION, PDW_DISPLAY_VERSION "\r\nArchitecture: x64 (64-bit)");
+#else
+			SetDlgItemTextA(window, IDC_UPDATE_VERSION, PDW_DISPLAY_VERSION "\r\nArchitecture: Win32 (x86 compatibility)");
+#endif
+			wchar_t path[32768] = { 0 };
+			const DWORD length = GetModuleFileNameW(NULL, path, _countof(path));
+			if (length && length < _countof(path))
+			{
+				wchar_t* slash = wcsrchr(path, L'\\');
+				if (slash) *slash = 0;
+				SetDlgItemTextW(window, IDC_UPDATE_FOLDER, path);
+			}
+			return TRUE;
+		}
+		if (message != WM_COMMAND) return FALSE;
+		switch (LOWORD(wParam))
+		{
+			case IDC_UPDATE_LATEST:
+			case IDC_UPDATE_VERSIONS:
+			{
+				const char* url = LOWORD(wParam) == IDC_UPDATE_LATEST ?
+					"https://github.com/ufo8mycow14/PDW/releases/latest" :
+					"https://github.com/ufo8mycow14/PDW/releases";
+				if (reinterpret_cast<INT_PTR>(ShellExecuteA(window, "open", url,
+					NULL, NULL, SW_SHOWNORMAL)) <= 32)
+					MessageBoxA(window, "Could not open the browser. Visit https://github.com/ufo8mycow14/PDW/releases",
+						"PDW updates", MB_OK | MB_ICONERROR);
+				return TRUE;
+			}
+			case IDC_UPDATE_BACKUP:
+				EndDialog(window, IDC_UPDATE_BACKUP);
+				return TRUE;
+			case IDOK:
+			case IDCANCEL:
+				EndDialog(window, IDCANCEL);
+				return TRUE;
+		}
+		return FALSE;
+	}
+}
+
+void ShowUpdatesAndVersions(HWND owner)
+{
+	if (GoModalDialogBoxParam(ghInstance, MAKEINTRESOURCE(UPDATES_DLGBOX), owner,
+		UpdatesDlgProc, 0) == IDC_UPDATE_BACKUP)
+		SendMessage(ghWnd, WM_COMMAND, IDM_CONFIG_BACKUP, 0);
 }

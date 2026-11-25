@@ -53,6 +53,7 @@ namespace
 	// -1 forces the first layout pass to apply a valid text/icon style to every
 	// button. A false default skipped that pass on normal-width startup.
 	int g_compact = -1;
+	UINT g_imageDpi = 0;
 
 	const ToolbarAction* FindAction(UINT command)
 	{
@@ -148,16 +149,19 @@ namespace
 		DeleteObject(pen);
 	}
 
-	HBITMAP CreateToolbarBitmap(int icon, COLORREF colour)
+	HBITMAP CreateToolbarBitmap(int icon, COLORREF colour, int size)
 	{
 		HDC screen = GetDC(NULL);
 		HDC dc = CreateCompatibleDC(screen);
-		HBITMAP bitmap = CreateCompatibleBitmap(screen, 20, 20);
+		HBITMAP bitmap = CreateCompatibleBitmap(screen, size, size);
 		HGDIOBJ oldBitmap = SelectObject(dc, bitmap);
 		HBRUSH mask = CreateSolidBrush(RGB(255, 0, 255));
-		RECT bounds = { 0, 0, 20, 20 };
+		RECT bounds = { 0, 0, size, size };
 		FillRect(dc, &bounds, mask);
 		DeleteObject(mask);
+		SetMapMode(dc, MM_ANISOTROPIC);
+		SetWindowExtEx(dc, 20, 20, NULL);
+		SetViewportExtEx(dc, size, size, NULL);
 		DrawToolbarIcon(dc, icon, colour);
 		SelectObject(dc, oldBitmap);
 		DeleteDC(dc);
@@ -167,11 +171,12 @@ namespace
 
 	void BuildImageList(HWND toolbar)
 	{
-		HIMAGELIST images = ImageList_Create(20, 20, ILC_COLOR24 | ILC_MASK, ICON_COUNT, 1);
+		const int size = PdwWindowScale(toolbar, 20);
+		HIMAGELIST images = ImageList_Create(size, size, ILC_COLOR24 | ILC_MASK, ICON_COUNT, 1);
 		if (!images) return;
 		for (int icon = 0; icon < ICON_COUNT; ++icon)
 		{
-			HBITMAP bitmap = CreateToolbarBitmap(icon, PdwThemeTextColor());
+			HBITMAP bitmap = CreateToolbarBitmap(icon, PdwThemeTextColor(), size);
 			ImageList_AddMasked(images, bitmap, RGB(255, 0, 255));
 			DeleteObject(bitmap);
 		}
@@ -179,6 +184,7 @@ namespace
 			TB_SETIMAGELIST, 0, reinterpret_cast<LPARAM>(images)));
 		if (previous && previous != images) ImageList_Destroy(previous);
 		g_images = images;
+		g_imageDpi = PdwWindowDpi(toolbar);
 	}
 
 	void SetButtonPresentation(HWND toolbar, UINT command, const char* text, int image)
@@ -222,12 +228,13 @@ namespace
 		SendMessage(toolbar, TB_GETRECT, IDM_SETTINGS, reinterpret_cast<LPARAM>(&lastButton));
 		const int clientWidth = static_cast<int>(client.right - client.left);
 		const int clientHeight = static_cast<int>(client.bottom - client.top);
-		const int available = clientWidth - static_cast<int>(lastButton.right) - 16;
-		const int width = (std::min)(LiveSignalMeterPreferredWidth(),
+		const int available = clientWidth - static_cast<int>(lastButton.right) - PdwWindowScale(toolbar, 16);
+		const int width = (std::min)(PdwWindowScale(toolbar, LiveSignalMeterPreferredWidth()),
 			(std::max)(0, available));
-		const int height = (std::min)(42, (std::max)(0, clientHeight - 12));
-		LiveSignalMeterMove(g_signalMeter, clientWidth - width - 8,
-			(std::max)(6, (clientHeight - height) / 2), width, height);
+		const int height = (std::min)(PdwWindowScale(toolbar, 42),
+			(std::max)(0, clientHeight - PdwWindowScale(toolbar, 12)));
+		LiveSignalMeterMove(g_signalMeter, clientWidth - width - PdwWindowScale(toolbar, 8),
+			(std::max)(PdwWindowScale(toolbar, 6), (clientHeight - height) / 2), width, height);
 	}
 }
 
@@ -278,8 +285,8 @@ HWND ShowMakeToolBar(HWND parent_hwnd, HINSTANCE)
 	SendMessage(toolbar, TB_SETBUTTONWIDTH, 0, MAKELPARAM(58, 76));
 	SendMessage(toolbar, TB_SETBUTTONSIZE, 0, MAKELPARAM(64, 48));
 
-	if (PdwThemeUiFont()) SendMessage(toolbar, WM_SETFONT,
-		reinterpret_cast<WPARAM>(PdwThemeUiFont()), TRUE);
+	SendMessage(toolbar, WM_SETFONT,
+		reinterpret_cast<WPARAM>(PdwThemeUiFontForWindow(toolbar)), TRUE);
 	g_signalMeter = LiveSignalMeterCreate(toolbar, 2198);
 	// Establish the approved icon-and-label height before the parent is first
 	// shown. Waiting for a later WM_SIZE leaves a one-frame legacy-height bar on
@@ -310,21 +317,32 @@ void TB_AutoSize(HWND toolbar)
 	if (!toolbar) return;
 	RECT parent;
 	GetClientRect(GetParent(toolbar), &parent);
-	const bool compact = parent.right < 720;
+	const bool compact = parent.right < PdwWindowScale(toolbar, 780);
+	if (g_imageDpi != PdwWindowDpi(toolbar)) BuildImageList(toolbar);
+	SendMessage(toolbar, WM_SETFONT, reinterpret_cast<WPARAM>(PdwThemeUiFontForWindow(toolbar)), FALSE);
+	SendMessage(toolbar, TB_SETPADDING, 0,
+		MAKELPARAM(PdwWindowScale(toolbar, 9), PdwWindowScale(toolbar, 3)));
 	SetCompactMode(toolbar, compact);
+	SendMessage(toolbar, TB_SETBUTTONWIDTH, 0,
+		MAKELPARAM(PdwWindowScale(toolbar, compact ? 38 : 58), PdwWindowScale(toolbar, compact ? 46 : 110)));
 	SendMessage(toolbar, TB_SETBUTTONSIZE, 0,
-		MAKELPARAM(compact ? 38 : 64, 48));
+		MAKELPARAM(PdwWindowScale(toolbar, compact ? 38 : 64), PdwWindowScale(toolbar, 48)));
 	// Let the common control recalculate the internal icon-and-text row first;
 	// without this pass it clips labels to its legacy 31-pixel content height.
 	// TB_AUTOSIZE may also alter the outer window, so immediately reassert PDW's
 	// approved 54-pixel geometry afterward.
 	SendMessage(toolbar, TB_AUTOSIZE, 0, 0);
 	SetWindowPos(toolbar, HWND_TOP, 0, 0, parent.right,
-		PDW_COMMAND_BAR_HEIGHT,
+		ToolbarHeight(toolbar),
 		SWP_NOACTIVATE | SWP_SHOWWINDOW);
 	LayoutSignalMeter(toolbar);
 	RedrawWindow(toolbar, NULL, NULL,
 		RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+}
+
+int ToolbarHeight(HWND window)
+{
+	return PdwWindowScale(window, PDW_COMMAND_BAR_HEIGHT);
 }
 
 void SetToolTXT(HINSTANCE, LPARAM lParam)

@@ -1,8 +1,7 @@
 # Radio, recording, and replay
 
 Open **Settings > Decoder and input > Radio and replay**. These inputs are
-additional choices inside the same `PDW v5.5.4 2026 Release.exe`; they do not create a separate
-edition or background helper.
+additional choices inside the same `PDW v5.5.4 2026 Release.exe`; no separate radio edition or service is required.
 
 For direct RTL-SDR operation, I select the USB receiver source inside PDW; SDRSharp
 and Airspy applications are not required. In v5.5.3 I accept the RTL-SDR driver's
@@ -11,6 +10,22 @@ configured modern receiver is unavailable. Late device availability no longer
 waits for dismissal of a startup error dialog. This does not bypass a real tuner
 error or unsafe shutdown/quarantine, and a running source still requires accepted
 decode rows to establish receiver health.
+
+### Restarting a configured radio
+
+A normal **File > Exit** releases the receiver and stays closed. Reopening PDW
+uses the saved source and settings without opening the radio dialog. **Start PDW
+with Windows** is the separate, per-user sign-in option; PDW is not a service
+running before sign-in. It cannot receive pages while the computer or receiver is off.
+
+For a configured main RTL-SDR or RTL-TCP session a second copy of the same image
+waits without opening a receiver or a window. It exits on intentional shutdown.
+After a recognized process crash it waits for exit, then relaunches the same
+installed executable. A manual relaunch wins the existing single-instance guard.
+To avoid repeatedly launching a broken program, at most three consecutive short
+crash recoveries are attempted, with 1, 2 and 4 second delays. A run lasting a
+minute resets that count. Forced termination by an operator is not a crash test.
+Isolated multi-channel workers are not relaunched by this mechanism.
 
 ## Local audio and serial compatibility
 
@@ -51,19 +66,37 @@ out-of-channel energy and resampling aliases without changing POCSAG or FLEX
 protocol logic. It is disabled by default; with the box clear, PDW executes
 the original one-pole low-pass and averaging path sample-for-sample.
 
-The NFM value retains its established interpretation as the one-sided filter
-cutoff. Filtering cannot restore samples lost to tuner overload, clipping,
+The NFM bandwidth defaults to **12,500 Hz** and retains its established
+interpretation as the one-sided filter cutoff. Valid saved values are preserved.
+Filtering cannot restore samples lost to tuner overload, clipping,
 USB loss, or insufficient RF signal. Compare the same legal diagnostic
 recording with the option off and on before retaining it for a receiver.
 
+The displayed percentage is an **audio score**, not antenna strength, SNR or
+the percentage of correct message characters. Noise alone can produce a
+nonzero score, and a transmission starting or ending can move it substantially.
+Use validated frame/error counts and accepted readable rows to assess decoding.
+
 ## RTL-SDR USB
+
+### Demodulation, squelch and audio processing
+
+In **Radio and Signal Sources**, select **Demodulation and audio...**.
+New settings and the **Defaults: NFM / all off** button select NFM with
+squelch, de-emphasis, speech filtering, noise reduction and every audio
+enhancement disabled. Existing saved receiver and enhanced-IQ settings
+remain independent. The dialog edits a draft: its OK returns to the radio
+dialog. **Apply** restarts the source and saves while leaving the dialog open;
+**OK** applies and closes it. **Cancel** discards changes made since the most
+recent successful Apply. Source-start or save failures retain the existing
+rollback and receiver-quarantine protections.
 
 Select **Direct RTL-SDR USB receiver**. The Win32 distribution includes a
 standard 32-bit receiver package for common RTL2832U devices and RTL-SDR Blog
 V3, V4 and V4L models under `Receivers\RTL-SDR`; the x64 package requires a
 trusted matching x64 library or RTL-TCP. PDW lists connected devices by name
 and index. The device test opens the selected receiver and applies tuner
-settings without changing the saved source until **OK** is selected.
+settings without changing the saved source until **Apply** or **OK** is selected.
 
 Use **Add receiver...** to import a matching-architecture `rtlsdr.dll` or
 `librtlsdr.dll`. PDW checks the PE architecture and required receive API, then

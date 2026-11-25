@@ -29,6 +29,9 @@ COLORREF PdwThemeMutedTextColor(void);
 COLORREF PdwThemeBorderColor(void);
 COLORREF PdwThemeAccentColor(void);
 HFONT PdwThemeUiFont(void);
+UINT PdwWindowDpi(HWND window);
+int PdwWindowScale(HWND window, int value);
+HFONT PdwThemeUiFontForWindow(HWND window);
 HFONT PdwThemeUiSemiboldFont(void);
 
 void PdwThemeBeginDialogHook(void);

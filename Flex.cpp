@@ -52,6 +52,8 @@
 
 int flex_blk = 0;
 int flex_bc  = 0;
+static unsigned short flexSyncWords[4] = {};
+static unsigned int flexSyncBitCount = 0;
 
 extern PROFILE Profile;			// profile information
 
@@ -124,6 +126,10 @@ FLEX::~FLEX()
 // switching between soundcard & serial port input.
 void flex_reset(void)
 {
+	memset(flexSyncWords, 0, sizeof(flexSyncWords));
+	flexSyncBitCount = 0;
+	g_sps = g_sps2 = 1600;
+	level = 2;
 	flex_blk = 0;
 	flex_bc = 0;
 	flex_timer = 0;
@@ -175,8 +181,6 @@ int FLEX::xsumchk(long int l)
 // converts a short flex address to a CAPCODE; shows it on screen
 void FLEX::show_address(long int l, long int l2, bool bLongAddress)
 {
-	int len = bLongAddress ? FILTER_CAPCODE_LEN : FILTER_CAPCODE_LEN-2;
-
 	if (!bLongAddress)
 	{
 		capcode = (l & 0x1fffffl) - 32768l;
@@ -427,7 +431,7 @@ void FLEX::showframe(int asa, int vsa)
 	long int cc, cc2, cc3, fragmentHeader=0;
 	bool bLongAddress=false, bXsumError=false, bFlexAssembledCopyReady=false;
 
-	int iFragmentNumber, iContinuationFlag=0, iAssignedFrame;
+	int iFragmentNumber, iContinuationFlag=0, iAssignedFrame=0;
 	pdw::flex::FragmentResult flexFragmentResult;
 
 	extern unsigned long hourly_stat[NUM_STAT][2];
@@ -916,8 +920,7 @@ void FLEX::showwordhex(int wordnum)
 void frame_flex(char gin)
 {
 	int cer, ihd, i, nh, j, hd=0, reflex_flag=0; // te
-	static int cy, fr;
-	static short int slr[4] = { 0, 0, 0, 0 };
+	auto& slr = flexSyncWords;
 	static int bct, hbit;
 	double aver=0.0;
 
@@ -944,6 +947,7 @@ void frame_flex(char gin)
 	slr[3] = slr[3] << 1;
 
 	if (gin < 2) slr[3] |= 0x0001;
+	if (flexSyncBitCount < 64 && ++flexSyncBitCount < 64) return;
 
 //	FILE* pTest=NULL;
 //
@@ -967,17 +971,10 @@ void frame_flex(char gin)
 		// center portion always the same
 		nh = nOnes(slr[1] ^ SYNC1) + nOnes(slr[2] ^ SYNC2);
 
-		if (nh == 32)	// 32 errors, so must be inverted
-		{
-			if (((slr[0] ^ slr[3]) & 0xFFFF) == 0xFFFF)
-			{
-				slr[0] ^= 0xFFFF;	// Invert buffer so current frame
-				slr[3] ^= 0xFFFF;	// can be decoded
-				InvertData();		// Invert receive polarity
-				
-				nh = 0;		// 32 inverted errors => 0 errors
-			}
-		}
+		const bool invertedCandidate = nh == 32 && (slr[0] ^ slr[3]) == 0xFFFF;
+		const int firstWord = slr[0] ^ (invertedCandidate ? 0xFFFF : 0);
+		const int lastWord = slr[3] ^ (invertedCandidate ? 0xFFFF : 0);
+		if (invertedCandidate) nh = 0;
 
 		// NOTE: STILL MISSING SEVERAL REFLEX SYNC UPS
 		// sync up with 1 or less mismatched bits out of center 32
@@ -985,14 +982,12 @@ void frame_flex(char gin)
 		if (nh < 2)   // guessing we've gotten sync up...
 		{
 //			nh = nOnes(slr[0] ^ slr[3]);
-			flex_bc = 89;
-
 			if (nOnes(slr[0] ^ slr[3] ^ 0xFFFF) < 2)
 			{
 				int speed;
 				for (speed=0; speed<8; speed++)
 				{
-					if ((nOnes(slr[0] ^ syncs[speed]) + nOnes(slr[3] ^ ~syncs[speed])) < 2)
+					if (syncs[speed] && (nOnes(firstWord ^ syncs[speed]) + nOnes(lastWord ^ ~syncs[speed])) < 2)
 					{
 						if ((speed & 0x03) == 0)
 						{
@@ -1010,6 +1005,7 @@ void frame_flex(char gin)
 							else flex_speed = STAT_FLEX3200;
 						}
 
+						if (invertedCandidate) InvertData();
 						bFlexActive = true;
 						flex_timer  = 20;
 
@@ -1122,6 +1118,11 @@ void frame_flex(char gin)
 			}
 			else return;
 */
+			// Commit the holdoff only after a supported, enabled header has
+			// passed both outer-word checks. A centre-only match in noise
+			// must not manufacture a FIW, frame or decoder error statistics.
+			flex_bc = 89;
+
 			// FINE DIDDLE RCV CLOCK RIGHT HERE****************************
 			// idea - take average error over last 64 bits; subtract it off
 			// this allows us to go to slower main rcv loop clock response
@@ -1163,23 +1164,23 @@ void frame_flex(char gin)
 
 				cer = ecd();		// do error correction
 
-				if (cer < 2)
+				if (cer <= 2)
 				{
 					for (ihd = 4; ihd<8; ihd++)
 					{
 						hd = hd >> 1;
 						if (ob[ihd] == 1) hd^=0x08;
 					}
-					cy = (hd & 0x0f) ^ 0x0f;
+					const int cycle = (hd & 0x0f) ^ 0x0f;
 
 					for (ihd = 8; ihd<=14; ihd++)
 					{
 						hd = hd >> 1;
 						if (ob[ihd] == 1) hd^=0x40;
 					}
-					fr = (hd & 0x7f) ^ 0x7f;
+					display_cfstatus(cycle, (hd & 0x7f) ^ 0x7f);
 				}
-				display_cfstatus(cy, fr);
+				else display_cfstatus(-1, -1);
 
 				bFLEX_Frame_contains_SI = false;
 
@@ -1335,6 +1336,13 @@ void frame_flex(char gin)
 void display_cfstatus(int cycle, int frame)
 {
 	static int oldframe=-1;
+	if (cycle < 0 || frame < 0)
+	{
+		oldframe = -1;
+		iCurrentCycle = 99;
+		iCurrentFrame = 999;
+		return;
+	}
 
 	if (oldframe == frame)
 	{

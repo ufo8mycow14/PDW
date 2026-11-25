@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include "radio_processing.h"
 
 namespace pdw
 {
@@ -63,7 +64,8 @@ public:
 		std::uint32_t nfmCutoffHz);
 
 	void Configure(std::uint32_t iqSampleRate, std::uint32_t audioSampleRate,
-		std::uint32_t nfmCutoffHz);
+		std::uint32_t nfmCutoffHz,
+		const RadioProcessingSettings& processing = DefaultRadioProcessingSettings());
 	void Reset();
 	void ProcessUnsignedIq(const unsigned char* iqBytes, std::size_t byteCount,
 		std::vector<float>& audio);
@@ -87,6 +89,10 @@ private:
 	std::vector<ComplexSample> filteredIqScratch_;
 	std::vector<ComplexSample> discriminatorScratch_;
 	std::vector<ComplexSample> resampledAudioScratch_;
+	RadioProcessingSettings processing_;
+	RadioAudioProcessor audioProcessor_;
+	RadioSquelch squelch_;
+	float amCarrier_;
 };
 
 } // namespace signal

@@ -83,6 +83,7 @@ BOOL Stop_Capturing(void);
 BOOL Start_Capturing(void);
 bool FinalizeCaptureForShutdown(void);
 void SignalSourceService(void);
+void PublishReceiverHealthIfRequested();
 
 void Audio_To_Bits  (char *lpAudioBuffer, long LenAudioBuffer);
 void MOBITEX_To_Bits(char *lpAudioBuffer, long LenAudioBuffer);
@@ -100,7 +101,7 @@ bool SignalDiagnosticStopReplay(void);
 bool SignalDiagnosticIsRecording(void);
 bool SignalDiagnosticIsReplaying(void);
 bool SignalDiagnosticToggleRecording(HWND owner);
-void SignalDiagnosticsRecordDecodeResult(int errors);
+void SignalDiagnosticsRecordDecodeResult(int errors, bool pagingBch);
 void SignalDiagnosticsRecordAcceptedDecodeRow(void);
 bool SignalDiagnosticsGetLiveSnapshot(PdwLiveSignalSnapshot* snapshot);
 void SignalDecoderStateEnter(void);

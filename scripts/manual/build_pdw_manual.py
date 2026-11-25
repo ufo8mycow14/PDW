@@ -1585,7 +1585,7 @@ class ManualBuilder:
                 ("Frequency", "148000000 Hz initial value - replace with an authorised target"),
                 ("IQ sample rate", "1024000 samples/s"),
                 ("Audio rate", "48000 samples/s"),
-                ("NFM bandwidth", "12000 Hz default; 5000 to 25000 Hz"),
+                ("NFM bandwidth", "12500 Hz default; 5000 to 25000 Hz"),
                 ("PPM correction", "0 initial"),
                 ("Automatic gain", "Enabled initial"),
                 ("Recording safety limit", "25 million normalized samples in memory"),

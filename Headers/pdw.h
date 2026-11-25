@@ -42,6 +42,7 @@
 #define PDW_TIMER 101
 
 #include "output_routes.h"
+#include "../utils/radio_processing.h"
 
 enum FILTER_TYPE {	UNUSED_FILTER  = 0,
 					FLEX_FILTER    = 1,
@@ -371,6 +372,7 @@ typedef struct
 	int rtlBandwidthHz;
 	int rtlAutomaticGain;
 	int rtlSignalConditionerEnabled;
+	pdw::signal::RadioProcessingSettings rtlProcessing;
 	int rtlDeviceIndex;
 	char rtlReceiverId[RTL_RECEIVER_ID_LEN+1];
 	int audioThreshold[AUDIO_CUSTOM_RATE_COUNT];

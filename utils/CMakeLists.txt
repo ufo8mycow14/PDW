@@ -4,6 +4,7 @@ set( PDW_INCLUDES
   ${PDW_INCLUDES}
   ${CMAKE_CURRENT_SOURCE_DIR}/audio_capture_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/audio_signal_core.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/radio_processing.h
   ${CMAKE_CURRENT_SOURCE_DIR}/bounded_audio_decode_worker.h
 	${CMAKE_CURRENT_SOURCE_DIR}/assembled_message_visibility_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/OSTYPE.H
@@ -57,6 +58,7 @@ set( PDW_INCLUDES
 set( PDW_SRCS
   ${PDW_SRCS}
   ${CMAKE_CURRENT_SOURCE_DIR}/audio_signal_core.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/radio_processing.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/bounded_audio_decode_worker.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/assembled_message_visibility_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/config_backup.cpp

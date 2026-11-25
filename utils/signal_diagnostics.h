@@ -27,9 +27,11 @@ struct SignalMetrics
 	float signalQuality;
 	float multipathRisk;
 	std::uint64_t sampleCount;
-	std::uint64_t correctedErrors;
-	std::uint64_t uncorrectableErrors;
-	std::uint64_t phaseErrors[4];
+	std::uint64_t correctedBchBits;
+	std::uint64_t correctedBchWords;
+	std::uint64_t uncorrectableBchWords;
+	std::uint64_t otherFlaggedChecks;
+	std::uint64_t phaseFlaggedWords[4];
 	int lastCycle;
 	int lastFrame;
 
@@ -57,7 +59,7 @@ public:
 
 	void Reset();
 	void Observe(const float* samples, std::size_t sampleCount);
-	void RecordDecodeResult(int errors, int flexPhase, int cycle, int frame,
+	void RecordDecodeResult(int errors, bool pagingBch, int flexPhase, int cycle, int frame,
 		float decoderQuality);
 	SignalMetrics Snapshot(std::vector<float>* waveform = NULL,
 		std::vector<float>* qualityHistory = NULL,
@@ -67,8 +69,11 @@ public:
 private:
 	SignalDiagnostics(const SignalDiagnostics&);
 	SignalDiagnostics& operator=(const SignalDiagnostics&);
+	void ObserveWindowLocked(const float* samples, std::size_t sampleCount);
 
 	mutable CRITICAL_SECTION lock_;
+	std::vector<float> pendingSamples_;
+	bool haveMeasuredWindow_;
 	SignalMetrics metrics_;
 	std::vector<float> waveform_;
 	std::size_t waveformPosition_;

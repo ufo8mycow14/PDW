@@ -8,6 +8,7 @@
 #include <uxtheme.h>
 
 #include <algorithm>
+#include <map>
 
 #include "headers\resource.h"
 #include "headers\pdw.h"
@@ -34,6 +35,7 @@ namespace
 	HFONT g_uiFont = NULL;
 	HFONT g_uiSemiboldFont = NULL;
 	HHOOK g_dialogHook = NULL;
+	std::map<UINT, HFONT> g_scaledFonts;
 
 	COLORREF g_background = RGB(243, 243, 243);
 	COLORREF g_surface = RGB(255, 255, 255);
@@ -218,7 +220,7 @@ namespace
 		const int titleLength = lstrlenW(title);
 		if (titleLength) GetTextExtentPoint32W(hdc, title, titleLength, &titleSize);
 		const int lineY = (std::max)(4, static_cast<int>(titleSize.cy / 2));
-		const int titleLeft = 9;
+		const int titleLeft = PdwWindowScale(hWnd, 9);
 		const int titleRight = titleLeft + titleSize.cx;
 
 		HPEN borderPen = CreatePen(PS_SOLID, 1, g_border);
@@ -390,6 +392,8 @@ void PdwThemeShutdown(void)
 	if (g_dialogHook) UnhookWindowsHookEx(g_dialogHook);
 	g_dialogHook = NULL;
 	DeleteThemeObjects();
+	for (const auto& entry : g_scaledFonts) DeleteObject(entry.second);
+	g_scaledFonts.clear();
 	g_initialized = false;
 }
 
@@ -419,8 +423,10 @@ void PdwThemeApplyToMainWindow(HWND hWnd, HWND toolbar)
 		// transition reliably between light and dark modes on Common Controls v6.
 		SetWindowTheme(toolbar, L"", L"");
 		SendMessage(toolbar, CCM_SETBKCOLOR, 0, g_header);
-		if (g_uiFont) SendMessage(toolbar, WM_SETFONT, reinterpret_cast<WPARAM>(g_uiFont), TRUE);
+		SendMessage(toolbar, WM_SETFONT,
+			reinterpret_cast<WPARAM>(PdwThemeUiFontForWindow(hWnd)), TRUE);
 		ToolbarRefreshTheme();
+		TB_AutoSize(toolbar);
 		InvalidateRect(toolbar, NULL, TRUE);
 	}
 	DrawMenuBar(hWnd);
@@ -466,14 +472,14 @@ BOOL PdwThemeHandleMenuMeasure(LPARAM lParam)
 	if (!topLevel) return FALSE;
 
 	HDC dc = GetDC(ghWnd);
-	HGDIOBJ oldFont = g_uiFont ? SelectObject(dc, g_uiFont) : NULL;
-	SIZE textSize = { 0, 0 };
-	GetTextExtentPoint32A(dc, label, lstrlenA(label), &textSize);
-	const int dpi = GetDeviceCaps(dc, LOGPIXELSX);
+	HGDIOBJ oldFont = SelectObject(dc, PdwThemeUiFontForWindow(ghWnd));
+	RECT textBounds = { 0, 0, 0, 0 };
+	DrawTextA(dc, label, -1, &textBounds, DT_CALCRECT | DT_SINGLELINE);
+	const int dpi = static_cast<int>(PdwWindowDpi(ghWnd));
 	if (oldFont) SelectObject(dc, oldFont);
 	ReleaseDC(ghWnd, dc);
-	measure->itemWidth = textSize.cx + MulDiv(20, dpi, 96);
-	measure->itemHeight = MulDiv(30, dpi, 96);
+	measure->itemWidth = textBounds.right + MulDiv(20, dpi, 96);
+	measure->itemHeight = (std::max)(static_cast<int>(textBounds.bottom) + MulDiv(10, dpi, 96), MulDiv(30, dpi, 96));
 	return TRUE;
 }
 
@@ -492,8 +498,9 @@ BOOL PdwThemeHandleMenuDraw(LPARAM lParam)
 	if (item->itemState & (ODS_SELECTED | ODS_HOTLIGHT))
 	{
 		RECT highlight = bounds;
-		InflateRect(&highlight, -2, -3);
-		HBRUSH brush = CreateSolidBrush(g_dark ? RGB(18, 58, 75) : RGB(229, 243, 255));
+		InflateRect(&highlight, -PdwWindowScale(ghWnd, 2), -PdwWindowScale(ghWnd, 3));
+		HBRUSH brush = CreateSolidBrush(g_highContrast ? GetSysColor(COLOR_HIGHLIGHT) :
+			g_dark ? RGB(18, 58, 75) : RGB(229, 243, 255));
 		HGDIOBJ oldBrush = SelectObject(item->hDC, brush);
 		HGDIOBJ oldPen = SelectObject(item->hDC, GetStockObject(NULL_PEN));
 		RoundRect(item->hDC, highlight.left, highlight.top, highlight.right,
@@ -505,8 +512,10 @@ BOOL PdwThemeHandleMenuDraw(LPARAM lParam)
 
 	SetBkMode(item->hDC, TRANSPARENT);
 	SetTextColor(item->hDC,
-		(item->itemState & ODS_DISABLED) ? g_muted : g_text);
-	HGDIOBJ oldFont = g_uiFont ? SelectObject(item->hDC, g_uiFont) : NULL;
+		(item->itemState & ODS_DISABLED) ? g_muted :
+		g_highContrast && (item->itemState & (ODS_SELECTED | ODS_HOTLIGHT)) ?
+		GetSysColor(COLOR_HIGHLIGHTTEXT) : g_text);
+	HGDIOBJ oldFont = SelectObject(item->hDC, PdwThemeUiFontForWindow(ghWnd));
 	UINT format = DT_SINGLELINE | DT_CENTER | DT_VCENTER;
 	if (item->itemState & ODS_NOACCEL) format |= DT_HIDEPREFIX;
 	DrawTextA(item->hDC, label, -1, &bounds, format);
@@ -568,6 +577,39 @@ COLORREF PdwThemeBorderColor(void) { return g_border; }
 COLORREF PdwThemeAccentColor(void) { return g_accent; }
 HFONT PdwThemeUiFont(void) { return g_uiFont; }
 HFONT PdwThemeUiSemiboldFont(void) { return g_uiSemiboldFont; }
+
+UINT PdwWindowDpi(HWND window)
+{
+	typedef UINT (WINAPI* GetDpiForWindowProc)(HWND);
+	const auto getDpi = reinterpret_cast<GetDpiForWindowProc>(
+		GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+	UINT dpi = getDpi && window ? getDpi(window) : 0;
+	if (!dpi)
+	{
+		HDC dc = GetDC(window);
+		dpi = dc ? static_cast<UINT>(GetDeviceCaps(dc, LOGPIXELSX)) : 96;
+		if (dc) ReleaseDC(window, dc);
+	}
+	return dpi ? dpi : 96;
+}
+
+int PdwWindowScale(HWND window, int value)
+{
+	return MulDiv(value, PdwWindowDpi(window), 96);
+}
+
+HFONT PdwThemeUiFontForWindow(HWND window)
+{
+	const UINT dpi = PdwWindowDpi(window);
+	auto found = g_scaledFonts.find(dpi);
+	if (found != g_scaledFonts.end()) return found->second;
+	HFONT font = CreateFontW(-MulDiv(14, dpi, 96), 0, 0, 0, FW_NORMAL,
+		FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+		CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+	if (!font) return reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+	g_scaledFonts[dpi] = font;
+	return font;
+}
 
 void PdwThemeBeginDialogHook(void)
 {
